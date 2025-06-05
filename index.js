@@ -1863,10 +1863,17 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
     let hasRecentImageAttachment = false;
     let isLastMessageImageGeneration = false;
     
-    if (messageHistory.length > 0) {
-      const lastMessage = messageHistory[messageHistory.length - 1];
-      hasRecentImageAttachment = lastMessage && lastMessage.attachments && lastMessage.attachments.size > 0;
+    // 檢查上一條消息（不是當前消息）
+    if (messageHistory.length > 1) {
+      // 獲取上一條消息（不是當前消息，而是倒數第二條）
+      const lastMessage = messageHistory[messageHistory.length - 2];
       
+      // 檢查上一條消息是否包含圖片附件
+      hasRecentImageAttachment = lastMessage && 
+                               lastMessage.attachments && 
+                               lastMessage.attachments.size > 0;
+      
+      // 檢查上一條消息是否是機器人發送的圖片生成消息
       isLastMessageImageGeneration = lastMessage && 
                                    lastMessage.author && 
                                    lastMessage.author.bot && (
@@ -1885,6 +1892,9 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
          lastMessage.content && !lastMessage.content.includes('這是修改後的圖片') &&
          !lastMessage.content.includes('我將轉換成黑白版本'))
       );
+      
+      console.log('檢查上一條消息是否包含圖片附件:', hasRecentImageAttachment);
+      console.log('檢查上一條消息是否是圖片生成消息:', isLastMessageImageGeneration);
     }
     
     // 如果沒有最近的圖片附件或圖片生成消息，則不視為圖片修改請求
@@ -3327,8 +3337,8 @@ if (message.reference && message.reference.messageId) {
     if (repliedMessage) {
       isReply = true;
       const repliedAuthor = repliedMessage.author.bot ? "Setsuna" : repliedMessage.author.username;
-      // 使用「使用者」代替特定用戶名，避免機器人誤認為是特定用戶發送的消息
-      replyContext = `[使用者回覆 ${repliedAuthor === client.user.username ? '我' : repliedAuthor} 的訊息: "${repliedMessage.content.substring(0, 50)}${repliedMessage.content.length > 50 ? '...' : ''}"] `;
+      // 使用實際的用戶名，以便機器人能正確識別消息發送者
+      replyContext = `[${message.author.username}回覆 ${repliedAuthor === client.user.username ? '我' : repliedAuthor} 的訊息: "${repliedMessage.content.substring(0, 50)}${repliedMessage.content.length > 50 ? '...' : ''}"] `;
 
       console.log(`Detected reply to message: ${repliedMessage.content}`);
     }
@@ -3344,7 +3354,7 @@ const messageHistory = Array.from(messages.values())
   .reverse()
   .map(msg => ({
     role: msg.author.bot ? 'assistant' : 'user',
-    content: msg.author.bot ? msg.content : `[使用者]: ${msg.content}`,
+    content: msg.author.bot ? msg.content : `[${msg.author.username}]: ${msg.content}`,
     author: msg.author.username
   }));
 
