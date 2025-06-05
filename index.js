@@ -456,6 +456,23 @@ async function saveActiveChannels() {
     // Save to GitHub if available
     if (octokit) {
       try {
+        // Extract owner, repo and path from the repo string
+        let owner, repo, subPath = '';
+        const parts = process.env.GITHUB_REPO.split('/');
+        
+        if (parts.length >= 2) {
+          owner = parts[0];
+          repo = parts[1];
+          
+          // 如果有子目錄路徑
+          if (parts.length > 2) {
+            subPath = parts.slice(2).join('/');
+            if (!subPath.endsWith('/')) {
+              subPath += '/';
+            }
+          }
+        }
+        
         // Convert data to JSON string
 const content = JSON.stringify(data, null, 2);
 
@@ -3065,7 +3082,7 @@ if (message.reference && message.reference.messageId) {
     if (repliedMessage) {
       isReply = true;
       const repliedAuthor = repliedMessage.author.bot ? "Setsuna" : repliedMessage.author.username;
-      replyContext = `[回覆 ${repliedAuthor} 的訊息: "${repliedMessage.content}"] `;
+      replyContext = `[${message.author.username} 回覆 ${repliedAuthor} 的訊息: "${repliedMessage.content}"] `;
 
       console.log(`Detected reply to message: ${repliedMessage.content}`);
     }
@@ -3103,56 +3120,109 @@ if (isReply) {
     message.content = message.content + imageAttachmentInfo;
     
     // 更新消息歷史中的最後一條消息
+    let foundUserMessage = false;
     for (let i = 0; i < messageHistory.length; i++) {
       if (
         messageHistory[i].role === 'user' &&
-        messageHistory[i].author === message.author.username
+        messageHistory[i].author === message.author.username &&
+        messageHistory[i].content.includes(message.content.substring(0, 50)) // 使用消息內容的前50個字符進行匹配
       ) {
         messageHistory[i].content = messageHistory[i].content + imageAttachmentInfo;
+        console.log(`Updated message history with image attachment for ${message.author.username}`);
+        foundUserMessage = true;
         break;
       }
+    }
+    
+    // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
+    if (!foundUserMessage) {
+      messageHistory.push({
+        role: 'user',
+        author: message.author.username,
+        content: `[${message.author.username}]: ${message.content}${imageAttachmentInfo}`
+      });
+      console.log(`Added new message history entry with image attachment for ${message.author.username}`);
     }
   }
   
   // 如果有 YouTube 影片信息，將其添加到消息歷史中
   if (message._youtubeInfo) {
+    let foundUserMessage = false;
     for (let i = 0; i < messageHistory.length; i++) {
       if (
         messageHistory[i].role === 'user' &&
-        messageHistory[i].author === message.author.username
+        messageHistory[i].author === message.author.username &&
+        messageHistory[i].content.includes(message.content.substring(0, 50)) // 使用消息內容的前50個字符進行匹配
       ) {
         messageHistory[i].content = messageHistory[i].content + message._youtubeInfo;
         console.log(`Updated message history with YouTube info for ${message.author.username}`);
+        foundUserMessage = true;
         break;
       }
+    }
+    
+    // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
+    if (!foundUserMessage) {
+      messageHistory.push({
+        role: 'user',
+        author: message.author.username,
+        content: `[${message.author.username}]: ${message.content}${message._youtubeInfo}`
+      });
+      console.log(`Added new message history entry with YouTube info for ${message.author.username}`);
     }
   }
   
   // 如果有 YouTube 搜索結果，將其添加到消息歷史中
   if (message._youtubeSearchInfo) {
+    let foundUserMessage = false;
     for (let i = 0; i < messageHistory.length; i++) {
       if (
         messageHistory[i].role === 'user' &&
-        messageHistory[i].author === message.author.username
+        messageHistory[i].author === message.author.username &&
+        messageHistory[i].content.includes(message.content.substring(0, 50)) // 使用消息內容的前50個字符進行匹配
       ) {
         messageHistory[i].content = messageHistory[i].content + message._youtubeSearchInfo;
         console.log(`Updated message history with YouTube search info for ${message.author.username}`);
+        foundUserMessage = true;
         break;
       }
+    }
+    
+    // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
+    if (!foundUserMessage) {
+      messageHistory.push({
+        role: 'user',
+        author: message.author.username,
+        content: `[${message.author.username}]: ${message.content}${message._youtubeSearchInfo}`
+      });
+      console.log(`Added new message history entry with YouTube search info for ${message.author.username}`);
     }
   }
   
   // 如果有圖像分析結果，將其添加到消息歷史中
   if (message._imageAnalysisInfo) {
+    let foundUserMessage = false;
     for (let i = 0; i < messageHistory.length; i++) {
       if (
         messageHistory[i].role === 'user' &&
-        messageHistory[i].author === message.author.username
+        messageHistory[i].author === message.author.username &&
+        messageHistory[i].content.includes(message.content.substring(0, 50)) // 使用消息內容的前50個字符進行匹配
       ) {
         messageHistory[i].content = messageHistory[i].content + message._imageAnalysisInfo;
         console.log(`Updated message history with image analysis results for ${message.author.username}`);
+        foundUserMessage = true;
         break;
       }
+    }
+    
+    // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
+    if (!foundUserMessage) {
+      messageHistory.push({
+        role: 'user',
+        author: message.author.username,
+        content: `[${message.author.username}]: ${message.content}${message._imageAnalysisInfo}`
+      });
+      console.log(`Added new message history entry with image analysis results for ${message.author.username}`);
     }
   }
   
