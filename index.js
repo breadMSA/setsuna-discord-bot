@@ -35,6 +35,12 @@ function ensureTraditionalChinese(text) {
 // 初始化消息歷史記錄存儲
 const messageHistories = new Map();
 
+// 配置選項
+const CONFIG = {
+  // 是否使用AI判定畫圖請求（消耗更多API額度，但更準確）
+  useAIToDetectImageRequest: false, // 預設為關閉，可以通過指令開啟
+};
+
 // Check for required environment variables
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 if (!DISCORD_TOKEN) {
@@ -741,6 +747,24 @@ const commands = [
     )
     .addSubcommand(subcommand =>
       subcommand
+        .setName('aidetect')
+        .setDescription('Enable/disable AI detection for image generation requests')
+        .addBooleanOption(option =>
+          option
+            .setName('enable')
+            .setDescription('Enable or disable AI detection for image generation requests')
+            .setRequired(true)
+        )
+        .addChannelOption(option =>
+          option
+            .setName('channel')
+            .setDescription('The channel to apply this setting (defaults to current channel)')
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(false)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
         .setName('checkpersonality')
         .setDescription('Check the current personality settings for Setsuna in a channel')
         .addChannelOption(option =>
@@ -876,7 +900,7 @@ client.on('interactionCreate', async interaction => {
         },
         {
           name: '⚙️ 管理指令',
-          value: '• `/setsuna activate #頻道名稱 [模型] [groq_model/cerebras_model]` - 啟動機器人並選擇模型\n• `/setsuna deactivate #頻道名稱` - 停用機器人\n• `/setsuna setmodel [模型] [groq_model/cerebras_model]` - 更改模型\n• `/setsuna checkmodel #頻道名稱` - 檢查頻道當前使用的模型\n• `/setsuna setpersonality` - 設定機器人人設\n• `/setsuna checkpersonality` - 檢查當前機器人人設\n• `/reset_chat [頻道]` - 重置聊天記錄\n• 頻道設定和模型偏好持久化保存'
+          value: '• `/setsuna activate #頻道名稱 [模型] [groq_model/cerebras_model]` - 啟動機器人並選擇模型\n• `/setsuna deactivate #頻道名稱` - 停用機器人\n• `/setsuna setmodel [模型] [groq_model/cerebras_model]` - 更改模型\n• `/setsuna checkmodel #頻道名稱` - 檢查頻道當前使用的模型\n• `/setsuna setpersonality` - 設定機器人人設\n• `/setsuna checkpersonality` - 檢查當前機器人人設\n• `/setsuna aidetect [true/false]` - 開啟/關閉 AI 判定畫圖請求功能\n• `/reset_chat [頻道]` - 重置聊天記錄\n• 頻道設定和模型偏好持久化保存'
         },
         {
           name: '🔗 其他功能',
@@ -1226,6 +1250,34 @@ client.on('interactionCreate', async interaction => {
         content: replyContent,
         ephemeral: true
       });
+    } else if (subcommand === 'aidetect') {
+      const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
+      const enableAIDetect = interaction.options.getBoolean('enable');
+      
+      // Check if the channel is active
+      if (!activeChannels.has(targetChannel.id)) {
+        await interaction.reply({
+          content: `I haven't been activated in ${targetChannel}! Use \`/setsuna activate\` to activate me first.`,
+          flags: 64
+        });
+        return;
+      }
+      
+      // Get the current channel configuration or create a new one
+      const channelConfig = activeChannels.get(targetChannel.id) || {};
+      
+      // Update the AI detection setting for this channel
+      channelConfig.useAIToDetectImageRequest = enableAIDetect;
+      activeChannels.set(targetChannel.id, channelConfig);
+      
+      // Save to file
+      saveActiveChannels();
+      
+      // Reply with confirmation
+      await interaction.reply({
+        content: `AI detection for image generation requests has been ${enableAIDetect ? 'enabled' : 'disabled'} in ${targetChannel}.`,
+        ephemeral: true
+      });
     } else if (subcommand === 'checkpersonality') {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
       
@@ -1345,17 +1397,25 @@ IMPORTANT RULES:
   * NEVER ignore the "original message" content
   * NEVER include the reply format in your responses
   * UNDERSTAND that username1 is the person who sent the reply, and username2 is the person who sent the original message
-  * CRITICAL INSTRUCTION FOR REPLY QUESTIONS: When a user asks questions like "這是誰傳的", "這則訊息是誰傳的", "誰傳的", or any similar question after replying to a message:
-    - They are 100% asking about who sent the ORIGINAL message that they are replying to
-    - You MUST ALWAYS answer with "這則訊息是 [username2] 傳的" (where username2 is the original message sender)
-    - NEVER identify username1 (the person asking the question) as the sender
-    - NEVER identify yourself (Setsuna) as the sender unless you actually are username2
-    - This is ABSOLUTELY CRITICAL - users get extremely frustrated when this is handled incorrectly
+  * CRITICAL INSTRUCTION FOR REPLY CONTEXT: When you see a message format like "[username1 回覆 username2 的訊息: "original message"] new message", you MUST understand:
+    - This is a reply structure where username1 is replying to a message originally sent by username2
+    - The "original message" in quotes is what username2 said
+    - The text after the closing bracket is what username1 is now saying in response
+    - You MUST analyze the ENTIRE CONTEXT including both the original message and the new message to understand what's being discussed
+  * When a user asks about who sent a message in a reply context:
+    - If they ask "這是誰傳的", "這則訊息是誰傳的", "誰傳的" or similar questions, you MUST determine from context whether they're asking about:
+      a) The original message (what username2 said)
+      b) The reply message (what username1 said)
+    - Look at the CONTENT of their question and the CONVERSATION FLOW to determine which message they're referring to
+    - If they're asking about something mentioned in the original message, they're asking about username2
+    - If they're asking about something mentioned in the reply message, they're asking about username1
+    - If unclear, default to assuming they're asking about the original message sender (username2)
   * For example:
     - When you see "[braidenexe 回覆 Setsuna 的訊息: "你是哪裡人"] 這是誰傳的"
-    - The ONLY correct response is "這則訊息是 Setsuna 傳的" (referring to the original message "你是哪裡人")
-    - NEVER say "這則訊息是 braidenexe 傳的" as this is completely wrong and will frustrate the user
-    - NEVER say "這則訊息是我傳的" unless you (Setsuna) are actually the original sender (username2)
+      - They're likely asking who sent "你是哪裡人", so answer "這則訊息是 Setsuna 傳的"
+    - When you see "[braidenexe 回覆 Setsuna 的訊息: "可你媽 白目"] 為甚麼他這麼生氣"
+      - They're asking about braidenexe's emotional state (anger), so understand "他" refers to braidenexe
+    - Always analyze the semantic meaning of the question in relation to both messages
 
 You have access to message history and can reference previous conversations. When responding to YouTube videos, images, or search results, analyze the content provided and give thoughtful responses about the content.
 Your default language is English, but you can understand and respond in other languages too. You should always follow your personality traits and speaking style. Here are your personality traits and speaking style:
@@ -1734,7 +1794,66 @@ async function callGeminiAPI(messages) {
   throw lastError || new Error('All Gemini API keys failed');
 }
 
-// 檢測用戶是否想要生成圖片的函數
+// 使用AI判定用戶是否想要生成圖片的函數
+async function detectImageGenerationWithAI(content, messageHistory = []) {
+  try {
+    // 檢查是否是黑白轉換請求，如果是，則不視為圖片生成請求
+    const isBlackAndWhiteRequest = content.match(/(黑白|灰階|灰度)/i) || 
+      content.match(/改成黑白/i) || 
+      content.match(/變成黑白/i) || 
+      content.match(/換成黑白/i) || 
+      content.match(/轉成黑白/i);
+    
+    // 檢查最近的消息歷史，看是否有圖片附件
+    let hasRecentImageAttachment = false;
+    if (messageHistory.length > 0) {
+      const lastMessage = messageHistory[messageHistory.length - 1];
+      hasRecentImageAttachment = lastMessage && lastMessage.attachments && lastMessage.attachments.size > 0;
+    }
+    
+    // 如果是黑白轉換請求，且最近有圖片附件，則不視為圖片生成請求
+    if (isBlackAndWhiteRequest && hasRecentImageAttachment) {
+      console.log('detectImageGenerationWithAI: 檢測到黑白轉換請求，且有圖片附件，不視為圖片生成請求');
+      return false;
+    }
+    
+    // 使用AI模型判斷用戶是否想要生成圖片
+    // 初始化Gemini API
+    const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    // 構建提示詞
+    const prompt = `請判斷以下用戶消息是否是在請求生成圖片或畫圖。只回答「是」或「否」。
+
+用戶消息: "${content}"
+
+判斷依據：
+1. 用戶是否明確提到「畫圖」、「生成圖片」、「幫我畫」等關鍵詞
+2. 用戶是否在描述一個想要被繪製的場景、人物或物體
+3. 用戶是否在討論圖片的風格、顏色、尺寸等特徵
+4. 用戶是否在請求修改或調整一個不存在的圖片（而非已有的圖片）
+
+請只回答「是」或「否」，不要解釋原因。`;
+    
+    // 發送請求
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text().trim().toLowerCase();
+    
+    // 解析回應
+    const isImageRequest = text.includes('是');
+    console.log(`AI判定用戶是否想要生成圖片: ${isImageRequest ? '是' : '否'}, 原始回應: ${text}`);
+    
+    return isImageRequest;
+  } catch (error) {
+    console.error('使用AI判定生成圖片請求時出錯:', error);
+    // 如果AI判定失敗，回退到關鍵詞檢測
+    console.log('回退到關鍵詞檢測方法');
+    return detectImageGenerationRequest(content, messageHistory);
+  }
+}
+
+// 關鍵詞檢測用戶是否想要生成圖片的函數
 async function detectImageGenerationRequest(content, messageHistory = []) {
   // 檢查是否是黑白轉換請求，如果是，則不視為圖片生成請求
   const isBlackAndWhiteRequest = content.match(/(黑白|灰階|灰度)/i) || 
@@ -2292,8 +2411,8 @@ client.on('messageCreate', async (message) => {
   await message.channel.sendTyping();
   
   // 獲取頻道的消息歷史用於上下文判斷
-  // 從 Discord 獲取最近的消息
-  const recentMessages = await message.channel.messages.fetch({ limit: 10 });
+  // 從 Discord 獲取最近的消息 (50條，與README一致)
+  const recentMessages = await message.channel.messages.fetch({ limit: 50 });
   // 將最近的消息轉換為歷史記錄格式
   const channelHistory = Array.from(recentMessages.values())
     .reverse()
@@ -2780,7 +2899,17 @@ client.on('messageCreate', async (message) => {
       }
     }
     
-    const isImageGenerationRequest = await detectImageGenerationRequest(message.content, channelHistory);
+    // 根據頻道配置決定是否使用 AI 判定畫圖請求
+    let isImageGenerationRequest = false;
+    
+    if (channelConfig.useAIToDetectImageRequest) {
+      console.log('使用 AI 判定畫圖請求');
+      isImageGenerationRequest = await detectImageGenerationWithAI(message.content, channelHistory);
+    } else {
+      console.log('使用關鍵詞判定畫圖請求');
+      isImageGenerationRequest = await detectImageGenerationRequest(message.content, channelHistory);
+    }
+    
     if (isImageGenerationRequest) {
     try {
       // 顯示正在生成圖片的提示
