@@ -1818,6 +1818,9 @@ async function detectImageGenerationWithAI(content, messageHistory = []) {
     }
     
     // 使用AI模型判斷用戶是否想要生成圖片
+    // 動態導入 Google GenAI
+    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    
     // 初始化Gemini API
     const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
@@ -1852,6 +1855,84 @@ async function detectImageGenerationWithAI(content, messageHistory = []) {
     return detectImageGenerationRequest(content, messageHistory);
   }
 }
+
+// 使用AI判定用戶是否想要修改圖片的函數
+async function detectImageModificationWithAI(content, messageHistory = []) {
+  try {
+    // 檢查最近的消息歷史，看是否有圖片附件或是圖片生成消息
+    let hasRecentImageAttachment = false;
+    let isLastMessageImageGeneration = false;
+    
+    if (messageHistory.length > 0) {
+      const lastMessage = messageHistory[messageHistory.length - 1];
+      hasRecentImageAttachment = lastMessage && lastMessage.attachments && lastMessage.attachments.size > 0;
+      
+      isLastMessageImageGeneration = lastMessage && 
+                                   lastMessage.author && 
+                                   lastMessage.author.bot && (
+        // 優先檢查特殊標記
+        (lastMessage.content && lastMessage.content.includes('[IMAGE_GENERATED]')) ||
+        // 檢查消息內容是否包含圖片生成相關文字
+        (lastMessage.content && (
+          lastMessage.content.includes('這是根據你的描述生成的圖片') ||
+          lastMessage.content.includes('生成的圖片') ||
+          lastMessage.content.includes('根據你的描述') ||
+          lastMessage.content.includes('這是轉換成彩色的圖片') ||
+          lastMessage.content.includes('這是根據你的要求生成的圖片')
+        )) ||
+        // 檢查機器人的消息是否包含圖片附件，且不是回覆用戶的圖片修改請求
+        (lastMessage.attachments && lastMessage.attachments.size > 0 && 
+         lastMessage.content && !lastMessage.content.includes('這是修改後的圖片') &&
+         !lastMessage.content.includes('我將轉換成黑白版本'))
+      );
+    }
+    
+    // 如果沒有最近的圖片附件或圖片生成消息，則不視為圖片修改請求
+    if (!hasRecentImageAttachment && !isLastMessageImageGeneration) {
+      console.log('detectImageModificationWithAI: 沒有最近的圖片附件或圖片生成消息，不視為圖片修改請求');
+      return false;
+    }
+    
+    // 使用AI模型判斷用戶是否想要修改圖片
+    // 動態導入 Google GenAI
+    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    
+    // 初始化Gemini API
+    const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    // 構建提示詞
+    const prompt = `請判斷以下用戶消息是否是在請求修改或調整一張已存在的圖片。只回答「是」或「否」。
+
+用戶消息: "${content}"
+
+判斷依據：
+1. 用戶是否明確提到「修改圖片」、「調整圖片」、「改變圖片」等關鍵詞
+2. 用戶是否在請求將圖片轉換為黑白、彩色或其他風格
+3. 用戶是否在討論對現有圖片的調整，而非生成新圖片
+4. 用戶是否使用「改成」、「變成」、「換成」、「轉成」等詞彙來描述對現有圖片的修改
+
+請只回答「是」或「否」，不要解釋原因。`;
+    
+    // 發送請求
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text().trim().toLowerCase();
+    
+    // 解析回應
+    const isModificationRequest = text.includes('是');
+    console.log(`AI判定用戶是否想要修改圖片: ${isModificationRequest ? '是' : '否'}, 原始回應: ${text}`);
+    
+    return isModificationRequest;
+  } catch (error) {
+    console.error('使用AI判定修改圖片請求時出錯:', error);
+    // 如果AI判定失敗，回退到關鍵詞檢測
+    console.log('回退到關鍵詞檢測方法');
+    return false; // 這裡不回退到關鍵詞檢測，因為後續代碼會處理
+  }
+}
+
+
 
 // 關鍵詞檢測用戶是否想要生成圖片的函數
 async function detectImageGenerationRequest(content, messageHistory = []) {
@@ -2518,8 +2599,19 @@ client.on('messageCreate', async (message) => {
     message.content.match(/請(改|換|轉|變)/i) ||
     message.content.match(/幫我(改|換|轉|變)/i);
   
+  // 根據頻道配置決定是否使用 AI 判定圖片修改請求
+  let isModificationRequest = false;
+  
+  if (channelConfig.useAIToDetectImageRequest) {
+    console.log('使用 AI 判定圖片修改請求');
+    isModificationRequest = await detectImageModificationWithAI(message.content, channelHistory);
+  } else {
+    console.log('使用關鍵詞判定圖片修改請求');
+    isModificationRequest = isImageModificationRequest;
+  }
+  
   // 如果上一條消息是圖片生成或包含圖片附件，且當前消息是修改請求，則視為圖片修改請求
-  const shouldProcessImageModification = (hasImageAttachment || isLastMessageImageGeneration) && isImageModificationRequest;
+  const shouldProcessImageModification = (hasImageAttachment || isLastMessageImageGeneration) && isModificationRequest;
   
   // 記錄檢測結果
   if (shouldProcessImageModification) {
@@ -3235,7 +3327,8 @@ if (message.reference && message.reference.messageId) {
     if (repliedMessage) {
       isReply = true;
       const repliedAuthor = repliedMessage.author.bot ? "Setsuna" : repliedMessage.author.username;
-      replyContext = `[${message.author.username} 回覆 ${repliedAuthor} 的訊息: "${repliedMessage.content}"] `;
+      // 使用「使用者」代替特定用戶名，避免機器人誤認為是特定用戶發送的消息
+      replyContext = `[使用者回覆 ${repliedAuthor === client.user.username ? '我' : repliedAuthor} 的訊息: "${repliedMessage.content.substring(0, 50)}${repliedMessage.content.length > 50 ? '...' : ''}"] `;
 
       console.log(`Detected reply to message: ${repliedMessage.content}`);
     }
@@ -3251,7 +3344,7 @@ const messageHistory = Array.from(messages.values())
   .reverse()
   .map(msg => ({
     role: msg.author.bot ? 'assistant' : 'user',
-    content: msg.author.bot ? msg.content : `[${msg.author.username}]: ${msg.content}`,
+    content: msg.author.bot ? msg.content : `[使用者]: ${msg.content}`,
     author: msg.author.username
   }));
 
