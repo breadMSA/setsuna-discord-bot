@@ -267,8 +267,24 @@ async function setupGitHub() {
         auth: process.env.GITHUB_TOKEN
       });
       
-      // Extract owner and repo from the repo string (format: owner/repo)
-      const [owner, repo] = process.env.GITHUB_REPO.split('/');
+      // Extract owner, repo and path from the repo string (format: owner/repo or owner/repo/path)
+let owner, repo, subPath = '';
+const parts = process.env.GITHUB_REPO.split('/');
+
+if (parts.length >= 2) {
+  owner = parts[0];
+  repo = parts[1];
+  
+  // 如果有子目錄路徑
+  if (parts.length > 2) {
+    subPath = parts.slice(2).join('/');
+    if (!subPath.endsWith('/')) {
+      subPath += '/';
+    }
+  }
+}
+
+console.log(`GitHub setup: owner=${owner}, repo=${repo}, subPath=${subPath || 'none'}`);
       
       console.log('GitHub API initialized successfully');
       return true;
@@ -320,14 +336,11 @@ async function loadActiveChannels() {
     // If primary file doesn't exist or is empty, try GitHub
     if (!loaded && octokit) {
       try {
-        // Extract owner and repo from the repo string
-        const [owner, repo] = process.env.GITHUB_REPO.split('/');
-        
         // Get file content from GitHub
-        const response = await octokit.repos.getContent({
-          owner,
-          repo,
-          path: 'active_channels_backup.json'
+const response = await octokit.repos.getContent({
+  owner,
+  repo,
+  path: `${subPath}active_channels_backup.json`
         });
         
         // Decode content from base64
@@ -443,25 +456,22 @@ async function saveActiveChannels() {
     // Save to GitHub if available
     if (octokit) {
       try {
-        // Extract owner and repo from the repo string
-        const [owner, repo] = process.env.GITHUB_REPO.split('/');
-        
         // Convert data to JSON string
-        const content = JSON.stringify(data, null, 2);
-        
-        // Try to get the file first to get its SHA
-        try {
-          const fileResponse = await octokit.repos.getContent({
-            owner,
-            repo,
-            path: 'active_channels_backup.json'
-          });
+const content = JSON.stringify(data, null, 2);
+
+// Try to get the file first to get its SHA
+try {
+  const fileResponse = await octokit.repos.getContent({
+    owner,
+    repo,
+    path: `${subPath}active_channels_backup.json`
+  });
           
           // Update existing file
           await octokit.repos.createOrUpdateFileContents({
             owner,
             repo,
-            path: 'active_channels_backup.json',
+            path: `${subPath}active_channels_backup.json`,
             message: 'Update active channels backup',
             content: Buffer.from(content).toString('base64'),
             sha: fileResponse.data.sha
@@ -474,7 +484,7 @@ async function saveActiveChannels() {
             await octokit.repos.createOrUpdateFileContents({
               owner,
               repo,
-              path: 'active_channels_backup.json',
+              path: `${subPath}active_channels_backup.json`,
               message: 'Create active channels backup',
               content: Buffer.from(content).toString('base64')
             });
@@ -3071,7 +3081,7 @@ const messageHistory = Array.from(messages.values())
   .reverse()
   .map(msg => ({
     role: msg.author.bot ? 'assistant' : 'user',
-    content: msg.content,
+    content: msg.author.bot ? msg.content : `[${msg.author.username}]: ${msg.content}`,
     author: msg.author.username
   }));
 
