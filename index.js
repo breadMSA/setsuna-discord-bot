@@ -336,6 +336,23 @@ async function loadActiveChannels() {
     // If primary file doesn't exist or is empty, try GitHub
     if (!loaded && octokit) {
       try {
+        // Extract owner, repo and path from the repo string
+        let owner, repo, subPath = '';
+        const parts = process.env.GITHUB_REPO.split('/');
+        
+        if (parts.length >= 2) {
+          owner = parts[0];
+          repo = parts[1];
+          
+          // 如果有子目錄路徑
+          if (parts.length > 2) {
+            subPath = parts.slice(2).join('/');
+            if (!subPath.endsWith('/')) {
+              subPath += '/';
+            }
+          }
+        }
+        
         // Get file content from GitHub
 const response = await octokit.repos.getContent({
   owner,
@@ -3104,14 +3121,36 @@ const messageHistory = Array.from(messages.values())
 
 // 如果是回覆，將原訊息內容加上上下文說明
 if (isReply) {
+  let foundUserMessage = false;
   for (let i = 0; i < messageHistory.length; i++) {
     if (
       messageHistory[i].role === 'user' &&
-      messageHistory[i].content === message.content
+      messageHistory[i].author === message.author.username &&
+      messageHistory[i].content.includes(`[${message.author.username}]: ${message.content.substring(0, 50)}`) // 使用用戶名和消息內容的前50個字符進行匹配
     ) {
+      // 保存原始內容以便調試
+      const originalContent = messageHistory[i].content;
+      
+      // 替換原始內容為帶有回覆上下文的內容
       messageHistory[i].content = replyContext + message.content;
+      
+      console.log(`Updated message history with reply context for ${message.author.username}`);
+      console.log(`Original content: ${originalContent}`);
+      console.log(`New content: ${messageHistory[i].content}`);
+      
+      foundUserMessage = true;
       break;
     }
+  }
+  
+  // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
+  if (!foundUserMessage) {
+    messageHistory.push({
+      role: 'user',
+      author: message.author.username,
+      content: replyContext + message.content
+    });
+    console.log(`Added new message history entry with reply context for ${message.author.username}`);
   }
 }
   
