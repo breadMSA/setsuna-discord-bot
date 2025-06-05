@@ -1345,17 +1345,17 @@ IMPORTANT RULES:
   * NEVER ignore the "original message" content
   * NEVER include the reply format in your responses
   * UNDERSTAND that username1 is the person who sent the reply, and username2 is the person who sent the original message
-  * When asked questions like "這是誰傳的" or "這則訊息是誰傳的" about a reply message, you MUST:
-    - Understand they are asking about the ORIGINAL message ("original message"), not the reply
-    - ALWAYS identify username2 as the sender of the original message
-    - NEVER say that username1 (the replier) is the sender of the original message
-    - NEVER say that you (Setsuna) are the sender unless you actually are (username2 is Setsuna)
+  * CRITICAL INSTRUCTION FOR REPLY QUESTIONS: When a user asks questions like "這是誰傳的", "這則訊息是誰傳的", "誰傳的", or any similar question after replying to a message:
+    - They are 100% asking about who sent the ORIGINAL message that they are replying to
+    - You MUST ALWAYS answer with "這則訊息是 [username2] 傳的" (where username2 is the original message sender)
+    - NEVER identify username1 (the person asking the question) as the sender
+    - NEVER identify yourself (Setsuna) as the sender unless you actually are username2
+    - This is ABSOLUTELY CRITICAL - users get extremely frustrated when this is handled incorrectly
   * For example:
-    - When you see "[braidenexe 回覆 Setsuna 的訊息: "你是哪裡人"] 這個問題可以再回答一次嗎 我有點忘了"
-    - You MUST understand they want you to repeat your answer about where you are from
-    - You MUST NOT say you forgot or ask them to repeat the question
-    - You MUST provide the answer about your location again
-    - If asked "這是誰傳的" or "這則訊息是誰傳的", you MUST know "這則訊息是 Setsuna 傳的" (referring to the original message "你是哪裡人")
+    - When you see "[braidenexe 回覆 Setsuna 的訊息: "你是哪裡人"] 這是誰傳的"
+    - The ONLY correct response is "這則訊息是 Setsuna 傳的" (referring to the original message "你是哪裡人")
+    - NEVER say "這則訊息是 braidenexe 傳的" as this is completely wrong and will frustrate the user
+    - NEVER say "這則訊息是我傳的" unless you (Setsuna) are actually the original sender (username2)
 
 You have access to message history and can reference previous conversations. When responding to YouTube videos, images, or search results, analyze the content provided and give thoughtful responses about the content.
 Your default language is English, but you can understand and respond in other languages too. You should always follow your personality traits and speaking style. Here are your personality traits and speaking style:
@@ -3128,37 +3128,15 @@ const messageHistory = Array.from(messages.values())
 
 // 如果是回覆，將原訊息內容加上上下文說明
 if (isReply) {
-  let foundUserMessage = false;
-  for (let i = 0; i < messageHistory.length; i++) {
-    if (
-      messageHistory[i].role === 'user' &&
-      messageHistory[i].author === message.author.username &&
-      messageHistory[i].content.includes(`[${message.author.username}]: ${message.content.substring(0, 50)}`) // 使用用戶名和消息內容的前50個字符進行匹配
-    ) {
-      // 保存原始內容以便調試
-      const originalContent = messageHistory[i].content;
-      
-      // 替換原始內容為帶有回覆上下文的內容
-      messageHistory[i].content = replyContext + message.content;
-      
-      console.log(`Updated message history with reply context for ${message.author.username}`);
-      console.log(`Original content: ${originalContent}`);
-      console.log(`New content: ${messageHistory[i].content}`);
-      
-      foundUserMessage = true;
-      break;
-    }
-  }
-  
-  // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
-  if (!foundUserMessage) {
-    messageHistory.push({
-      role: 'user',
-      author: message.author.username,
-      content: replyContext + message.content
-    });
-    console.log(`Added new message history entry with reply context for ${message.author.username}`);
-  }
+  // 直接添加一個新的消息，確保回覆上下文被正確處理
+  messageHistory.push({
+    role: 'user',
+    author: message.author.username,
+    content: replyContext + message.content
+  });
+  console.log(`Added new message history entry with reply context for ${message.author.username}`);
+  console.log(`Reply context: ${replyContext}`);
+  console.log(`Full message: ${replyContext + message.content}`);
 }
   
   // 如果有圖片附件，將圖片信息添加到消息內容中
