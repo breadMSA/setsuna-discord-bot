@@ -2793,9 +2793,9 @@ client.on('messageCreate', async (message) => {
            await message.channel.send(`抱歉，我無法將圖片轉換為${requestedStyle || '新'}風格。錯誤信息: ${error.message}`);
            return;
          }
-       } else if (isGeneralModificationRequest) {
-         // 如果是一般修改請求，使用 Gemini 根據用戶的具體要求進行修改
-         console.log('檢測到一般修改請求，使用 Gemini 進行圖片修改');
+       } else if (isGeneralModificationRequest || message.content.includes('去掉') || message.content.includes('移除') || message.content.includes('刪除')) {
+         // 如果是一般修改請求或包含「去掉」、「移除」、「刪除」等關鍵詞，使用 Gemini 根據用戶的具體要求進行修改
+         console.log('檢測到一般修改請求或文字移除請求，使用 Gemini 進行圖片修改');
          
          // 獲取上一條消息中的圖片附件
          const previousAttachment = previousMessage.attachments.first();
