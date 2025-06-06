@@ -2520,6 +2520,38 @@ client.on('messageCreate', async (message) => {
   // 獲取上一條消息（不是當前消息）
   const previousMessage = channelHistory.length > 1 ? channelHistory[channelHistory.length - 2] : null;
   
+  // 檢查是否是回覆消息，並且回覆的是包含圖片的消息
+  let repliedMessage = null;
+  let isReplyToImageMessage = false;
+  
+  if (message.reference && message.reference.messageId) {
+    try {
+      // 獲取被回覆的消息
+      repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
+      
+      // 檢查被回覆的消息是否包含圖片附件或是機器人發送的圖片生成/修改消息
+      isReplyToImageMessage = repliedMessage && (
+        // 檢查是否包含圖片附件
+        (repliedMessage.attachments.size > 0 && 
+         Array.from(repliedMessage.attachments.values()).some(attachment => 
+           attachment.contentType && attachment.contentType.startsWith('image/'))) ||
+        // 檢查是否是機器人發送的圖片生成/修改消息
+        (repliedMessage.author.id === client.user.id && (
+          repliedMessage.content.includes('生成的圖片') ||
+          repliedMessage.content.includes('修改後的圖片') ||
+          repliedMessage.content.includes('根據你的描述') ||
+          repliedMessage.content.includes('根據你的要求') ||
+          repliedMessage.content.includes('轉換成彩色的圖片') ||
+          repliedMessage.content.includes('轉換成新風格的圖片')
+        ))
+      );
+      
+      console.log(`檢查回覆的消息是否包含圖片: ${isReplyToImageMessage}`);
+    } catch (error) {
+      console.error('獲取回覆消息時出錯:', error);
+    }
+  }
+  
   // 檢查上一條消息是否包含圖片附件
   const hasImageAttachment = previousMessage && 
                            previousMessage.attachments && 
@@ -2620,14 +2652,15 @@ client.on('messageCreate', async (message) => {
     isModificationRequest = isImageModificationRequest;
   }
   
-  // 如果上一條消息是圖片生成或包含圖片附件，且當前消息是修改請求，則視為圖片修改請求
-  const shouldProcessImageModification = (hasImageAttachment || isLastMessageImageGeneration) && isModificationRequest;
+  // 如果上一條消息是圖片生成或包含圖片附件，或者是回覆包含圖片的消息，且當前消息是修改請求，則視為圖片修改請求
+  const shouldProcessImageModification = ((hasImageAttachment || isLastMessageImageGeneration || isReplyToImageMessage) && isModificationRequest);
   
   // 記錄檢測結果
   if (shouldProcessImageModification) {
     console.log('檢測到圖片修改請求:', message.content);
     console.log('上一條消息包含圖片附件:', hasImageAttachment);
     console.log('上一條消息是圖片生成:', isLastMessageImageGeneration);
+    console.log('是回覆包含圖片的消息:', isReplyToImageMessage);
     console.log('是否處理圖片修改:', shouldProcessImageModification);
   }
 
@@ -2652,17 +2685,29 @@ client.on('messageCreate', async (message) => {
         return;
       }
 
-      // 獲取上一條消息中的圖片
-      const lastAttachment = previousMessage.attachments.first();
-      if (!lastAttachment) {
+      // 獲取需要修改的圖片（優先使用被回覆消息中的圖片，其次是上一條消息中的圖片）
+      let targetAttachment = null;
+      
+      // 如果是回覆消息，優先使用被回覆消息中的圖片
+      if (isReplyToImageMessage && repliedMessage) {
+        targetAttachment = repliedMessage.attachments.first();
+        console.log('使用被回覆消息中的圖片');
+      } 
+      // 否則使用上一條消息中的圖片
+      else if (previousMessage) {
+        targetAttachment = previousMessage.attachments.first();
+        console.log('使用上一條消息中的圖片');
+      }
+      
+      if (!targetAttachment) {
         await statusMessage.delete().catch(console.error);
         await message.channel.send('抱歉，找不到需要修改的圖片。');
         return;
       }
 
       // 下載圖片
-      console.log(`開始下載圖片: ${lastAttachment.url}`);
-      const response = await fetch(lastAttachment.url);
+      console.log(`開始下載圖片: ${targetAttachment.url}`);
+      const response = await fetch(targetAttachment.url);
       const arrayBuffer = await response.arrayBuffer();
       console.log(`圖片下載完成，大小: ${arrayBuffer.byteLength} 字節`);
       const imageBuffer = Buffer.from(arrayBuffer);
@@ -2732,42 +2777,40 @@ client.on('messageCreate', async (message) => {
        } else if (isColorRequest) {
          // 如果是轉換為彩色，我們需要重新生成圖片
          
-         // 獲取上一條消息中的圖片附件
-         const previousAttachment = previousMessage.attachments.first();
-         if (!previousAttachment) {
-           console.log('找不到上一條消息中的圖片附件');
-           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保上一條消息中包含圖片。');
+         // 使用已經獲取的目標圖片附件
+         if (!targetAttachment) {
+           console.log('找不到需要修改的圖片附件');
+           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
            return;
          }
          
-         console.log(`找到上一條消息中的圖片附件: ${previousAttachment.url}`);
+         console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
          
          // 構建彩色轉換提示詞
          const colorPrompt = '請將這張圖片轉換成彩色，保持原圖的主要內容和構圖';
          
          // 使用 Gemini 生成彩色圖片
-         const { imageData, mimeType } = await generateImageWithGemini(colorPrompt, previousAttachment.url);
+         const { imageData, mimeType } = await generateImageWithGemini(colorPrompt, targetAttachment.url);
          
          return await message.channel.send({
            content: '這是轉換成彩色的圖片：',
            files: [{
              attachment: Buffer.from(imageData, 'base64'),
-             name: `color-${previousAttachment.name}`
+             name: `color-${targetAttachment.name}`
            }]
          });
        } else if (isStyleRequest) {
          // 如果是風格修改請求，使用 Gemini 重新生成圖片
          console.log(`檢測到風格修改請求，請求風格: ${requestedStyle}`);
          
-         // 獲取上一條消息中的圖片附件
-         const previousAttachment = previousMessage.attachments.first();
-         if (!previousAttachment) {
-           console.log('找不到上一條消息中的圖片附件');
-           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保上一條消息中包含圖片。');
+         // 使用已經獲取的目標圖片附件
+         if (!targetAttachment) {
+           console.log('找不到需要修改的圖片附件');
+           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
            return;
          }
          
-         console.log(`找到上一條消息中的圖片附件: ${previousAttachment.url}`);
+         console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
          
          // 構建提示詞，告訴 Gemini 要生成什麼風格的圖片
          let stylePrompt = message.content;
@@ -2778,14 +2821,14 @@ client.on('messageCreate', async (message) => {
          
          try {
            // 使用 Gemini 生成新風格的圖片
-           const { imageData, mimeType } = await generateImageWithGemini(stylePrompt, previousAttachment.url);
+           const { imageData, mimeType } = await generateImageWithGemini(stylePrompt, targetAttachment.url);
            
            // 發送生成的圖片
            return await message.channel.send({
              content: `這是轉換成${requestedStyle || '新'}風格的圖片：`,
              files: [{
                attachment: Buffer.from(imageData, 'base64'),
-               name: `style-${previousAttachment.name}`
+               name: `style-${targetAttachment.name}`
              }]
            });
          } catch (error) {
@@ -2793,19 +2836,22 @@ client.on('messageCreate', async (message) => {
            await message.channel.send(`抱歉，我無法將圖片轉換為${requestedStyle || '新'}風格。錯誤信息: ${error.message}`);
            return;
          }
-       } else if (isGeneralModificationRequest || message.content.includes('去掉') || message.content.includes('移除') || message.content.includes('刪除')) {
-         // 如果是一般修改請求或包含「去掉」、「移除」、「刪除」等關鍵詞，使用 Gemini 根據用戶的具體要求進行修改
-         console.log('檢測到一般修改請求或文字移除請求，使用 Gemini 進行圖片修改');
+       } else if (isGeneralModificationRequest || message.content.includes('去掉') || message.content.includes('移除') || message.content.includes('刪除') || 
+                 message.content.includes('紅潤') || message.content.includes('改成') || message.content.includes('變成') || 
+                 message.content.includes('換成') || message.content.includes('轉成') || message.content.includes('修改') || 
+                 message.content.includes('調整') || message.content.includes('增加') || message.content.includes('減少') || 
+                 message.content.includes('添加') || message.content.includes('更改') || message.content.includes('變更')) {
+         // 如果是一般修改請求或包含各種修改關鍵詞，使用 Gemini 根據用戶的具體要求進行修改
+         console.log('檢測到一般修改請求，使用 Gemini 進行圖片修改');
          
-         // 獲取上一條消息中的圖片附件
-         const previousAttachment = previousMessage.attachments.first();
-         if (!previousAttachment) {
-           console.log('找不到上一條消息中的圖片附件');
-           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保上一條消息中包含圖片。');
+         // 使用已經獲取的目標圖片附件
+         if (!targetAttachment) {
+           console.log('找不到需要修改的圖片附件');
+           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
            return;
          }
          
-         console.log(`找到上一條消息中的圖片附件: ${previousAttachment.url}`);
+         console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
          
          try {
            // 使用用戶的原始請求作為提示詞
@@ -2813,14 +2859,14 @@ client.on('messageCreate', async (message) => {
            console.log(`使用提示詞進行圖片修改: ${modificationPrompt}`);
            
            // 使用 Gemini 生成修改後的圖片
-           const { imageData, mimeType } = await generateImageWithGemini(modificationPrompt, previousAttachment.url);
+           const { imageData, mimeType } = await generateImageWithGemini(modificationPrompt, targetAttachment.url);
            
            // 發送生成的圖片
            return await message.channel.send({
              content: `這是根據你的要求修改後的圖片：`,
              files: [{
                attachment: Buffer.from(imageData, 'base64'),
-               name: `modified-${previousAttachment.name}`
+               name: `modified-${targetAttachment.name}`
              }]
            });
          } catch (error) {
@@ -2835,8 +2881,8 @@ client.on('messageCreate', async (message) => {
       // 發送處理後的圖片
       console.log(`準備發送處理後的圖片，大小: ${processedImage.length} 字節`);
       try {
-        // 獲取上一條消息中的圖片附件（用於文件名）
-        const attachmentForFileName = previousMessage.attachments.first();
+        // 使用目標圖片附件（用於文件名）
+        const attachmentForFileName = targetAttachment;
         // 確保文件名有正確的擴展名
         let fileName = attachmentForFileName ? attachmentForFileName.name : 'processed-image.jpg';
         // 如果原始文件名沒有擴展名或擴展名不是圖片格式，添加 .jpg 擴展名
