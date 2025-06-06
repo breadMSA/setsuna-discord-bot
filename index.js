@@ -1817,6 +1817,13 @@ async function detectImageGenerationWithAI(content, messageHistory = []) {
       return false;
     }
     
+    // 檢查是否是修改請求（如「改成血月」），如果是，則不視為圖片生成請求
+    const isModificationRequest = content.match(/改成|變成|換成|轉成|修改成|調整成/i);
+    if (isModificationRequest && !content.match(/畫|生成|繪製|做|創造|創建/i)) {
+      console.log('detectImageGenerationWithAI: 檢測到修改請求，但不包含生成關鍵詞，不視為圖片生成請求');
+      return false;
+    }
+    
     // 使用AI模型判斷用戶是否想要生成圖片
     // 動態導入 Google GenAI
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
@@ -1862,6 +1869,7 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
     // 檢查最近的消息歷史，看是否有圖片附件或是圖片生成消息
     let hasRecentImageAttachment = false;
     let isLastMessageImageGeneration = false;
+    let isReplyToAIGeneratedImage = false;
     
     // 檢查上一條消息（不是當前消息）
     if (messageHistory.length > 1) {
@@ -1897,9 +1905,38 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
       console.log('檢查上一條消息是否是圖片生成消息:', isLastMessageImageGeneration);
     }
     
-    // 如果沒有最近的圖片附件或圖片生成消息，則不視為圖片修改請求
-    if (!hasRecentImageAttachment && !isLastMessageImageGeneration) {
-      console.log('detectImageModificationWithAI: 沒有最近的圖片附件或圖片生成消息，不視為圖片修改請求');
+    // 檢查當前消息是否是回覆 AI 生成的圖片
+    const currentMessage = messageHistory[messageHistory.length - 1];
+    if (currentMessage && currentMessage.reference && currentMessage.reference.messageId) {
+      try {
+        // 獲取被回覆的消息
+        const repliedMsg = await currentMessage.channel.messages.fetch(currentMessage.reference.messageId);
+        // 檢查被回覆的消息是否是 AI 生成的圖片
+        isReplyToAIGeneratedImage = repliedMsg && 
+                                 repliedMsg.author && 
+                                 repliedMsg.author.bot && 
+                                 repliedMsg.attachments && 
+                                 repliedMsg.attachments.size > 0 && (
+          // 檢查特殊標記
+          (repliedMsg.content && repliedMsg.content.includes('[IMAGE_GENERATED]')) ||
+          // 檢查消息內容是否包含圖片生成相關文字
+          (repliedMsg.content && (
+            repliedMsg.content.includes('這是根據你的描述生成的圖片') ||
+            repliedMsg.content.includes('生成的圖片') ||
+            repliedMsg.content.includes('根據你的描述') ||
+            repliedMsg.content.includes('這是轉換成彩色的圖片') ||
+            repliedMsg.content.includes('這是根據你的要求生成的圖片')
+          ))
+        );
+        console.log('檢查是否回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
+      } catch (error) {
+        console.error('獲取被回覆消息時出錯:', error);
+      }
+    }
+    
+    // 如果沒有最近的圖片附件、圖片生成消息或回覆 AI 生成的圖片，則不視為圖片修改請求
+    if (!hasRecentImageAttachment && !isLastMessageImageGeneration && !isReplyToAIGeneratedImage) {
+      console.log('detectImageModificationWithAI: 沒有最近的圖片附件、圖片生成消息或回覆 AI 生成的圖片，不視為圖片修改請求');
       return false;
     }
     
@@ -2653,7 +2690,36 @@ client.on('messageCreate', async (message) => {
   }
   
   // 如果上一條消息是圖片生成或包含圖片附件，或者是回覆包含圖片的消息，且當前消息是修改請求，則視為圖片修改請求
-  const shouldProcessImageModification = ((hasImageAttachment || isLastMessageImageGeneration || isReplyToImageMessage) && isModificationRequest);
+  // 特別處理回覆 AI 生成圖片的情況
+  let isReplyToAIGeneratedImage = false;
+  if (message.reference && message.reference.messageId) {
+    try {
+      // 獲取被回覆的消息
+      const repliedMsg = await message.channel.messages.fetch(message.reference.messageId);
+      // 檢查被回覆的消息是否是 AI 生成的圖片
+      isReplyToAIGeneratedImage = repliedMsg && 
+                               repliedMsg.author && 
+                               repliedMsg.author.bot && 
+                               repliedMsg.attachments && 
+                               repliedMsg.attachments.size > 0 && (
+        // 檢查特殊標記
+        (repliedMsg.content && repliedMsg.content.includes('[IMAGE_GENERATED]')) ||
+        // 檢查消息內容是否包含圖片生成相關文字
+        (repliedMsg.content && (
+          repliedMsg.content.includes('這是根據你的描述生成的圖片') ||
+          repliedMsg.content.includes('生成的圖片') ||
+          repliedMsg.content.includes('根據你的描述') ||
+          repliedMsg.content.includes('這是轉換成彩色的圖片') ||
+          repliedMsg.content.includes('這是根據你的要求生成的圖片')
+        ))
+      );
+      console.log('檢查是否回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
+    } catch (error) {
+      console.error('獲取被回覆消息時出錯:', error);
+    }
+  }
+  
+  const shouldProcessImageModification = ((hasImageAttachment || isLastMessageImageGeneration || isReplyToImageMessage || isReplyToAIGeneratedImage) && isModificationRequest);
   
   // 記錄檢測結果
   if (shouldProcessImageModification) {
@@ -2661,6 +2727,7 @@ client.on('messageCreate', async (message) => {
     console.log('上一條消息包含圖片附件:', hasImageAttachment);
     console.log('上一條消息是圖片生成:', isLastMessageImageGeneration);
     console.log('是回覆包含圖片的消息:', isReplyToImageMessage);
+    console.log('是回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
     console.log('是否處理圖片修改:', shouldProcessImageModification);
   }
 
@@ -2689,7 +2756,7 @@ client.on('messageCreate', async (message) => {
       let targetAttachment = null;
       
       // 如果是回覆消息，優先使用被回覆消息中的圖片
-      if (isReplyToImageMessage && repliedMessage) {
+      if ((isReplyToImageMessage || isReplyToAIGeneratedImage) && repliedMessage) {
         targetAttachment = repliedMessage.attachments.first();
         console.log('使用被回覆消息中的圖片');
       } 
