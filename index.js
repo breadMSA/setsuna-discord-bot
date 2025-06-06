@@ -1925,7 +1925,9 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
             repliedMsg.content.includes('生成的圖片') ||
             repliedMsg.content.includes('根據你的描述') ||
             repliedMsg.content.includes('這是轉換成彩色的圖片') ||
-            repliedMsg.content.includes('這是根據你的要求生成的圖片')
+            repliedMsg.content.includes('這是根據你的要求生成的圖片') ||
+            repliedMsg.content.includes('這是根據你的要求修改後的圖片') ||
+            repliedMsg.content.includes('修改後的圖片')
           ))
         );
         console.log('檢查是否回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
