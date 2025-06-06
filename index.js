@@ -1871,8 +1871,45 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
     let isLastMessageImageGeneration = false;
     let isReplyToAIGeneratedImage = false;
     
-    // 檢查上一條消息（不是當前消息）
-    if (messageHistory.length > 1) {
+    // 優先檢查當前消息是否是回覆 AI 生成的圖片
+    const currentMessage = messageHistory[messageHistory.length - 1];
+    if (currentMessage && currentMessage.reference && currentMessage.reference.messageId) {
+      try {
+        // 獲取被回覆的消息
+        const repliedMsg = await currentMessage.channel.messages.fetch(currentMessage.reference.messageId);
+        // 檢查被回覆的消息是否包含圖片附件
+        if (repliedMsg && repliedMsg.attachments && repliedMsg.attachments.size > 0) {
+          hasRecentImageAttachment = true;
+          console.log('檢查被回覆的消息是否包含圖片附件:', hasRecentImageAttachment);
+        }
+        
+        // 檢查被回覆的消息是否是 AI 生成的圖片
+        isReplyToAIGeneratedImage = repliedMsg && 
+                                 repliedMsg.author && 
+                                 repliedMsg.author.bot && 
+                                 repliedMsg.attachments && 
+                                 repliedMsg.attachments.size > 0 && (
+          // 檢查特殊標記
+          (repliedMsg.content && repliedMsg.content.includes('[IMAGE_GENERATED]')) ||
+          // 檢查消息內容是否包含圖片生成相關文字
+          (repliedMsg.content && (
+            repliedMsg.content.includes('這是根據你的描述生成的圖片') ||
+            repliedMsg.content.includes('生成的圖片') ||
+            repliedMsg.content.includes('根據你的描述') ||
+            repliedMsg.content.includes('這是轉換成彩色的圖片') ||
+            repliedMsg.content.includes('這是根據你的要求生成的圖片') ||
+            repliedMsg.content.includes('這是根據你的要求修改後的圖片') ||
+            repliedMsg.content.includes('修改後的圖片')
+          ))
+        );
+        console.log('檢查是否回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
+      } catch (error) {
+        console.error('獲取被回覆消息時出錯:', error);
+      }
+    }
+    
+    // 如果沒有檢測到被回覆的消息有圖片，再檢查上一條消息
+    if (!hasRecentImageAttachment && !isReplyToAIGeneratedImage && messageHistory.length > 1) {
       // 獲取上一條消息（不是當前消息，而是倒數第二條）
       const lastMessage = messageHistory[messageHistory.length - 2];
       
@@ -1903,37 +1940,6 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
       
       console.log('檢查上一條消息是否包含圖片附件:', hasRecentImageAttachment);
       console.log('檢查上一條消息是否是圖片生成消息:', isLastMessageImageGeneration);
-    }
-    
-    // 檢查當前消息是否是回覆 AI 生成的圖片
-    const currentMessage = messageHistory[messageHistory.length - 1];
-    if (currentMessage && currentMessage.reference && currentMessage.reference.messageId) {
-      try {
-        // 獲取被回覆的消息
-        const repliedMsg = await currentMessage.channel.messages.fetch(currentMessage.reference.messageId);
-        // 檢查被回覆的消息是否是 AI 生成的圖片
-        isReplyToAIGeneratedImage = repliedMsg && 
-                                 repliedMsg.author && 
-                                 repliedMsg.author.bot && 
-                                 repliedMsg.attachments && 
-                                 repliedMsg.attachments.size > 0 && (
-          // 檢查特殊標記
-          (repliedMsg.content && repliedMsg.content.includes('[IMAGE_GENERATED]')) ||
-          // 檢查消息內容是否包含圖片生成相關文字
-          (repliedMsg.content && (
-            repliedMsg.content.includes('這是根據你的描述生成的圖片') ||
-            repliedMsg.content.includes('生成的圖片') ||
-            repliedMsg.content.includes('根據你的描述') ||
-            repliedMsg.content.includes('這是轉換成彩色的圖片') ||
-            repliedMsg.content.includes('這是根據你的要求生成的圖片') ||
-            repliedMsg.content.includes('這是根據你的要求修改後的圖片') ||
-            repliedMsg.content.includes('修改後的圖片')
-          ))
-        );
-        console.log('檢查是否回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
-      } catch (error) {
-        console.error('獲取被回覆消息時出錯:', error);
-      }
     }
     
     // 如果沒有最近的圖片附件、圖片生成消息或回覆 AI 生成的圖片，則不視為圖片修改請求
