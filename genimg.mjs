@@ -47,58 +47,10 @@ async function generateImage(prompt, imageUrl = null) {
     
     // 檢查是否提供了圖片 URL
     let requestConfig;
-    let contents;
-    
-    if (imageUrl) {
-      console.error(`使用圖片 URL 進行風格轉換: ${imageUrl}`);
-      
-      // 使用 fetch 獲取圖片數據
-      const fetch = (await import('node-fetch')).default;
-      const response = await fetch(imageUrl);
-      if (!response.ok) {
-        throw new Error(`無法獲取圖片: ${response.statusText}`);
-      }
-      
-      // 將圖片轉換為 base64
-      const arrayBuffer = await response.arrayBuffer();
-      const base64Image = Buffer.from(arrayBuffer).toString('base64');
-      const mimeType = response.headers.get('content-type') || 'image/jpeg';
-      
-      console.error(`成功獲取圖片，大小: ${arrayBuffer.byteLength} 字節，類型: ${mimeType}`);
-      
-      // 構建包含圖片的請求內容
-      contents = [
-        {
-          role: "user",
-          parts: [
-            { text: `請將這張圖片轉換為${prompt}風格，保持原圖的主要內容和構圖。請嚴格遵循以下要求：
-1. 必須生成一張完整的圖片，不要只生成文字回應
-2. 圖片必須是高解析度、清晰且細節豐富的
-3. 使用專業的構圖和光影效果
-4. 確保圖片風格一致且美觀
-5. 盡可能準確呈現描述的內容和特徵
-6. 使用豐富的色彩和適當的對比度
-7. 不要在圖片中添加任何文字或水印` },
-            { inlineData: { mimeType, data: base64Image } }
-          ]
-        }
-      ];
-      
-      
-      requestConfig = {
-        model: "gemini-2.0-flash-preview-image-generation",
-        contents,
-        config: {
-          responseModalities: [Modality.TEXT, Modality.IMAGE],
-          temperature: 0.7,
-          topK: 32,
-          topP: 1,
-          maxOutputTokens: 2048,
-        },
-      };
-    } else {
-      // 增強提示詞，添加更多上下文和細節
-      const enhancedPrompt = `請生成一張高品質的圖片，內容是：${prompt}
+    let contents = [];
+
+    // 構建增強的提示詞，以獲得更好的圖片生成效果
+    const enhancedPrompt = `請生成一張高品質的圖片，內容是：${prompt}
 
 請嚴格遵循以下要求：
 1. 必須生成一張完整的圖片，不要只生成文字回應
@@ -109,20 +61,46 @@ async function generateImage(prompt, imageUrl = null) {
 6. 使用豐富的色彩和適當的對比度
 7. 圖片必須是彩色的，除非特別要求黑白效果
 8. 不要在圖片中添加任何文字或水印`;
-      
-      // 使用 gemini-2.0-flash-preview-image-generation 模型生成圖片
-      requestConfig = {
-        model: "gemini-2.0-flash-preview-image-generation",
-        contents: enhancedPrompt,
-        config: {
-          responseModalities: [Modality.TEXT, Modality.IMAGE],
-          temperature: 0.7,
-          topK: 32,
-          topP: 1,
-          maxOutputTokens: 2048,
-        },
-      };
+
+    if (imageUrl) {
+      console.error(`使用圖片 URL 進行修改: ${imageUrl}`);
+      try {
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+          throw new Error(`無法獲取圖片: ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const imageBuffer = Buffer.from(arrayBuffer);
+        const mimeType = response.headers.get('content-type') || 'image/jpeg'; // 嘗試從響應頭獲取 MIME 類型，否則默認為 jpeg
+
+        contents.push({
+          inlineData: {
+            data: imageBuffer.toString('base64'),
+            mimeType: mimeType,
+          },
+        });
+        contents.push({ text: prompt }); // 將原始提示詞作為文本部分
+      } catch (error) {
+        console.error('下載或處理圖片時出錯:', error);
+        // 如果圖片下載失敗，則只使用文本提示
+        contents.push({ text: enhancedPrompt });
+      }
+    } else {
+      contents.push({ text: enhancedPrompt });
     }
+
+    // 使用 gemini-2.0-flash-preview-image-generation 模型生成圖片
+    requestConfig = {
+      model: "gemini-2.0-flash-preview-image-generation",
+      contents: contents,
+      config: {
+        responseModalities: [Modality.TEXT, Modality.IMAGE],
+        temperature: 0.7,
+        topK: 32,
+        topP: 1,
+        maxOutputTokens: 2048,
+      },
+    };
     
     // 發送請求到 Gemini API
     const response = await ai.models.generateContent(requestConfig);
