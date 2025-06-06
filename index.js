@@ -2174,8 +2174,10 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
     
     // 如果提供了圖片 URL，添加到命令中
     if (imageUrl) {
-      command += ` --image-url="${imageUrl.replace(/"/g, '\"')}"`;
-      console.log(`添加圖片 URL 參數: ${imageUrl}`);
+      // 對 URL 進行編碼，確保特殊字符被正確處理
+      const encodedUrl = encodeURI(imageUrl);
+      command += ` --image-url="${encodedUrl.replace(/"/g, '\"')}"`;
+      console.log(`添加圖片 URL 參數: ${encodedUrl}`);
     }
     
     // 添加 prompt 參數
