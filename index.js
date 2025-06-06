@@ -2727,6 +2727,7 @@ client.on('messageCreate', async (message) => {
        const isStyleRequest = styleMatch !== null;
        const requestedStyle = isStyleRequest ? styleMatch[2] : null; // 獲取請求的風格
        
+       // 檢測一般修改請求
        const isGeneralModificationRequest = message.content.match(/(修改|調整|微調|改一下|調一下|換一下)/i) || 
          message.content.match(/能不能(改|換|轉|變)/i) || 
          message.content.match(/可以(改|換|轉|變)/i) || 
@@ -2734,6 +2735,10 @@ client.on('messageCreate', async (message) => {
          message.content.match(/希望(改|換|轉|變)/i) || 
          message.content.match(/請(改|換|轉|變)/i) || 
          message.content.match(/幫我(改|換|轉|變)/i);
+       
+       // 如果是AI判定的修改請求但沒有匹配到具體類型，則視為一般修改請求
+       const isAIDetectedModification = channelConfig.useAIToDetectImageRequest && isModificationRequest && 
+         !isBlackAndWhiteRequest && !isColorRequest && !isStyleRequest && !isGeneralModificationRequest;
        
        if (isBlackAndWhiteRequest) {
          console.log('檢測到黑白轉換請求，開始處理圖片');
@@ -2836,11 +2841,13 @@ client.on('messageCreate', async (message) => {
            await message.channel.send(`抱歉，我無法將圖片轉換為${requestedStyle || '新'}風格。錯誤信息: ${error.message}`);
            return;
          }
-       } else if (isGeneralModificationRequest || message.content.includes('去掉') || message.content.includes('移除') || message.content.includes('刪除') || 
-                 message.content.includes('紅潤') || message.content.includes('改成') || message.content.includes('變成') || 
+       } else if (isGeneralModificationRequest || isAIDetectedModification || message.content.includes('去掉') || message.content.includes('移除') || message.content.includes('刪除') || 
+                 message.content.includes('紅潤') || message.content.includes('紅暈') || message.content.includes('改成') || message.content.includes('變成') || 
                  message.content.includes('換成') || message.content.includes('轉成') || message.content.includes('修改') || 
                  message.content.includes('調整') || message.content.includes('增加') || message.content.includes('減少') || 
-                 message.content.includes('添加') || message.content.includes('更改') || message.content.includes('變更')) {
+                 message.content.includes('添加') || message.content.includes('更改') || message.content.includes('變更') || 
+                 message.content.includes('加深') || message.content.includes('減淡') || message.content.includes('加強') || 
+                 message.content.includes('減弱') || message.content.includes('加重') || message.content.includes('減輕')) {
          // 如果是一般修改請求或包含各種修改關鍵詞，使用 Gemini 根據用戶的具體要求進行修改
          console.log('檢測到一般修改請求，使用 Gemini 進行圖片修改');
          
@@ -2875,7 +2882,39 @@ client.on('messageCreate', async (message) => {
            return;
          }
        } else {
-         throw new Error('未指定轉換類型');
+         // 如果沒有匹配到任何修改類型，但AI判定為修改請求，則使用Gemini進行處理
+         console.log('未匹配到具體轉換類型，但AI判定為修改請求，使用Gemini進行圖片修改');
+         
+         // 使用已經獲取的目標圖片附件
+         if (!targetAttachment) {
+           console.log('找不到需要修改的圖片附件');
+           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
+           return;
+         }
+         
+         console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
+         
+         try {
+           // 使用用戶的原始請求作為提示詞
+           const modificationPrompt = `請根據以下要求修改圖片：${message.content}，保持原圖的主要內容和構圖`;
+           console.log(`使用提示詞進行圖片修改: ${modificationPrompt}`);
+           
+           // 使用 Gemini 生成修改後的圖片
+           const { imageData, mimeType } = await generateImageWithGemini(modificationPrompt, targetAttachment.url);
+           
+           // 發送生成的圖片
+           return await message.channel.send({
+             content: `這是根據你的要求修改後的圖片：`,
+             files: [{
+               attachment: Buffer.from(imageData, 'base64'),
+               name: `modified-${targetAttachment.name}`
+             }]
+           });
+         } catch (error) {
+           console.error('使用 Gemini 修改圖片時出錯:', error);
+           await message.channel.send(`抱歉，我無法按照你的要求修改圖片。錯誤信息: ${error.message}`);
+           return;
+         }
        }
 
       // 發送處理後的圖片
