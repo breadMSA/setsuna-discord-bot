@@ -1955,6 +1955,12 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
       return false;
     }
     
+    // 如果是回覆 AI 生成的圖片，直接視為圖片修改請求
+    if (isReplyToAIGeneratedImage) {
+      console.log('detectImageModificationWithAI: 檢測到回覆 AI 生成的圖片，直接視為圖片修改請求');
+      return true;
+    }
+    
     // 使用AI模型判斷用戶是否想要修改圖片
     // 動態導入 Google GenAI
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
@@ -2713,33 +2719,40 @@ client.on('messageCreate', async (message) => {
     try {
       // 獲取被回覆的消息
       const repliedMsg = await message.channel.messages.fetch(message.reference.messageId);
-      // 檢查被回覆的消息是否是 AI 生成的圖片
-      isReplyToAIGeneratedImage = repliedMsg && 
-                               repliedMsg.author && 
-                               repliedMsg.author.bot && 
-                               repliedMsg.attachments && 
-                               repliedMsg.attachments.size > 0 && (
-        // 檢查特殊標記
-        (repliedMsg.content && repliedMsg.content.includes('[IMAGE_GENERATED]')) ||
-        // 檢查消息內容是否包含圖片生成相關文字
-        (repliedMsg.content && (
-          repliedMsg.content.includes('這是根據你的描述生成的圖片') ||
-          repliedMsg.content.includes('生成的圖片') ||
-          repliedMsg.content.includes('根據你的描述') ||
-          repliedMsg.content.includes('這是轉換成彩色的圖片') ||
-          repliedMsg.content.includes('這是根據你的要求生成的圖片') ||
-          repliedMsg.content.includes('這是根據你的要求修改後的圖片') ||
-          repliedMsg.content.includes('這是根據你的要求修改後的圖片：') ||
-          repliedMsg.content.includes('修改後的圖片')
-        ))
+      
+      // 檢查被回覆的消息是否包含圖片附件
+      const hasAttachments = repliedMsg && repliedMsg.attachments && repliedMsg.attachments.size > 0;
+      
+      // 檢查被回覆的消息是否是機器人發送的
+      const isFromBot = repliedMsg && repliedMsg.author && repliedMsg.author.bot;
+      
+      // 檢查被回覆的消息內容是否包含圖片生成或修改相關文字
+      const hasImageGenerationText = repliedMsg && repliedMsg.content && (
+        repliedMsg.content.includes('[IMAGE_GENERATED]') ||
+        repliedMsg.content.includes('這是根據你的描述生成的圖片') ||
+        repliedMsg.content.includes('生成的圖片') ||
+        repliedMsg.content.includes('根據你的描述') ||
+        repliedMsg.content.includes('這是轉換成彩色的圖片') ||
+        repliedMsg.content.includes('這是根據你的要求生成的圖片') ||
+        repliedMsg.content.includes('這是根據你的要求修改後的圖片') ||
+        repliedMsg.content.includes('這是根據你的要求修改後的圖片：') ||
+        repliedMsg.content.includes('修改後的圖片')
       );
+      
+      // 如果是機器人發送的且包含圖片附件，或者消息內容包含圖片生成相關文字，則視為 AI 生成的圖片
+      isReplyToAIGeneratedImage = (isFromBot && hasAttachments) || hasImageGenerationText;
+      
+      console.log('檢查被回覆的消息是否包含圖片附件:', hasAttachments);
+      console.log('檢查被回覆的消息是否是機器人發送的:', isFromBot);
+      console.log('檢查被回覆的消息內容是否包含圖片生成相關文字:', hasImageGenerationText);
       console.log('檢查是否回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
     } catch (error) {
       console.error('獲取被回覆消息時出錯:', error);
     }
   }
   
-  const shouldProcessImageModification = ((hasImageAttachment || isLastMessageImageGeneration || isReplyToImageMessage || isReplyToAIGeneratedImage) && isModificationRequest);
+  // 如果是回覆 AI 生成的圖片，直接視為圖片修改請求，不需要 AI 判定
+  const shouldProcessImageModification = isReplyToAIGeneratedImage || ((hasImageAttachment || isLastMessageImageGeneration || isReplyToImageMessage) && isModificationRequest);
   
   // 記錄檢測結果
   if (shouldProcessImageModification) {
