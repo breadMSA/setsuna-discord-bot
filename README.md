@@ -63,7 +63,11 @@
    CHATGPT_API_KEY=你的 ChatGPT API 金鑰
    GROQ_API_KEY=你的 Groq API 金鑰
    YOUTUBE_API_KEY=你的 YouTube API 金鑰 (用於 YouTube 影片搜尋和 URL 預覽功能)
-   BOT_OWNER_ID=你的Discord用戶ID,其他管理員ID (若有多個，請用逗號隔開，例如：123456789012345678,987654321098765432)
+   BOT_OWNER_ID=你的Discord用戶ID,其他管理員ID (非必要，但若欲使用/setprofile指令則須填寫。若有多個，請用逗號隔開，例如：123456789012345678,987654321098765432)
+   TOGETHER_API_KEY=你的 Together AI API 金鑰
+   CEREBRAS_API_KEY=你的 Cerebras API 金鑰
+   GITHUB_REPO=你的 GitHub 倉庫名稱 (這是用於儲存頻道設定和模型偏好。範例：yourusername/yourrepository)
+   GITHUB_TOKEN=你的 GitHub Personal Access Token (PAT)
 ```
 4. 啟動機器人：
    ```
@@ -100,7 +104,7 @@
 1. 註冊 Render 並連接 GitHub repository
 2. 建立新的 Web Service
 3. 設定 build 指令為 `npm install`
-4. 設定 start 指令為 `npm start`
+4. 設定 start 指令為 `node server.js & node index.js`
 5. 新增環境變數
 6. 部署你的應用程式
 
@@ -160,6 +164,7 @@
 - `/setsuna deactivate #頻道名稱` - 在指定頻道停用機器人
 - `/setsuna setmodel [模型] [groq_model/cerebras_model] #頻道名稱` - 更改指定頻道使用的模型和特定的子模型
 - `/setsuna checkmodel #頻道名稱` - 檢查頻道當前使用的模型
+- `/setsuna aidetect [true/false]`：開啟/關閉 AI 判定畫圖請求功能。
 - `/setsuna setpersonality` - 設定機器人人設，自訂機器人的回覆風格和個性
 - `/setsuna checkpersonality` - 檢查當前機器人人設
 - 若不指定 #頻道名稱，則預設為當前頻道
@@ -248,8 +253,12 @@ For server setup tutorial, please refer to the [usage](https://github.com/breadM
    CHATGPT_API_KEY=your_chatgpt_api_key
    GROQ_API_KEY=your_groq_api_key
    YOUTUBE_API_KEY=your_youtube_api_key (Required for YouTube video search and URL preview features)
-   BOT_OWNER_ID=your_discord_user_id,other_admin_id (For multiple owners, separate IDs with a comma, e.g., `123456789012345678,987654321098765432`)
-   ```
+   BOT_OWNER_ID=your_discord_user_id,other_admin_id (Not necessary. But if you'd like to use the /setprofile command, you need to fill in.For multiple owners, separate IDs with a comma, e.g., `123456789012345678,987654321098765432`)
+   TOGETHER_API_KEY=your_together_ai_api_key
+   CEREBRAS_API_KEY=your_cerebras_api_key
+   GITHUB_REPO=your_github_repository_name (This is used to store channel settings and model preferences. E.g., yourusername/yourrepository)
+   GITHUB_TOKEN=your_github_personal_access_token (PAT)
+```
 4. Run the bot:
    ```
    npm start
@@ -285,7 +294,7 @@ For server setup tutorial, please refer to the [usage](https://github.com/breadM
 1. Sign up for Render and connect your GitHub repository
 2. Create a new Web Service
 3. Set the build command to `npm install`
-4. Set the start command to `npm start`
+4. Set the start command to `node server.js & node index.js`
 5. Add your environment variables
 6. Deploy your application
 
@@ -345,6 +354,7 @@ Once the bot is running, you can use the following commands in your Discord serv
 - `/setsuna deactivate #channel-name` - Deactivate the bot in the current channel.
 - `/setsuna setmodel [model] [groq_model/cerebras_model] #channel-name` - Change the model and specific submodel used in the specified channel.
 - `/setsuna checkmodel #channel-name` - Check which model is currently being used in the channel.
+- `/setsuna aidetect [true/false]`：Enables/disables AI detection for image generation requests.
 - `/setsuna setpersonality` - Set the bot's personality, customize its response style and character.
 - `/setsuna checkpersonality` - Check the current bot personality settings.
 - If #channel_name is not specified, defaults to the current channel.
