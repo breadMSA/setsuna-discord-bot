@@ -1900,6 +1900,7 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
           repliedMsg.content.includes('這是轉換成彩色的圖片') ||
           repliedMsg.content.includes('這是根據你的要求生成的圖片') ||
           repliedMsg.content.includes('這是根據你的要求修改後的圖片') ||
+          repliedMsg.content.includes('這是根據你的要求修改後的圖片：') ||
           repliedMsg.content.includes('修改後的圖片')
         );
         
@@ -1933,11 +1934,14 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
           lastMessage.content.includes('生成的圖片') ||
           lastMessage.content.includes('根據你的描述') ||
           lastMessage.content.includes('這是轉換成彩色的圖片') ||
-          lastMessage.content.includes('這是根據你的要求生成的圖片')
+          lastMessage.content.includes('這是根據你的要求生成的圖片') ||
+          lastMessage.content.includes('這是根據你的要求修改後的圖片') ||
+          lastMessage.content.includes('這是根據你的要求修改後的圖片：')
         )) ||
         // 檢查機器人的消息是否包含圖片附件，且不是回覆用戶的圖片修改請求
         (lastMessage.attachments && lastMessage.attachments.size > 0 && 
          lastMessage.content && !lastMessage.content.includes('這是修改後的圖片') &&
+         !lastMessage.content.includes('這是修改後的圖片：') &&
          !lastMessage.content.includes('我將轉換成黑白版本'))
       );
       
@@ -2723,7 +2727,10 @@ client.on('messageCreate', async (message) => {
           repliedMsg.content.includes('生成的圖片') ||
           repliedMsg.content.includes('根據你的描述') ||
           repliedMsg.content.includes('這是轉換成彩色的圖片') ||
-          repliedMsg.content.includes('這是根據你的要求生成的圖片')
+          repliedMsg.content.includes('這是根據你的要求生成的圖片') ||
+          repliedMsg.content.includes('這是根據你的要求修改後的圖片') ||
+          repliedMsg.content.includes('這是根據你的要求修改後的圖片：') ||
+          repliedMsg.content.includes('修改後的圖片')
         ))
       );
       console.log('檢查是否回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
