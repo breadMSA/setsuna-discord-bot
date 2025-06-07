@@ -1884,24 +1884,27 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
         }
         
         // 檢查被回覆的消息是否是 AI 生成的圖片
-        isReplyToAIGeneratedImage = repliedMsg && 
-                                 repliedMsg.author && 
-                                 repliedMsg.author.bot && 
-                                 repliedMsg.attachments && 
-                                 repliedMsg.attachments.size > 0 && (
-          // 檢查特殊標記
-          (repliedMsg.content && repliedMsg.content.includes('[IMAGE_GENERATED]')) ||
-          // 檢查消息內容是否包含圖片生成相關文字
-          (repliedMsg.content && (
-            repliedMsg.content.includes('這是根據你的描述生成的圖片') ||
-            repliedMsg.content.includes('生成的圖片') ||
-            repliedMsg.content.includes('根據你的描述') ||
-            repliedMsg.content.includes('這是轉換成彩色的圖片') ||
-            repliedMsg.content.includes('這是根據你的要求生成的圖片') ||
-            repliedMsg.content.includes('這是根據你的要求修改後的圖片') ||
-            repliedMsg.content.includes('修改後的圖片')
-          ))
+        // 條件1：消息來自機器人且包含圖片附件
+        const isFromBotWithAttachment = repliedMsg && 
+                                      repliedMsg.author && 
+                                      repliedMsg.author.bot && 
+                                      repliedMsg.attachments && 
+                                      repliedMsg.attachments.size > 0;
+        
+        // 條件2：消息內容包含圖片生成或修改相關文字
+        const hasImageGenerationText = repliedMsg && repliedMsg.content && (
+          repliedMsg.content.includes('[IMAGE_GENERATED]') ||
+          repliedMsg.content.includes('這是根據你的描述生成的圖片') ||
+          repliedMsg.content.includes('生成的圖片') ||
+          repliedMsg.content.includes('根據你的描述') ||
+          repliedMsg.content.includes('這是轉換成彩色的圖片') ||
+          repliedMsg.content.includes('這是根據你的要求生成的圖片') ||
+          repliedMsg.content.includes('這是根據你的要求修改後的圖片') ||
+          repliedMsg.content.includes('修改後的圖片')
         );
+        
+        // 如果是機器人發送的圖片附件，或者消息內容包含圖片生成相關文字，則視為 AI 生成的圖片
+        isReplyToAIGeneratedImage = isFromBotWithAttachment || hasImageGenerationText;
         console.log('檢查是否回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
       } catch (error) {
         console.error('獲取被回覆消息時出錯:', error);
