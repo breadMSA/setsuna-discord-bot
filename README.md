@@ -68,7 +68,7 @@
    CEREBRAS_API_KEY=你的 Cerebras API 金鑰
    GITHUB_REPO=你的 GitHub 倉庫名稱 (這是用於儲存頻道設定和模型偏好。範例：yourusername/yourrepository)
    GITHUB_TOKEN=你的 GitHub Personal Access Token (PAT)
-```
+   ```
 4. 啟動機器人：
    ```
    npm start
@@ -258,7 +258,7 @@ For server setup tutorial, please refer to the [usage](https://github.com/breadM
    CEREBRAS_API_KEY=your_cerebras_api_key
    GITHUB_REPO=your_github_repository_name (This is used to store channel settings and model preferences. E.g., yourusername/yourrepository)
    GITHUB_TOKEN=your_github_personal_access_token (PAT)
-```
+   ```
 4. Run the bot:
    ```
    npm start
