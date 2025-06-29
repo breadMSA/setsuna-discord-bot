@@ -1,4 +1,8 @@
 const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
+
+// Store active chats globally for persistence across instances
+const activeChats = new Map();
 
 /**
  * Character.AI API client implementation
@@ -7,11 +11,20 @@ const axios = require('axios');
 class CharacterAI {
   constructor() {
     this.token = null;
-    this.baseUrl = 'https://beta.character.ai';
+    this.accountId = null;
+    this.baseUrl = 'https://neo.character.ai';
     this.headers = {
       'Content-Type': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
     };
+  }
+
+  /**
+   * Get the active chats map (shared across instances)
+   * @returns {Map} The active chats map
+   */
+  get activeChats() {
+    return activeChats;
   }
 
   /**
@@ -35,6 +48,34 @@ class CharacterAI {
   }
 
   /**
+   * Fetch account information
+   * @returns {Promise<Object>} Account info
+   */
+  async fetchMe() {
+    try {
+      if (!this.token) {
+        throw new Error('Token not set. Please call setToken() first.');
+      }
+
+      const response = await axios({
+        method: 'GET',
+        url: `${this.baseUrl}/api/v1/user/me`,
+        headers: this.getHeaders(),
+      });
+
+      if (response.data && response.data.user) {
+        this.accountId = response.data.user.user_id;
+        return response.data.user;
+      }
+
+      throw new Error('Failed to fetch account information');
+    } catch (error) {
+      console.error('Error fetching account info:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Create a new chat with a character
    * @param {string} characterId - Character ID to chat with
    * @returns {Promise<Object>} Chat object and optional greeting message
@@ -45,25 +86,48 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
-      const response = await axios({
-        method: 'POST',
-        url: `${this.baseUrl}/chat/history/create/`,
-        headers: this.getHeaders(),
-        data: {
-          character_external_id: characterId,
-          history_external_id: null,
-        },
-      });
-
-      const chat = response.data;
-      let greeting = null;
-
-      // Get the greeting message if available
-      if (chat.status === 'OK' && chat.turns && chat.turns.length > 0) {
-        greeting = chat.turns[0];
+      if (!this.accountId) {
+        await this.fetchMe();
       }
 
-      return { chat, greeting };
+      const chatId = uuidv4();
+      const requestId = uuidv4();
+
+      const response = await axios({
+        method: 'POST',
+        url: `${this.baseUrl}/api/v1/chat/create`,
+        headers: this.getHeaders(),
+        data: {
+          request_id: requestId,
+          command: "create_chat",
+          payload: {
+            chat: {
+              chat_id: chatId,
+              creator_id: this.accountId,
+              visibility: "VISIBILITY_PRIVATE",
+              character_id: characterId,
+              type: "TYPE_ONE_ON_ONE"
+            },
+            with_greeting: true
+          }
+        }
+      });
+
+      if (response.data && response.data.chat) {
+        let greeting = null;
+        
+        // Try to get the greeting message if available
+        if (response.data.turns && response.data.turns.length > 0) {
+          greeting = response.data.turns[0];
+        }
+
+        return { 
+          chat: response.data.chat, 
+          greeting: greeting 
+        };
+      }
+
+      throw new Error('Failed to create chat');
     } catch (error) {
       console.error('Error creating chat:', error.message);
       throw error;
@@ -83,44 +147,68 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
+      if (!this.accountId) {
+        await this.fetchMe();
+      }
+
+      const turnId = uuidv4();
+      const candidateId = uuidv4();
+      const requestId = uuidv4();
+
       const response = await axios({
         method: 'POST',
-        url: `${this.baseUrl}/chat/streaming/`,
+        url: `${this.baseUrl}/api/v1/chat/streaming/`,
         headers: this.getHeaders(),
         data: {
-          character_external_id: characterId,
-          history_external_id: chatId,
-          text: message,
-          tgt: characterId,
-        },
+          command: "create_and_generate_turn",
+          origin_id: "web-next",
+          request_id: requestId,
+          payload: {
+            character_id: characterId,
+            num_candidates: 1,
+            turn: {
+              author: {
+                author_id: this.accountId,
+                is_human: true,
+                name: ""
+              },
+              candidates: [
+                {
+                  candidate_id: candidateId,
+                  raw_content: message
+                }
+              ],
+              primary_candidate_id: candidateId,
+              turn_key: {
+                chat_id: chatId,
+                turn_id: turnId
+              }
+            },
+            tts_enabled: false,
+            selected_language: ""
+          }
+        }
       });
 
-      return this._processMessageResponse(response.data);
+      // For streaming responses, we'd need to parse differently
+      // For now, we'll handle the non-streaming response
+      if (response.data && response.data.turn) {
+        return {
+          turn_id: response.data.turn.turn_id,
+          author_name: response.data.turn.author.name || "Character",
+          text: response.data.turn.candidates[0].text || response.data.turn.candidates[0].raw_content,
+          candidates: response.data.turn.candidates.map(candidate => ({
+            candidate_id: candidate.candidate_id,
+            text: candidate.text || candidate.raw_content
+          }))
+        };
+      }
+
+      throw new Error('Invalid response from Character.AI API');
     } catch (error) {
       console.error('Error sending message:', error.message);
       throw error;
     }
-  }
-
-  /**
-   * Process the message response from the API
-   * @param {Object} data - API response data
-   * @returns {Object} Processed turn object
-   */
-  _processMessageResponse(data) {
-    if (!data || !data.turn) {
-      throw new Error('Invalid response from Character.AI API');
-    }
-
-    return {
-      turn_id: data.turn.turn_id,
-      author_name: data.turn.author.name,
-      text: data.turn.candidates[0].text,
-      candidates: data.turn.candidates.map(candidate => ({
-        candidate_id: candidate.candidate_id,
-        text: candidate.text
-      }))
-    };
   }
 
   /**
@@ -136,8 +224,11 @@ class CharacterAI {
 
       const response = await axios({
         method: 'GET',
-        url: `${this.baseUrl}/chat/history/msgs/user/?history_external_id=${chatId}`,
+        url: `${this.baseUrl}/api/v1/chat/history/msgs/user/`,
         headers: this.getHeaders(),
+        params: {
+          history_external_id: chatId
+        }
       });
 
       if (!response.data || !response.data.messages) {
@@ -164,12 +255,13 @@ class CharacterAI {
 
       const response = await axios({
         method: 'GET',
-        url: `${this.baseUrl}/chat/character/info/`,
-        headers: this.getHeaders(),
-        params: {
-          external_id: characterId
-        }
+        url: `${this.baseUrl}/api/v1/characters/${characterId}`,
+        headers: this.getHeaders()
       });
+
+      if (!response.data || !response.data.character) {
+        throw new Error('Invalid response from Character.AI API');
+      }
 
       return response.data.character;
     } catch (error) {

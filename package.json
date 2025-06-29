@@ -33,7 +33,8 @@
     "opencc-js": "^1.0.5",
     "sharp": "^0.34.2",
     "tesseract.js": "^5.0.5",
-    "together-ai": "^0.16.0"
+    "together-ai": "^0.16.0",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

@@ -2529,6 +2529,21 @@ async function callCharacterAIAPI(messages, characterId) {
     throw new Error('No Character.AI character ID provided');
   }
   
+  // Get channel ID from the messages
+  let channelId = null;
+  for (const msg of messages) {
+    if (msg.channelId) {
+      channelId = msg.channelId;
+      break;
+    }
+  }
+  
+  if (!channelId) {
+    throw new Error('No channel ID found in messages');
+  }
+  
+  console.log(`Using channel ID: ${channelId} for Character.AI chat`);
+  
   while (keysTriedCount < CHARACTERAI_TOKENS.length) {
     try {
       // Initialize Character.AI client
@@ -2542,14 +2557,28 @@ async function callCharacterAIAPI(messages, characterId) {
       }
       
       // Check if we have an active chat for this channel
-      let chatId = null;
       let chatData = null;
+      let chatId = null;
       
-      // Create a new chat if we don't have one
-      if (!chatId) {
+      // Get stored chat info for this channel if it exists
+      if (!characterAI.activeChats.has(channelId)) {
+        console.log(`Creating new Character.AI chat for channel ${channelId}`);
+        // Create a new chat
         const result = await characterAI.createChat(targetCharacterId);
         chatData = result.chat;
-        chatId = chatData.external_id;
+        chatId = chatData.chat_id || chatData.external_id;
+        
+        // Store the chat info for future use
+        characterAI.activeChats.set(channelId, {
+          chatId: chatId,
+          characterId: targetCharacterId
+        });
+        console.log(`Created new chat with ID: ${chatId}`);
+      } else {
+        // Use existing chat
+        const storedChat = characterAI.activeChats.get(channelId);
+        chatId = storedChat.chatId;
+        console.log(`Using existing Character.AI chat ${chatId} for channel ${channelId}`);
       }
       
       // Send the message to Character.AI
@@ -3793,7 +3822,12 @@ if (isReply) {
       case 'characterai':
         if (CHARACTERAI_TOKENS.length > 0) {
           try {
-            response = await callCharacterAIAPI(formattedMessages);
+            // Add channel ID to the messages for chat persistence
+            const messagesWithChannel = formattedMessages.map(msg => ({
+              ...msg,
+              channelId: message.channelId
+            }));
+            response = await callCharacterAIAPI(messagesWithChannel);
             modelUsed = 'Character.AI';
           } catch (error) {
             console.log('Character.AI API error:', error.message);
