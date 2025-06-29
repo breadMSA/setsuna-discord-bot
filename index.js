@@ -292,6 +292,11 @@ if (parts.length >= 2) {
 
 console.log(`GitHub setup: owner=${owner}, repo=${repo}, subPath=${subPath || 'none'}`);
       
+      // Store the extracted values as global variables
+      global.githubOwner = owner;
+      global.githubRepo = repo;
+      global.githubSubPath = subPath;
+      
       console.log('GitHub API initialized successfully');
       return octokit;
     } catch (error) {
@@ -320,16 +325,19 @@ async function loadActiveChannels() {
       return;
     }
 
-    const repo = process.env.GITHUB_REPO || 'username/repo-name';
-    const [owner, repoName] = repo.split('/');
-    const path = 'active_channels_backup.json';
+    // Use the global variables set in setupGitHub
+    const owner = global.githubOwner;
+    const repoName = global.githubRepo;
+    const filePath = `${global.githubSubPath}active_channels_backup.json`;
+    
+    console.log(`Attempting to load file from GitHub: ${owner}/${repoName}/${filePath}`);
     
     try {
       // Try to get the file
       const { data: fileData } = await githubClient.repos.getContent({
         owner,
         repo: repoName,
-        path
+        path: filePath
       });
       
       // Decode content
@@ -427,23 +435,26 @@ async function saveActiveChannels() {
       return;
     }
 
-    const repo = process.env.GITHUB_REPO || 'username/repo-name';
-    const [owner, repoName] = repo.split('/');
-    const path = 'active_channels_backup.json';
+    // Use the global variables set in setupGitHub
+    const owner = global.githubOwner;
+    const repoName = global.githubRepo;
+    const filePath = `${global.githubSubPath}active_channels_backup.json`;
+    
+    console.log(`Attempting to save file to GitHub: ${owner}/${repoName}/${filePath}`);
     
     try {
       // Try to get the current file to get its SHA
       const { data: fileData } = await githubClient.repos.getContent({
     owner,
         repo: repoName,
-        path
+        path: filePath
   });
           
       // Update the file
           await githubClient.repos.createOrUpdateFileContents({
             owner,
         repo: repoName,
-        path,
+        path: filePath,
         message: 'Update active channels',
         content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64'),
         sha: fileData.sha
@@ -456,7 +467,7 @@ async function saveActiveChannels() {
             await githubClient.repos.createOrUpdateFileContents({
               owner,
           repo: repoName,
-          path,
+          path: filePath,
           message: 'Create active channels file',
           content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64')
             });
