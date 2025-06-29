@@ -87,14 +87,8 @@ const CEREBRAS_API_KEYS = [
   process.env.CEREBRAS_API_KEY_3
 ].filter(key => key); // Filter out undefined/null keys
 
-const HF_TOKENS = [
-  process.env.HF_TOKEN,
-  process.env.HF_TOKEN_2,
-  process.env.HF_TOKEN_3
-].filter(key => key); // Filter out undefined/null keys
-
 // Check if any API keys are available
-if (DEEPSEEK_API_KEYS.length === 0 && GEMINI_API_KEYS.length === 0 && CHATGPT_API_KEYS.length === 0 && TOGETHER_API_KEYS.length === 0 && GROQ_API_KEYS.length === 0 && CEREBRAS_API_KEYS.length === 0 && HF_TOKENS.length === 0) {
+if (DEEPSEEK_API_KEYS.length === 0 && GEMINI_API_KEYS.length === 0 && CHATGPT_API_KEYS.length === 0 && TOGETHER_API_KEYS.length === 0 && GROQ_API_KEYS.length === 0 && CEREBRAS_API_KEYS.length === 0) {
   console.warn('WARNING: No API KEY environment variables are set!');
   console.warn('The bot will not be able to process messages without at least one key.');
 }
@@ -106,7 +100,6 @@ let currentChatGPTKeyIndex = 0;
 let currentTogetherKeyIndex = 0;
 let currentGroqKeyIndex = 0;
 let currentCerebrasKeyIndex = 0;
-let currentHFTokenIndex = 0;
 
 // Default model to use
 let defaultModel = 'groq'; // Options: 'deepseek', 'gemini', 'chatgpt', 'together', 'groq', 'cerebras'
@@ -206,15 +199,6 @@ function getNextTogetherKey() {
 
 function getCurrentTogetherKey() {
   return TOGETHER_API_KEYS[currentTogetherKeyIndex];
-}
-
-function getNextHFToken() {
-  currentHFTokenIndex = (currentHFTokenIndex + 1) % HF_TOKENS.length;
-  return HF_TOKENS[currentHFTokenIndex];
-}
-
-function getCurrentHFToken() {
-  return HF_TOKENS[currentHFTokenIndex];
 }
 
 // Remove reply references from messages
@@ -631,8 +615,7 @@ const commands = [
                   { name: 'ChatGPT', value: 'chatgpt' },
                   { name: 'Together AI (Llama-3.3-70B-Instruct-Turbo)', value: 'together' },
                   { name: 'DeepSeek (Slow)', value: 'deepseek' },
-                  { name: 'Cerebras', value: 'cerebras' },
-                  { name: 'Hugging Face (zephyr-7b-beta)', value: 'huggingface' }
+                  { name: 'Cerebras', value: 'cerebras' }
                 )
         )
         .addStringOption(option =>
@@ -695,8 +678,7 @@ const commands = [
               { name: 'ChatGPT', value: 'chatgpt' },
               { name: 'Together AI (Llama-3.3-70B-Instruct-Turbo)', value: 'together' },
               { name: 'DeepSeek (Slow)', value: 'deepseek' },
-              { name: 'Cerebras', value: 'cerebras' },
-              { name: 'Hugging Face (zephyr-7b-beta)', value: 'huggingface' }
+              { name: 'Cerebras', value: 'cerebras' }
             )
         )
         .addChannelOption(option =>
@@ -1036,9 +1018,6 @@ client.on('interactionCreate', async interaction => {
         case 'together':
           hasKeys = TOGETHER_API_KEYS.length > 0;
           break;
-        case 'huggingface':
-          hasKeys = HF_TOKENS.length > 0;
-          break;
       }
       
       if (!hasKeys) {
@@ -1072,8 +1051,7 @@ client.on('interactionCreate', async interaction => {
         'chatgpt': 'ChatGPT',
         'together': 'Together AI',
         'groq': 'Groq (Llama-3.1)',
-        'cerebras': 'Cerebras',
-        'huggingface': 'Hugging Face (zephyr-7b-beta)'
+        'cerebras': 'Cerebras'
       };
       
       await interaction.reply(`Alright nerds, I'm here to party! Ready to chat in ${targetChannel} using ${modelNames[model]} model~`);
@@ -1115,9 +1093,6 @@ client.on('interactionCreate', async interaction => {
           break;
         case 'together':
           hasKeys = TOGETHER_API_KEYS.length > 0;
-          break;
-        case 'huggingface':
-          hasKeys = HF_TOKENS.length > 0;
           break;
       }
       
@@ -1172,8 +1147,7 @@ client.on('interactionCreate', async interaction => {
         'chatgpt': 'ChatGPT',
         'together': 'Together AI',
         'groq': 'Groq (Llama-3.1)',
-        'cerebras': 'Cerebras',
-        'huggingface': 'Hugging Face (zephyr-7b-beta)'
+        'cerebras': 'Cerebras'
       };
       
       await interaction.reply(`Alright, I will be using ${modelNames[model]} model in ${targetChannel}!`);  
@@ -1214,9 +1188,6 @@ client.on('interactionCreate', async interaction => {
           break;
         case 'deepseek':
           modelInfo = 'DeepSeek';
-          break;
-        case 'huggingface':
-          modelInfo = 'Hugging Face (zephyr-7b-beta)';
           break;
         default:
           modelInfo = currentModel;
@@ -1670,75 +1641,6 @@ async function callCerebrasAPI(messages, channelId) {
   
   // If we get here, all keys failed
   throw lastError || new Error('All Cerebras API keys failed');
-}
-
-async function callHuggingFaceAPI(messages) {
-  // Try all available Hugging Face tokens until one works
-  let lastError = null;
-  const initialKeyIndex = currentHFTokenIndex;
-  let keysTriedCount = 0;
-  
-  while (keysTriedCount < HF_TOKENS.length) {
-    try {
-      // Use node-fetch for direct API call instead of the problematic client
-      const hfToken = getCurrentHFToken();
-      
-      // Convert messages to a format suitable for the API
-      const lastMessage = messages[messages.length - 1].content;
-      
-      // Call Hugging Face API directly
-      const response = await fetch(`https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${hfToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          inputs: lastMessage,
-          options: {
-            use_cache: true,
-            wait_for_model: true
-          }
-        })
-      });
-      
-      // Check if response is OK
-      if (!response.ok) {
-        const errorText = await response.text();
-        lastError = new Error(`Hugging Face API error: ${errorText}`);
-        getNextHFToken();
-        keysTriedCount++;
-        console.log(`Hugging Face token ${currentHFTokenIndex + 1}/${HF_TOKENS.length} error: ${errorText}`);
-        continue;
-      }
-      
-      // Parse the response
-      const data = await response.json();
-      
-      // Check for empty response
-      if (!data || !data[0] || !data[0].generated_text) {
-        // Try next token
-        lastError = new Error('Empty response from Hugging Face API');
-        getNextHFToken();
-        keysTriedCount++;
-        console.log(`Hugging Face token ${currentHFTokenIndex + 1}/${HF_TOKENS.length} returned empty response`);
-        continue;
-      }
-      
-      // Success! Return the response
-      return data[0].generated_text;
-      
-    } catch (error) {
-      // Try next token
-      lastError = error;
-      getNextHFToken();
-      keysTriedCount++;
-      console.log(`Hugging Face token ${currentHFTokenIndex + 1}/${HF_TOKENS.length} error: ${error.message}`);
-    }
-  }
-  
-  // If we get here, all tokens failed
-  throw lastError || new Error('All Hugging Face tokens failed');
 }
 
 async function callDeepseekAPI(messages) {
@@ -3865,18 +3767,6 @@ if (isReply) {
           }
         }
         break;
-
-      case 'huggingface':
-        if (HF_TOKENS.length > 0) {
-          try {
-            response = await callHuggingFaceAPI(formattedMessages);
-            modelUsed = 'Hugging Face (zephyr-7b-beta)';
-          } catch (error) {
-            console.log('Hugging Face API error:', error.message);
-            // Will fall back to other models
-          }
-        }
-        break;
     }
     
     // If preferred model failed, try other models as fallback
@@ -3935,23 +3825,13 @@ if (isReply) {
         }
       }
       
-      // Try DeepSeek API if not already tried and keys are available
+      // Try DeepSeek API if not already tried and keys are available (last resort)
       if (!response && preferredModel !== 'deepseek' && DEEPSEEK_API_KEYS.length > 0) {
         try {
           response = await callDeepseekAPI(formattedMessages);
           modelUsed = 'DeepSeek';
         } catch (error) {
           console.log('DeepSeek API fallback error:', error.message);
-        }
-      }
-      
-      // Try Hugging Face API if not already tried and keys are available (last resort)
-      if (!response && preferredModel !== 'huggingface' && HF_TOKENS.length > 0) {
-        try {
-          response = await callHuggingFaceAPI(formattedMessages);
-          modelUsed = 'Hugging Face (zephyr-7b-beta)';
-        } catch (error) {
-          console.log('Hugging Face API fallback error:', error.message);
         }
       }
     }
