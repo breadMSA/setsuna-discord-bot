@@ -322,7 +322,7 @@ async function loadActiveChannels() {
 
     const repo = process.env.GITHUB_REPO || 'username/repo-name';
     const [owner, repoName] = repo.split('/');
-    const path = 'active_channels.json';
+    const path = 'active_channels_backup.json';
     
     try {
       // Try to get the file
@@ -429,7 +429,7 @@ async function saveActiveChannels() {
 
     const repo = process.env.GITHUB_REPO || 'username/repo-name';
     const [owner, repoName] = repo.split('/');
-    const path = 'active_channels.json';
+    const path = 'active_channels_backup.json';
     
     try {
       // Try to get the current file to get its SHA
