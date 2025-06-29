@@ -293,13 +293,13 @@ if (parts.length >= 2) {
 console.log(`GitHub setup: owner=${owner}, repo=${repo}, subPath=${subPath || 'none'}`);
       
       console.log('GitHub API initialized successfully');
-      return true;
+      return octokit;
     } catch (error) {
       console.error('Error setting up GitHub API:', error);
-      return false;
+      return null;
     }
   }
-  return false;
+  return null;
 }
 
 async function loadActiveChannels() {
@@ -314,8 +314,8 @@ async function loadActiveChannels() {
     };
 
     // Set up GitHub client
-    const octokit = await setupGitHub();
-    if (!octokit) {
+    const githubClient = await setupGitHub();
+    if (!githubClient) {
       console.error('Failed to set up GitHub client, cannot load active channels');
       return;
     }
@@ -326,7 +326,7 @@ async function loadActiveChannels() {
     
     try {
       // Try to get the file
-      const { data: fileData } = await octokit.repos.getContent({
+      const { data: fileData } = await githubClient.repos.getContent({
         owner,
         repo: repoName,
         path
@@ -421,8 +421,8 @@ async function saveActiveChannels() {
     }
 
     // Set up GitHub client
-    const octokit = await setupGitHub();
-    if (!octokit) {
+    const githubClient = await setupGitHub();
+    if (!githubClient) {
       console.error('Failed to set up GitHub client, cannot save active channels');
       return;
     }
@@ -433,14 +433,14 @@ async function saveActiveChannels() {
     
     try {
       // Try to get the current file to get its SHA
-      const { data: fileData } = await octokit.repos.getContent({
+      const { data: fileData } = await githubClient.repos.getContent({
     owner,
         repo: repoName,
         path
   });
           
       // Update the file
-          await octokit.repos.createOrUpdateFileContents({
+          await githubClient.repos.createOrUpdateFileContents({
             owner,
         repo: repoName,
         path,
@@ -453,7 +453,7 @@ async function saveActiveChannels() {
         } catch (error) {
           if (error.status === 404) {
         // File doesn't exist, create it
-            await octokit.repos.createOrUpdateFileContents({
+            await githubClient.repos.createOrUpdateFileContents({
               owner,
           repo: repoName,
           path,
@@ -740,9 +740,6 @@ const commands = [
 // Register slash commands when the bot starts
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  
-  // Initialize GitHub API
-  await setupGitHub();
   
   // Load active channels
   await loadActiveChannels();
