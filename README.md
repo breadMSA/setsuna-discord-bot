@@ -160,7 +160,7 @@
 
 機器人啟動後，你可以在 Discord 伺服器使用以下指令：
 
-- `/setsuna activate #頻道名稱 [模型] [groq_model/cerebras_model]` - 在指定頻道啟用機器人，可選擇使用的模型（Groq、Gemini、ChatGPT、Together AI、DeepSeek、Cerebras）和特定的子模型
+- `/setsuna activate #頻道名稱 [模型] [groq_model/cerebras_model]` - 在指定頻道啟用機器人，可選擇使用的模型（Groq、Gemini、ChatGPT、Together AI、DeepSeek、Cerebras、Character.AI）和特定的子模型
 - `/setsuna deactivate #頻道名稱` - 在指定頻道停用機器人
 - `/setsuna setmodel [模型] [groq_model/cerebras_model] #頻道名稱` - 更改指定頻道使用的模型和特定的子模型
 - `/setsuna checkmodel #頻道名稱` - 檢查頻道當前使用的模型
@@ -205,12 +205,18 @@ A Discord AI bot that connects to LLM API and chats with users in specific chann
 - Supports long conversation memory, remembering the last 50 messages in a channel
 - Allows customizable response styles to give the bot different personalities in different channels
 
-### 🔌 Multi-Model Support
-- Integrates with multiple LLM APIs (Groq, Gemini, ChatGPT, Together AI, DeepSeek, Cerebras)
-- Allows model selection when activating channels
-- Supports selecting 12 specific Groq models and 4 Cerebras models
-- Enables switching models for channels at any time
-- Persistent model preferences across bot restarts
+### 🔄 Multiple AI Models Support
+- Supports multiple AI models:
+  - Groq (various models including Llama 3.1, Llama 3.3, Gemma 2, etc.)
+  - Gemini (Google's AI model)
+  - ChatGPT (OpenAI's GPT models)
+  - Together AI (Llama-3.3-70B-Instruct-Turbo)
+  - DeepSeek (DeepSeek's AI models)
+  - Cerebras (various models including Llama 4, Llama 3.1, etc.)
+  - Character.AI (Chat with characters from Character.AI)
+- Allows setting different models for different channels
+- Automatic API key rotation for load balancing and reliability
+- Fallback mechanisms when API calls fail
 
 ### 🎨 Image Generation & Understanding
 - Generates images based on text descriptions
@@ -258,6 +264,8 @@ For server setup tutorial, please refer to the [usage](https://github.com/breadM
    CEREBRAS_API_KEY=your_cerebras_api_key
    GITHUB_REPO=your_github_repository_name (This is used to store channel settings and model preferences. E.g., yourusername/yourrepository)
    GITHUB_TOKEN=your_github_personal_access_token (PAT)
+   CHARACTERAI_TOKEN=your_character_ai_token_here
+   CHARACTERAI_CHARACTER_ID=your_character_id_here
    ```
 4. Run the bot:
    ```
@@ -350,7 +358,7 @@ If you have a server or computer that can run 24/7:
 
 Once the bot is running, you can use the following commands in your Discord server:
 
-- `/setsuna activate #channel-name [model] [groq_model/cerebras_model]` - Activate the bot in designated channel with optional model selection (Groq, Gemini, ChatGPT, Together AI, DeepSeek, Cerebras) and specific submodel.
+- `/setsuna activate #channel-name [model] [groq_model/cerebras_model]` - Activate the bot in designated channel with optional model selection (Groq, Gemini, ChatGPT, Together AI, DeepSeek, Cerebras, Character.AI) and specific submodel.
 - `/setsuna deactivate #channel-name` - Deactivate the bot in the current channel.
 - `/setsuna setmodel [model] [groq_model/cerebras_model] #channel-name` - Change the model and specific submodel used in the specified channel.
 - `/setsuna checkmodel #channel-name` - Check which model is currently being used in the channel.

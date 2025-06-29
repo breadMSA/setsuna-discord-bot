@@ -87,8 +87,18 @@ const CEREBRAS_API_KEYS = [
   process.env.CEREBRAS_API_KEY_3
 ].filter(key => key); // Filter out undefined/null keys
 
+// Character.AI API keys
+const CHARACTERAI_TOKENS = [
+  process.env.CHARACTERAI_TOKEN,
+  process.env.CHARACTERAI_TOKEN_2,
+  process.env.CHARACTERAI_TOKEN_3
+].filter(key => key); // Filter out undefined/null keys
+
+// Character.AI character ID
+const CHARACTERAI_CHARACTER_ID = process.env.CHARACTERAI_CHARACTER_ID;
+
 // Check if any API keys are available
-if (DEEPSEEK_API_KEYS.length === 0 && GEMINI_API_KEYS.length === 0 && CHATGPT_API_KEYS.length === 0 && TOGETHER_API_KEYS.length === 0 && GROQ_API_KEYS.length === 0 && CEREBRAS_API_KEYS.length === 0) {
+if (DEEPSEEK_API_KEYS.length === 0 && GEMINI_API_KEYS.length === 0 && CHATGPT_API_KEYS.length === 0 && TOGETHER_API_KEYS.length === 0 && GROQ_API_KEYS.length === 0 && CEREBRAS_API_KEYS.length === 0 && CHARACTERAI_TOKENS.length === 0) {
   console.warn('WARNING: No API KEY environment variables are set!');
   console.warn('The bot will not be able to process messages without at least one key.');
 }
@@ -100,9 +110,10 @@ let currentChatGPTKeyIndex = 0;
 let currentTogetherKeyIndex = 0;
 let currentGroqKeyIndex = 0;
 let currentCerebrasKeyIndex = 0;
+let currentCharacterAIKeyIndex = 0;
 
 // Default model to use
-let defaultModel = 'groq'; // Options: 'deepseek', 'gemini', 'chatgpt', 'together', 'groq', 'cerebras'
+let defaultModel = 'groq'; // Options: 'deepseek', 'gemini', 'chatgpt', 'together', 'groq', 'cerebras', 'characterai'
 
 // Channel model preferences
 const channelModelPreferences = new Map();
@@ -199,6 +210,15 @@ function getNextTogetherKey() {
 
 function getCurrentTogetherKey() {
   return TOGETHER_API_KEYS[currentTogetherKeyIndex];
+}
+
+function getCurrentCharacterAIToken() {
+  return CHARACTERAI_TOKENS[currentCharacterAIKeyIndex];
+}
+
+function getNextCharacterAIToken() {
+  currentCharacterAIKeyIndex = (currentCharacterAIKeyIndex + 1) % CHARACTERAI_TOKENS.length;
+  return CHARACTERAI_TOKENS[currentCharacterAIKeyIndex];
 }
 
 // Remove reply references from messages
@@ -548,7 +568,8 @@ const commands = [
                   { name: 'ChatGPT', value: 'chatgpt' },
                   { name: 'Together AI (Llama-3.3-70B-Instruct-Turbo)', value: 'together' },
                   { name: 'DeepSeek (Slow)', value: 'deepseek' },
-                  { name: 'Cerebras', value: 'cerebras' }
+                  { name: 'Cerebras', value: 'cerebras' },
+                  { name: 'Character.AI', value: 'characterai' }
                 )
         )
         .addStringOption(option =>
@@ -611,7 +632,8 @@ const commands = [
               { name: 'ChatGPT', value: 'chatgpt' },
               { name: 'Together AI (Llama-3.3-70B-Instruct-Turbo)', value: 'together' },
               { name: 'DeepSeek (Slow)', value: 'deepseek' },
-              { name: 'Cerebras', value: 'cerebras' }
+              { name: 'Cerebras', value: 'cerebras' },
+              { name: 'Character.AI', value: 'characterai' }
             )
         )
         .addChannelOption(option =>
@@ -945,6 +967,9 @@ client.on('interactionCreate', async interaction => {
         case 'cerebras':
           hasKeys = CEREBRAS_API_KEYS.length > 0;
           break;
+        case 'characterai':
+          hasKeys = CHARACTERAI_TOKENS.length > 0;
+          break;
         case 'together':
           hasKeys = TOGETHER_API_KEYS.length > 0;
           break;
@@ -981,7 +1006,8 @@ client.on('interactionCreate', async interaction => {
         'chatgpt': 'ChatGPT',
         'together': 'Together AI',
         'groq': 'Groq (Llama-3.1)',
-        'cerebras': 'Cerebras'
+        'cerebras': 'Cerebras',
+        'characterai': 'Character.AI'
       };
       
       await interaction.reply(`Alright nerds, I'm here to party! Ready to chat in ${targetChannel} using ${modelNames[model]} model~`);
@@ -1020,6 +1046,9 @@ client.on('interactionCreate', async interaction => {
           break;
         case 'cerebras':
           hasKeys = CEREBRAS_API_KEYS.length > 0;
+          break;
+        case 'characterai':
+          hasKeys = CHARACTERAI_TOKENS.length > 0;
           break;
         case 'together':
           hasKeys = TOGETHER_API_KEYS.length > 0;
@@ -1077,7 +1106,8 @@ client.on('interactionCreate', async interaction => {
         'chatgpt': 'ChatGPT',
         'together': 'Together AI',
         'groq': 'Groq (Llama-3.1)',
-        'cerebras': 'Cerebras'
+        'cerebras': 'Cerebras',
+        'characterai': 'Character.AI'
       };
       
       await interaction.reply(`Alright, I will be using ${modelNames[model]} model in ${targetChannel}!`);  
@@ -1106,6 +1136,9 @@ client.on('interactionCreate', async interaction => {
         case 'cerebras':
           const cerebrasModel = channelCerebrasModelPreferences.get(targetChannel.id) || defaultCerebrasModel;
           modelInfo = `Cerebras (${cerebrasModel})`;
+          break;
+        case 'characterai':
+          modelInfo = 'Character.AI';
           break;
         case 'gemini':
           modelInfo = 'Gemini';
@@ -2481,6 +2514,77 @@ async function callChatGPTAPI(messages) {
   throw lastError || new Error('All ChatGPT API keys failed');
 }
 
+async function callCharacterAIAPI(messages, characterId) {
+  // Try all available Character.AI tokens until one works
+  let lastError = null;
+  const initialKeyIndex = currentCharacterAIKeyIndex;
+  let keysTriedCount = 0;
+  
+  // Import the Character.AI client
+  const CharacterAI = require('./characterai');
+  
+  // Use the character ID from environment variable if none provided
+  const targetCharacterId = characterId || CHARACTERAI_CHARACTER_ID;
+  if (!targetCharacterId) {
+    throw new Error('No Character.AI character ID provided');
+  }
+  
+  while (keysTriedCount < CHARACTERAI_TOKENS.length) {
+    try {
+      // Initialize Character.AI client
+      const characterAI = new CharacterAI();
+      characterAI.setToken(getCurrentCharacterAIToken());
+      
+      // Extract the last user message
+      const lastUserMessage = messages.filter(msg => msg.role === 'user').pop();
+      if (!lastUserMessage) {
+        throw new Error('No user message found in the conversation');
+      }
+      
+      // Check if we have an active chat for this channel
+      let chatId = null;
+      let chatData = null;
+      
+      // Create a new chat if we don't have one
+      if (!chatId) {
+        const result = await characterAI.createChat(targetCharacterId);
+        chatData = result.chat;
+        chatId = chatData.external_id;
+      }
+      
+      // Send the message to Character.AI
+      const response = await characterAI.sendMessage(
+        targetCharacterId,
+        chatId,
+        lastUserMessage.content
+      );
+      
+      // Check for empty response
+      if (!response || !response.text) {
+        // Try next token
+        lastError = new Error('Empty response from Character.AI API');
+        getNextCharacterAIToken();
+        keysTriedCount++;
+        console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} returned empty response`);
+        continue;
+      }
+      
+      // Success! Return the response
+      return response.text;
+      
+    } catch (error) {
+      // Try next token
+      lastError = error;
+      getNextCharacterAIToken();
+      keysTriedCount++;
+      console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${error.message}`);
+    }
+  }
+  
+  // If we get here, all tokens failed
+  throw lastError || new Error('All Character.AI tokens failed');
+}
+
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
@@ -3681,6 +3785,18 @@ if (isReply) {
             modelUsed = `Cerebras (${cerebrasModel})`;
           } catch (error) {
             console.log('Cerebras API error:', error.message);
+            // Will fall back to other models
+          }
+        }
+        break;
+        
+      case 'characterai':
+        if (CHARACTERAI_TOKENS.length > 0) {
+          try {
+            response = await callCharacterAIAPI(formattedMessages);
+            modelUsed = 'Character.AI';
+          } catch (error) {
+            console.log('Character.AI API error:', error.message);
             // Will fall back to other models
           }
         }

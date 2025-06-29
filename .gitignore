@@ -57,3 +57,6 @@ jspm_packages/
 .vscode/
 *.swp
 *.swo
+
+# Resource
+PyCharacterAI-main/
