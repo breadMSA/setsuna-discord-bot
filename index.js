@@ -304,248 +304,170 @@ console.log(`GitHub setup: owner=${owner}, repo=${repo}, subPath=${subPath || 'n
 
 async function loadActiveChannels() {
   try {
-    // Try to load from primary location
-    let loaded = false;
-    if (fs.existsSync(CHANNELS_FILE)) {
-      const data = JSON.parse(fs.readFileSync(CHANNELS_FILE, 'utf8'));
+    // Initialize empty message history for each channel
+    const initializeChannel = (channelId) => {
+      if (!activeChannels.has(channelId)) {
+        activeChannels.set(channelId, {
+          messageHistory: []
+        });
+      }
+    };
+
+    // Set up GitHub client
+    const octokit = await setupGitHub();
+    if (!octokit) {
+      console.error('Failed to set up GitHub client, cannot load active channels');
+      return;
+    }
+
+    const repo = process.env.GITHUB_REPO || 'username/repo-name';
+    const [owner, repoName] = repo.split('/');
+    const path = 'active_channels.json';
+    
+    try {
+      // Try to get the file
+      const { data: fileData } = await octokit.repos.getContent({
+        owner,
+        repo: repoName,
+        path
+      });
+      
+      // Decode content
+      const content = Buffer.from(fileData.content, 'base64').toString('utf8');
+      const data = JSON.parse(content);
+      
+      // Load model preferences from GitHub
       for (const [channelId, config] of Object.entries(data)) {
-        // Extract model preference if it exists
+        // Initialize the channel
+        initializeChannel(channelId);
+        
+        // Set model preference if available
         if (config.model) {
           channelModelPreferences.set(channelId, config.model);
-          
-          // Extract Groq model preference if it exists
-          if (config.groqModel) {
-            channelGroqModelPreferences.set(channelId, config.groqModel);
-          }
-          
-          // Extract Cerebras model preference if it exists
-          if (config.cerebrasModel) {
-            channelCerebrasModelPreferences.set(channelId, config.cerebrasModel);
-          }
-          
-          // Extract personality preference if it exists
-          if (config.personality) {
-            channelPersonalityPreferences.set(channelId, config.personality);
-          }
-          
-          // Remove model, groqModel, cerebrasModel, and personality from config to avoid duplication
-          const { model, groqModel, cerebrasModel, personality, ...restConfig } = config;
-          activeChannels.set(channelId, restConfig);
-        } else {
-          activeChannels.set(channelId, config);
+          activeChannels.get(channelId).model = config.model;
+        }
+        
+        // Set Groq model preference if available
+        if (config.groqModel) {
+          channelGroqModelPreferences.set(channelId, config.groqModel);
+          activeChannels.get(channelId).groqModel = config.groqModel;
+        }
+        
+        // Set Cerebras model preference if available
+        if (config.cerebrasModel) {
+          channelCerebrasModelPreferences.set(channelId, config.cerebrasModel);
+          activeChannels.get(channelId).cerebrasModel = config.cerebrasModel;
+        }
+        
+        // Set custom instructions if available
+        if (config.customInstructions) {
+          activeChannels.get(channelId).customInstructions = config.customInstructions;
+        }
+        
+        // Set custom role if available
+        if (config.customRole) {
+          activeChannels.get(channelId).customRole = config.customRole;
+        }
+        
+        // Set custom speaking style if available
+        if (config.customSpeakingStyle) {
+          activeChannels.get(channelId).customSpeakingStyle = config.customSpeakingStyle;
+        }
+        
+        // Set custom text structure if available
+        if (config.customTextStructure) {
+          activeChannels.get(channelId).customTextStructure = config.customTextStructure;
+        }
+        
+        // Set useAIToDetectImageRequest if available
+        if (config.useAIToDetectImageRequest) {
+          activeChannels.get(channelId).useAIToDetectImageRequest = config.useAIToDetectImageRequest;
         }
       }
-      console.log('Loaded active channels and model preferences from file');
-      loaded = true;
-    }
-    
-    // If primary file doesn't exist or is empty, try GitHub
-    if (!loaded && octokit) {
-      try {
-        // Extract owner, repo and path from the repo string
-        let owner, repo, subPath = '';
-        const parts = process.env.GITHUB_REPO.split('/');
-        
-        if (parts.length >= 2) {
-          owner = parts[0];
-          repo = parts[1];
-          
-          // 如果有子目錄路徑
-          if (parts.length > 2) {
-            subPath = parts.slice(2).join('/');
-            if (!subPath.endsWith('/')) {
-              subPath += '/';
-            }
-          }
-        }
-        
-        // Get file content from GitHub
-const response = await octokit.repos.getContent({
-  owner,
-  repo,
-  path: `${subPath}active_channels_backup.json`
-        });
-        
-        // Decode content from base64
-        const content = Buffer.from(response.data.content, 'base64').toString();
-        const data = JSON.parse(content);
-        
-        for (const [channelId, config] of Object.entries(data)) {
-          // Extract model preference if it exists
-          if (config.model) {
-            channelModelPreferences.set(channelId, config.model);
-            
-            // Extract Groq model preference if it exists
-            if (config.groqModel) {
-              channelGroqModelPreferences.set(channelId, config.groqModel);
-            }
-            
-            // Extract Cerebras model preference if it exists
-            if (config.cerebrasModel) {
-              channelCerebrasModelPreferences.set(channelId, config.cerebrasModel);
-            }
-            
-            // Extract personality preference if it exists
-            if (config.personality) {
-              channelPersonalityPreferences.set(channelId, config.personality);
-            }
-            
-            // Remove model, groqModel, cerebrasModel, and personality from config to avoid duplication
-            const { model, groqModel, cerebrasModel, personality, ...restConfig } = config;
-            activeChannels.set(channelId, restConfig);
-          } else {
-            activeChannels.set(channelId, config);
-          }
-        }
-        console.log('Loaded active channels and model preferences from GitHub');
-        
-        // Save to primary location immediately
-        saveActiveChannels();
-        loaded = true;
-      } catch (error) {
-        // If file doesn't exist yet, that's okay
-        if (error.status !== 404) {
-          console.error('Error loading from GitHub:', error);
-        }
+      
+      console.log(`Loaded ${Object.keys(data).length} channel configurations from GitHub`);
+    } catch (error) {
+      if (error.status === 404) {
+        console.log('No GitHub active channels configuration found');
+      } else {
+        console.error('Error loading from GitHub:', error);
       }
     }
-    
-    // If still not loaded, try backup location
-    if (!loaded && process.env.BACKUP_PATH) {
-      const backupFile = `${process.env.BACKUP_PATH}/active_channels_backup.json`;
-      if (fs.existsSync(backupFile)) {
-        const data = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
-        for (const [channelId, config] of Object.entries(data)) {
-          // Extract model preference if it exists
-          if (config.model) {
-            channelModelPreferences.set(channelId, config.model);
-            
-            // Extract Groq model preference if it exists
-            if (config.groqModel) {
-              channelGroqModelPreferences.set(channelId, config.groqModel);
-            }
-            
-            // Extract Cerebras model preference if it exists
-            if (config.cerebrasModel) {
-              channelCerebrasModelPreferences.set(channelId, config.cerebrasModel);
-            }
-            
-            // Extract personality preference if it exists
-            if (config.personality) {
-              channelPersonalityPreferences.set(channelId, config.personality);
-            }
-            
-            // Remove model, groqModel, cerebrasModel, and personality from config to avoid duplication
-            const { model, groqModel, cerebrasModel, personality, ...restConfig } = config;
-            activeChannels.set(channelId, restConfig);
-          } else {
-            activeChannels.set(channelId, config);
-          }
-        }
-        console.log('Loaded active channels and model preferences from backup file');
-        
-        // Save to primary location immediately
-        saveActiveChannels();
-      }
-    }
-    console.log('Loaded active channels and model preferences from file');
-    loaded = true;
   } catch (error) {
     console.error('Error loading active channels:', error);
   }
 }
 
+
 async function saveActiveChannels() {
   try {
-    // Convert Map to an object that includes both active channels and model preferences
-    const data = {};
-    for (const [channelId, config] of activeChannels.entries()) {
-      data[channelId] = {
-        ...config,
-        model: channelModelPreferences.get(channelId) || defaultModel,
-        groqModel: channelGroqModelPreferences.get(channelId) || defaultGroqModel,
-        cerebrasModel: channelCerebrasModelPreferences.get(channelId) || defaultCerebrasModel
+    // Create a simplified version of activeChannels with only the necessary data
+    const simplifiedActiveChannels = {};
+    
+    for (const [channelId, channelData] of activeChannels.entries()) {
+      // Only store model preferences and not message history
+      simplifiedActiveChannels[channelId] = {
+        model: channelData.model,
+        groqModel: channelData.groqModel,
+        cerebrasModel: channelData.cerebrasModel,
+        // Keep custom instructions if they exist
+        customInstructions: channelData.customInstructions || null,
+        customRole: channelData.customRole || null,
+        customSpeakingStyle: channelData.customSpeakingStyle || null,
+        customTextStructure: channelData.customTextStructure || null,
+        // Keep useAIToDetectImageRequest if it exists
+        useAIToDetectImageRequest: channelData.useAIToDetectImageRequest || false
       };
-      
-      // Add personality if it exists for this channel
-      if (channelPersonalityPreferences.has(channelId)) {
-        data[channelId].personality = channelPersonalityPreferences.get(channelId);
-      }
     }
-    
-    // Save to local file
-    fs.writeFileSync(CHANNELS_FILE, JSON.stringify(data));
-    
-    // Save to GitHub if available
-    if (octokit) {
-      try {
-        // Extract owner, repo and path from the repo string
-        let owner, repo, subPath = '';
-        const parts = process.env.GITHUB_REPO.split('/');
-        
-        if (parts.length >= 2) {
-          owner = parts[0];
-          repo = parts[1];
-          
-          // 如果有子目錄路徑
-          if (parts.length > 2) {
-            subPath = parts.slice(2).join('/');
-            if (!subPath.endsWith('/')) {
-              subPath += '/';
-            }
-          }
-        }
-        
-        // Convert data to JSON string
-const content = JSON.stringify(data, null, 2);
 
-// Try to get the file first to get its SHA
-try {
-  const fileResponse = await octokit.repos.getContent({
+    // Set up GitHub client
+    const octokit = await setupGitHub();
+    if (!octokit) {
+      console.error('Failed to set up GitHub client, cannot save active channels');
+      return;
+    }
+
+    const repo = process.env.GITHUB_REPO || 'username/repo-name';
+    const [owner, repoName] = repo.split('/');
+    const path = 'active_channels.json';
+    
+    try {
+      // Try to get the current file to get its SHA
+      const { data: fileData } = await octokit.repos.getContent({
     owner,
-    repo,
-    path: `${subPath}active_channels_backup.json`
+        repo: repoName,
+        path
   });
           
-          // Update existing file
+      // Update the file
           await octokit.repos.createOrUpdateFileContents({
             owner,
-            repo,
-            path: `${subPath}active_channels_backup.json`,
-            message: 'Update active channels backup',
-            content: Buffer.from(content).toString('base64'),
-            sha: fileResponse.data.sha
+        repo: repoName,
+        path,
+        message: 'Update active channels',
+        content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64'),
+        sha: fileData.sha
           });
           
-          console.log('Saved active channels to GitHub (updated)');
+      console.log('Successfully updated active channels in GitHub');
         } catch (error) {
-          // If file doesn't exist (404), create it
           if (error.status === 404) {
+        // File doesn't exist, create it
             await octokit.repos.createOrUpdateFileContents({
               owner,
-              repo,
-              path: `${subPath}active_channels_backup.json`,
-              message: 'Create active channels backup',
-              content: Buffer.from(content).toString('base64')
+          repo: repoName,
+          path,
+          message: 'Create active channels file',
+          content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64')
             });
             
-            console.log('Saved active channels to GitHub (created)');
+        console.log('Successfully created active channels file in GitHub');
           } else {
             throw error;
           }
         }
       } catch (error) {
-        console.error('Error saving to GitHub:', error);
-      }
-    }
-    
-    // Save to backup location if specified
-    if (process.env.BACKUP_PATH) {
-      const backupFile = `${process.env.BACKUP_PATH}/active_channels_backup.json`;
-      fs.writeFileSync(backupFile, JSON.stringify(data));
-    }
-  } catch (error) {
-    console.error('Error saving active channels:', error);
+    console.error('Error saving active channels to GitHub:', error);
   }
 }
 

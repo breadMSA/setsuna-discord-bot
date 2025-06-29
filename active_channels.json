@@ -1,0 +1,76 @@
+{
+  "1372811078764855296": {
+    "model": "cerebras",
+    "groqModel": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1372878262749102080": {
+    "model": "groq",
+    "groqModel": "llama-3.1-8b-instant",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1276362854127108207": {
+    "model": "groq",
+    "groqModel": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1373284492869107763": {
+    "useAIToDetectImageRequest": true,
+    "model": "cerebras",
+    "groqModel": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1373661229574389760": {
+    "model": "cerebras",
+    "groqModel": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1373871200224153642": {
+    "model": "gemini",
+    "groqModel": "gemma2-9b-it",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1373883966641143848": {
+    "model": "gemini",
+    "groqModel": "gemma2-9b-it",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1373924990214475816": {
+    "model": "groq",
+    "groqModel": "gemma2-9b-it",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1373931921595437206": {
+    "useAIToDetectImageRequest": true,
+    "model": "cerebras",
+    "groqModel": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "cerebrasModel": "qwen-3-32b"
+  },
+  "1376231152456699984": {
+    "useAIToDetectImageRequest": true,
+    "model": "cerebras",
+    "groqModel": "gemma2-9b-it",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "849313571187982386": {
+    "model": "gemini",
+    "groqModel": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1377877799641288744": {
+    "useAIToDetectImageRequest": true,
+    "model": "huggingface",
+    "groqModel": "gemma2-9b-it",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1378687033563680768": {
+    "model": "gemini",
+    "groqModel": "gemma2-9b-it",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  },
+  "1380161083746029641": {
+    "model": "cerebras",
+    "groqModel": "gemma2-9b-it",
+    "cerebrasModel": "llama-4-scout-17b-16e-instruct"
+  }
+} 
