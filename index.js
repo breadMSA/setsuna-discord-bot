@@ -1680,27 +1680,43 @@ async function callHuggingFaceAPI(messages) {
   
   while (keysTriedCount < HF_TOKENS.length) {
     try {
-      // Import Hugging Face Inference Client
-      const { InferenceClient } = await import('@huggingface/inference');
+      // Use node-fetch for direct API call instead of the problematic client
+      const hfToken = getCurrentHFToken();
       
-      // Initialize Hugging Face client
-      const client = new InferenceClient(getCurrentHFToken());
+      // Convert messages to a format suitable for the API
+      const lastMessage = messages[messages.length - 1].content;
       
-      // Convert messages to Hugging Face format
-      const formattedMessages = messages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
-      
-      // Call Hugging Face API
-      const chatCompletion = await client.chatCompletion({
-        provider: 'featherless-ai',
-        model: 'HuggingFaceH4/zephyr-7b-beta',
-        messages: formattedMessages,
+      // Call Hugging Face API directly
+      const response = await fetch(`https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${hfToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          inputs: lastMessage,
+          options: {
+            use_cache: true,
+            wait_for_model: true
+          }
+        })
       });
       
+      // Check if response is OK
+      if (!response.ok) {
+        const errorText = await response.text();
+        lastError = new Error(`Hugging Face API error: ${errorText}`);
+        getNextHFToken();
+        keysTriedCount++;
+        console.log(`Hugging Face token ${currentHFTokenIndex + 1}/${HF_TOKENS.length} error: ${errorText}`);
+        continue;
+      }
+      
+      // Parse the response
+      const data = await response.json();
+      
       // Check for empty response
-      if (!chatCompletion || !chatCompletion.choices || !chatCompletion.choices[0] || !chatCompletion.choices[0].message) {
+      if (!data || !data[0] || !data[0].generated_text) {
         // Try next token
         lastError = new Error('Empty response from Hugging Face API');
         getNextHFToken();
@@ -1710,7 +1726,7 @@ async function callHuggingFaceAPI(messages) {
       }
       
       // Success! Return the response
-      return chatCompletion.choices[0].message.content;
+      return data[0].generated_text;
       
     } catch (error) {
       // Try next token
