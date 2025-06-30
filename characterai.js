@@ -376,7 +376,7 @@ class CharacterAI {
       // Create a custom instance for this request to ensure we have the latest cookies and CSRF token
       const response = await axios({
         method: 'POST',
-        url: `${this.baseUrl}/chat/streaming/`,
+        url: `${this.baseUrl}/chat/message/`,
         headers: {
           ...this.getHeaders(),
           'X-CSRFToken': csrfToken,
@@ -388,7 +388,6 @@ class CharacterAI {
           history_external_id: chatId,
           character_external_id: characterId,
           text: message,
-          tgt: "c", // Target is character
           request_id: requestId
         }
       });
@@ -401,24 +400,91 @@ class CharacterAI {
 
       console.log('Character.AI HTTP API response status:', response.status);
       
-      // Process the response
-      if (response.data && response.data.replies && response.data.replies.length > 0) {
-        const reply = response.data.replies[0];
-        console.log('Got response from character:', reply.text?.substring(0, 50) + '...');
+      // Process the response - check for various possible response formats
+      if (response.data) {
+        // Check for turn data format
+        if (response.data.turn && response.data.turn.candidates && response.data.turn.candidates.length > 0) {
+          const candidate = response.data.turn.candidates[0];
+          console.log('Got response from character (turn format):', (candidate.text || candidate.raw_content || '').substring(0, 50) + '...');
+          
+          return {
+            turn_id: response.data.turn.turn_id || candidate.candidate_id || requestId,
+            author_name: response.data.turn.author?.name || "Character",
+            text: candidate.text || candidate.raw_content || '',
+            candidates: response.data.turn.candidates.map(c => ({
+              candidate_id: c.candidate_id || requestId,
+              text: c.text || c.raw_content || ''
+            })),
+            // Helper function to match Python implementation
+            get_primary_candidate: function() {
+              return this.candidates[0];
+            }
+          };
+        }
         
-        return {
-          turn_id: reply.id,
-          author_name: reply.name || "Character",
-          text: reply.text,
-          candidates: [{
-            candidate_id: reply.id,
-            text: reply.text
-          }],
-          // Helper function to match Python implementation
-          get_primary_candidate: function() {
-            return this.candidates[0];
+        // Check for replies format
+        if (response.data.replies && response.data.replies.length > 0) {
+          const reply = response.data.replies[0];
+          console.log('Got response from character (replies format):', (reply.text || '').substring(0, 50) + '...');
+          
+          return {
+            turn_id: reply.id || requestId,
+            author_name: reply.name || "Character",
+            text: reply.text || '',
+            candidates: [{
+              candidate_id: reply.id || requestId,
+              text: reply.text || ''
+            }],
+            // Helper function to match Python implementation
+            get_primary_candidate: function() {
+              return this.candidates[0];
+            }
+          };
+        }
+        
+        // Check for raw text format
+        if (response.data.text) {
+          console.log('Got response from character (text format):', response.data.text.substring(0, 50) + '...');
+          
+          return {
+            turn_id: requestId,
+            author_name: "Character",
+            text: response.data.text,
+            candidates: [{
+              candidate_id: requestId,
+              text: response.data.text
+            }],
+            // Helper function to match Python implementation
+            get_primary_candidate: function() {
+              return this.candidates[0];
+            }
+          };
+        }
+        
+        // Log the actual response structure to help with debugging
+        console.log('Unexpected response format. Response keys:', Object.keys(response.data));
+        if (Object.keys(response.data).length > 0) {
+          // Try to extract any text content from the response
+          const responseStr = JSON.stringify(response.data);
+          const textMatch = responseStr.match(/"text"\s*:\s*"([^"]+)"/);
+          if (textMatch && textMatch[1]) {
+            console.log('Found text content in response:', textMatch[1].substring(0, 50) + '...');
+            
+            return {
+              turn_id: requestId,
+              author_name: "Character",
+              text: textMatch[1],
+              candidates: [{
+                candidate_id: requestId,
+                text: textMatch[1]
+              }],
+              // Helper function to match Python implementation
+              get_primary_candidate: function() {
+                return this.candidates[0];
+              }
+            };
           }
-        };
+        }
       }
 
       throw new Error('Invalid response from Character.AI API - missing reply data');
