@@ -2614,7 +2614,15 @@ async function callCharacterAIAPI(messages, characterId) {
       // and take only the recent ones for context
       const userMessages = messages
         .filter(msg => (msg.role === 'user' || msg.role === 'assistant') && !msg.content.includes('setsunaPersonality'))
-        .slice(-10); // Take just the last 10 messages for context
+        .slice(-10) // Take just the last 10 messages for context
+        .map(msg => {
+          // Remove Discord username format like [username]: from the beginning of messages
+          const content = msg.content.replace(/^\[.*?\]:\s*/, '');
+          return {
+            ...msg,
+            content
+          };
+        });
       
       // Get the very last user message - this is what we'll actually send
       const lastUserMessage = messages.filter(msg => msg.role === 'user').pop();
@@ -2622,8 +2630,14 @@ async function callCharacterAIAPI(messages, characterId) {
         throw new Error('No user message found in the conversation');
       }
       
+      // Remove Discord username format from the last message too
+      const lastMessageContent = lastUserMessage.content.replace(/^\[.*?\]:\s*/, '');
+      
       // Prepare the message with context
       let messageWithContext = '';
+      
+      // Add a reminder to stay in character
+      messageWithContext += "[Remember to stay in character and follow your character settings. Do not act as a generic assistant.]\n\n";
       
       // Add context from previous messages if there are more than 1 message
       if (userMessages.length > 1) {
@@ -2632,19 +2646,20 @@ async function callCharacterAIAPI(messages, characterId) {
         
         // Check if we should add context
         if (contextMessages.length > 0) {
-          messageWithContext += "[Previous conversation context]\n";
+          messageWithContext += "[Previous conversation]\n";
           
           for (const msg of contextMessages) {
-            const role = msg.role === 'user' ? 'Human' : 'Assistant';
-            messageWithContext += `${role}: ${msg.content}\n`;
+            // Don't add role labels, just add the raw message content
+            // This prevents Character.AI from being influenced by "Human" and "Assistant" labels
+            messageWithContext += `${msg.content}\n`;
           }
           
-          messageWithContext += "[End of context]\n\n";
+          messageWithContext += "[End of previous conversation]\n\n";
         }
       }
       
       // Add the actual message the user sent
-      messageWithContext += lastUserMessage.content;
+      messageWithContext += lastMessageContent;
       
       // Check if we have an active chat for this channel
       let chatData = null;
