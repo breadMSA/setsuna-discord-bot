@@ -74,130 +74,69 @@ class CharacterAI {
       }
 
       // Create new connection
-      const ws = new WebSocket(this.wsUrl, {
-        headers: {
-          'Cookie': `HTTP_AUTHORIZATION=Token ${this.token}`
-        }
-      });
-
-      ws.on('open', () => {
-        console.log('WebSocket connection established');
-        wsConnection = ws;
-        resolve(ws);
-      });
-
-      ws.on('message', (data) => {
-        try {
-          const message = JSON.parse(data);
-          console.log('WebSocket message received:', JSON.stringify(message).substring(0, 150) + '...');
-          
-          const requestId = message.request_id;
-          
-          if (requestId) {
-            // Store the response for this request ID
-            if (!messageResponses.has(requestId)) {
-              messageResponses.set(requestId, []);
-            }
-            
-            const responses = messageResponses.get(requestId);
-            responses.push(message);
-            messageResponses.set(requestId, responses);
-            
-            // If we have a callback for this request ID and certain conditions are met, call it
-            if (messageCallbacks.has(requestId)) {
-              const callback = messageCallbacks.get(requestId);
-              
-              // For update_turn and add_turn commands with is_final=true, call the callback
-              if (message.command === 'update_turn' || message.command === 'add_turn') {
-                if (message.turn && 
-                    message.turn.candidates && 
-                    message.turn.candidates.length > 0 && 
-                    message.turn.candidates[0].is_final === true) {
-                  callback(message);
-                }
-              } else if (message.command === 'neo_error') {
-                // For error messages, call the callback immediately
-                callback(message);
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Error processing WebSocket message:', err.message);
-        }
-      });
-
-      ws.on('error', (error) => {
-        console.error('WebSocket error:', error.message);
-        reject(error);
-      });
-
-      ws.on('close', (code, reason) => {
-        console.log(`WebSocket connection closed: ${code} ${reason}`);
-        wsConnection = null;
-      });
+      // We need to use HTTP API first, not WebSocket for now
+      console.log('Reverting to HTTP API for message sending due to WebSocket authentication issues');
+      resolve(null); // Return null to indicate we're not using WebSocket
     });
   }
 
   /**
-   * Send a message via WebSocket and wait for specific response
+   * Send a message via WebSocket or fallback to HTTP
    * @param {Object} message - Message to send
    * @returns {Promise<Object>} Response
    */
   async sendWebSocketMessage(message) {
-    const ws = await this.connectWebSocket();
+    // We'll use HTTP API instead of WebSocket due to authentication issues
     const requestId = message.request_id || uuidv4();
     
-    if (!message.request_id) {
-      message.request_id = requestId;
-    }
-
-    // Clear any previous responses for this request
-    messageResponses.delete(requestId);
-
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        messageCallbacks.delete(requestId);
-        
-        // Check if we have any responses for this request before failing
-        if (messageResponses.has(requestId)) {
-          const responses = messageResponses.get(requestId);
-          console.log(`Timeout but found ${responses.length} responses for request ${requestId}`);
-          
-          // Find the last update_turn or add_turn response
-          for (let i = responses.length - 1; i >= 0; i--) {
-            const response = responses[i];
-            if (response.command === 'update_turn' || response.command === 'add_turn') {
-              if (response.turn && response.turn.candidates && response.turn.candidates.length > 0) {
-                console.log('Found valid response in collected messages, using it despite timeout');
-                messageResponses.delete(requestId);
-                return resolve(response);
-              }
-            }
-          }
+    try {
+      console.log('Using HTTP API instead of WebSocket due to authentication issues');
+      
+      // Extract the necessary information from the WebSocket message
+      const characterId = message.payload.character_id;
+      const chatId = message.payload.turn.turn_key.chat_id;
+      const text = message.payload.turn.candidates[0].raw_content;
+      
+      // Send using HTTP API
+      const response = await axios({
+        method: 'POST',
+        url: `${this.baseUrl}/chat/streaming/`,
+        headers: this.getHeaders(),
+        timeout: 90000, // 90 second timeout
+        data: {
+          history_external_id: chatId,
+          character_external_id: characterId,
+          text: text,
+          request_id: requestId
         }
-        
-        reject(new Error('WebSocket request timed out'));
-      }, 90000); // 90 second timeout - character.ai can be slow
-
-      // Set up callback for this request
-      messageCallbacks.set(requestId, (response) => {
-        clearTimeout(timeoutId);
-        messageCallbacks.delete(requestId);
-        messageResponses.delete(requestId);
-        resolve(response);
       });
-
-      // Send the message
-      try {
-        ws.send(JSON.stringify(message));
-        console.log('WebSocket message sent for request:', requestId);
-      } catch (error) {
-        clearTimeout(timeoutId);
-        messageCallbacks.delete(requestId);
-        messageResponses.delete(requestId);
-        reject(error);
+      
+      console.log('HTTP API response status:', response.status);
+      
+      // Convert HTTP response to WebSocket format
+      if (response.data && response.data.turn) {
+        return {
+          command: 'update_turn',
+          turn: response.data.turn
+        };
+      } else {
+        throw new Error('Invalid response from Character.AI API - missing turn data');
       }
-    });
+    } catch (error) {
+      console.error('Error sending message via HTTP:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data));
+        
+        // Convert HTTP error to WebSocket format
+        return {
+          command: 'neo_error',
+          comment: error.message,
+          error_code: error.response.status
+        };
+      }
+      throw error;
+    }
   }
 
   /**
@@ -300,7 +239,7 @@ class CharacterAI {
   }
 
   /**
-   * Send a message to a character using WebSocket
+   * Send a message to a character
    * @param {string} characterId - Character ID
    * @param {string} chatId - Chat ID
    * @param {string} message - Message text
@@ -316,78 +255,35 @@ class CharacterAI {
         await this.fetchMe();
       }
 
-      // Use the same message format as in the Python library
-      const candidateId = uuidv4();
-      const turnId = uuidv4();
+      console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
+      
+      // Use HTTP API directly instead of WebSocket
       const requestId = uuidv4();
+      const response = await axios({
+        method: 'POST',
+        url: `${this.baseUrl}/chat/streaming/`,
+        headers: this.getHeaders(),
+        timeout: 90000, // 90 second timeout
+        data: {
+          history_external_id: chatId,
+          character_external_id: characterId,
+          text: message,
+          request_id: requestId
+        }
+      });
 
-      console.log(`Sending message to character ${characterId} in chat ${chatId} via WebSocket...`);
+      console.log('Character.AI HTTP API response status:', response.status);
       
-      const wsMessage = {
-        command: "create_and_generate_turn",
-        origin_id: "web-next",
-        payload: {
-          character_id: characterId,
-          num_candidates: 1,
-          previous_annotations: {
-            bad_memory: 0,
-            boring: 0,
-            ends_chat_early: 0,
-            funny: 0,
-            helpful: 0,
-            inaccurate: 0,
-            interesting: 0,
-            long: 0,
-            not_bad_memory: 0,
-            not_boring: 0,
-            not_ends_chat_early: 0,
-            not_funny: 0,
-            not_helpful: 0,
-            not_inaccurate: 0,
-            not_interesting: 0,
-            not_long: 0,
-            not_out_of_character: 0,
-            not_repetitive: 0,
-            not_short: 0,
-            out_of_character: 0,
-            repetitive: 0,
-            short: 0,
-          },
-          selected_language: "",
-          tts_enabled: false,
-          turn: {
-            author: {
-              author_id: this.accountId || "user",
-              is_human: true,
-              name: "",
-            },
-            candidates: [{ candidate_id: candidateId, raw_content: message }],
-            primary_candidate_id: candidateId,
-            turn_key: { chat_id: chatId, turn_id: turnId },
-          },
-          user_name: "",
-        },
-        request_id: requestId,
-      };
-
-      // Send the message via WebSocket
-      const response = await this.sendWebSocketMessage(wsMessage);
-      
-      // Handle error response
-      if (response.command === 'neo_error') {
-        throw new Error(`Character.AI error: ${response.comment || 'Unknown error'}`);
-      }
-      
-      // Process the response according to the Python implementation
-      if (response && response.turn && response.turn.candidates) {
-        const primaryCandidate = response.turn.candidates[0];
+      // Process the response
+      if (response.data && response.data.turn && response.data.turn.candidates) {
+        const primaryCandidate = response.data.turn.candidates[0];
         console.log('Got response from character:', primaryCandidate.text?.substring(0, 50) + '...');
         
         return {
-          turn_id: response.turn.turn_id,
-          author_name: response.turn.author?.name || "Character",
+          turn_id: response.data.turn.turn_id,
+          author_name: response.data.turn.author?.name || "Character",
           text: primaryCandidate.text || primaryCandidate.raw_content,
-          candidates: response.turn.candidates.map(candidate => ({
+          candidates: response.data.turn.candidates.map(candidate => ({
             candidate_id: candidate.candidate_id,
             text: candidate.text || candidate.raw_content
           })),
@@ -401,6 +297,10 @@ class CharacterAI {
       throw new Error('Invalid response from Character.AI API - missing turn data');
     } catch (error) {
       console.error('Error sending message:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data));
+      }
       throw error;
     }
   }
