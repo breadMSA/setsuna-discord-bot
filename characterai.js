@@ -73,9 +73,8 @@ class CharacterAI {
         }
       }
 
-      // Create new connection
       // We need to use HTTP API first, not WebSocket for now
-      console.log('Reverting to HTTP API for message sending due to WebSocket authentication issues');
+      console.log('Using HTTP API instead of WebSocket due to authentication issues');
       resolve(null); // Return null to indicate we're not using WebSocket
     });
   }
@@ -97,10 +96,11 @@ class CharacterAI {
       const chatId = message.payload.turn.turn_key.chat_id;
       const text = message.payload.turn.candidates[0].raw_content;
       
-      // Send using HTTP API
+      // Send using HTTP API - use non-streaming endpoint to avoid stream aborted errors
+      console.log('Using non-streaming API endpoint to avoid stream aborted errors');
       const response = await axios({
         method: 'POST',
-        url: `${this.baseUrl}/chat/streaming/`,
+        url: `${this.baseUrl}/chat/message/`,
         headers: this.getHeaders(),
         timeout: 90000, // 90 second timeout
         data: {
@@ -257,11 +257,12 @@ class CharacterAI {
 
       console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
       
-      // Use HTTP API directly instead of WebSocket
+      // Use HTTP API directly instead of WebSocket - use non-streaming endpoint
       const requestId = uuidv4();
+      console.log('Using non-streaming API endpoint to avoid stream aborted errors');
       const response = await axios({
         method: 'POST',
-        url: `${this.baseUrl}/chat/streaming/`,
+        url: `${this.baseUrl}/chat/message/`,
         headers: this.getHeaders(),
         timeout: 90000, // 90 second timeout
         data: {
