@@ -188,12 +188,36 @@
 
 ### Character.AI 整合
 
-- 使用 `/setsuna setmodel characterai` 啟用 Character.AI 模型
-- 在 `.env` 檔案中設定 `CHARACTERAI_TOKEN` 和 `CHARACTERAI_CHARACTER_ID`
-- 若要使用固定的聊天 ID 而非每次創建新的聊天，請設定 `CHARACTERAI_CHAT_ID`：
-  1. 在 Character.AI 網站上與你的角色建立一個聊天
-  2. 查看 URL，格式為：https://character.ai/chat?char=CHAR_ID&hist=CHAT_ID
-  3. 複製 &hist= 後面的 CHAT_ID 部分並設定為 `CHARACTERAI_CHAT_ID`
+The bot can use Character.AI for responses. To use this feature, you need to:
+
+1. Get a Character.AI access token (from browser cookies, see below)
+2. Set the environment variables:
+   - `CHARACTERAI_TOKEN` - Your Character.AI access token
+   - `CHARACTERAI_CHARACTER_ID` - The ID of your Character.AI character
+   - `CHARACTERAI_CHAT_ID` (optional) - A persistent chat ID to maintain conversation state
+
+The bot now sends conversation history to Character.AI to maintain context between messages, similar to how it works with other AI models.
+
+### Setting up Character.AI Token
+
+1. Get your Character.AI token by logging into Character.AI and copying it from your browser's cookies
+2. Set the `CHARACTERAI_TOKEN` environment variable with your token
+3. Set the `CHARACTERAI_CHARACTER_ID` environment variable with the ID of the character you want to use
+   - You can find the character ID in the URL when viewing a character on Character.AI
+   - Example: For `https://beta.character.ai/chat?char=abcdefgh`, the ID is `abcdefgh`
+4. Use `/setsuna activate #channel-name characterai` to activate the Character.AI model in a channel
+
+The bot will create a new chat with the character and use it for all conversations in that channel.
+
+### Using a Persistent Chat ID
+
+To avoid creating new chats each time (which can cause "chat not found" errors):
+
+1. Create a chat with your character on the Character.AI website
+2. Check the URL, which will look like: `https://character.ai/chat?char=CHAR_ID&hist=CHAT_ID`
+3. Copy the CHAT_ID part after `&hist=` and set it as `CHARACTERAI_CHAT_ID` in your .env file
+
+When this environment variable is set, the bot will always use this specific chat ID instead of creating new chats.
 
 ## 授權條款
 

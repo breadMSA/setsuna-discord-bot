@@ -2609,11 +2609,42 @@ async function callCharacterAIAPI(messages, characterId) {
       console.log(`Using Character.AI token: ${currentToken ? currentToken.substring(0, 5) + '...' : 'undefined'}`);
       characterAI.setToken(currentToken);
       
-      // Extract the last user message
+      // Extract user messages for context
+      // Filter to just user and assistant messages (no system messages with personality)
+      // and take only the recent ones for context
+      const userMessages = messages
+        .filter(msg => (msg.role === 'user' || msg.role === 'assistant') && !msg.content.includes('setsunaPersonality'))
+        .slice(-10); // Take just the last 10 messages for context
+      
+      // Get the very last user message - this is what we'll actually send
       const lastUserMessage = messages.filter(msg => msg.role === 'user').pop();
       if (!lastUserMessage) {
         throw new Error('No user message found in the conversation');
       }
+      
+      // Prepare the message with context
+      let messageWithContext = '';
+      
+      // Add context from previous messages if there are more than 1 message
+      if (userMessages.length > 1) {
+        // Skip the very last message (we'll send that separately)
+        const contextMessages = userMessages.slice(0, -1);
+        
+        // Check if we should add context
+        if (contextMessages.length > 0) {
+          messageWithContext += "[Previous conversation context]\n";
+          
+          for (const msg of contextMessages) {
+            const role = msg.role === 'user' ? 'Human' : 'Assistant';
+            messageWithContext += `${role}: ${msg.content}\n`;
+          }
+          
+          messageWithContext += "[End of context]\n\n";
+        }
+      }
+      
+      // Add the actual message the user sent
+      messageWithContext += lastUserMessage.content;
       
       // Check if we have an active chat for this channel
       let chatData = null;
@@ -2669,10 +2700,12 @@ async function callCharacterAIAPI(messages, characterId) {
       
       // Send the message to Character.AI
       try {
+        console.log('Sending message with context to Character.AI');
+        
         const response = await characterAI.sendMessage(
           targetCharacterId,
           chatId,
-          lastUserMessage.content
+          messageWithContext
         );
         
         // Check for empty response
@@ -2725,7 +2758,7 @@ async function callCharacterAIAPI(messages, characterId) {
             const response = await characterAI.sendMessage(
               targetCharacterId,
               chatId,
-              lastUserMessage.content
+              messageWithContext
             );
             
             // Check for empty response
