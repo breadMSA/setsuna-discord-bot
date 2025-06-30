@@ -1,19 +1,21 @@
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
+const WebSocket = require('ws');
 
-// Store active chats globally for persistence across instances
+// Store active chats and WebSocket connections globally for persistence across instances
 const activeChats = new Map();
+let wsConnection = null;
+let messageCallbacks = new Map();
 
 /**
- * Character.AI API client implementation
- * Based on the PyCharacterAI Python library
+ * Character.AI API client implementation based on PyCharacterAI Python library
  */
 class CharacterAI {
   constructor() {
     this.token = null;
     this.accountId = null;
-    // Use plus.character.ai as the base URL like in the Python code
     this.baseUrl = 'https://plus.character.ai';
+    this.wsUrl = 'wss://neo.character.ai/ws/';
     this.headers = {
       'Content-Type': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
@@ -46,6 +48,98 @@ class CharacterAI {
       throw new Error('Token not set. Please call setToken() first.');
     }
     return this.headers;
+  }
+
+  /**
+   * Connect to the WebSocket server
+   * @returns {Promise<WebSocket>} WebSocket connection
+   */
+  async connectWebSocket() {
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      console.log('Using existing WebSocket connection');
+      return wsConnection;
+    }
+
+    return new Promise((resolve, reject) => {
+      console.log('Opening new WebSocket connection to Character.AI...');
+      
+      // Close existing connection if it exists
+      if (wsConnection) {
+        try {
+          wsConnection.terminate();
+        } catch (err) {
+          console.log('Error closing existing WebSocket:', err.message);
+        }
+      }
+
+      // Create new connection
+      const ws = new WebSocket(this.wsUrl, {
+        headers: {
+          'Cookie': `HTTP_AUTHORIZATION=Token ${this.token}`
+        }
+      });
+
+      ws.on('open', () => {
+        console.log('WebSocket connection established');
+        wsConnection = ws;
+        resolve(ws);
+      });
+
+      ws.on('message', (data) => {
+        try {
+          const message = JSON.parse(data);
+          const requestId = message.request_id;
+          
+          if (requestId && messageCallbacks.has(requestId)) {
+            const callback = messageCallbacks.get(requestId);
+            callback(message);
+          }
+        } catch (err) {
+          console.error('Error processing WebSocket message:', err.message);
+        }
+      });
+
+      ws.on('error', (error) => {
+        console.error('WebSocket error:', error.message);
+        reject(error);
+      });
+
+      ws.on('close', (code, reason) => {
+        console.log(`WebSocket connection closed: ${code} ${reason}`);
+        wsConnection = null;
+      });
+    });
+  }
+
+  /**
+   * Send a message via WebSocket
+   * @param {Object} message - Message to send
+   * @returns {Promise<Object>} Response
+   */
+  async sendWebSocketMessage(message) {
+    const ws = await this.connectWebSocket();
+    const requestId = message.request_id || uuidv4();
+    
+    if (!message.request_id) {
+      message.request_id = requestId;
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        messageCallbacks.delete(requestId);
+        reject(new Error('WebSocket request timed out'));
+      }, 60000); // 60 second timeout
+
+      // Set up callback for this request
+      messageCallbacks.set(requestId, (response) => {
+        clearTimeout(timeoutId);
+        messageCallbacks.delete(requestId);
+        resolve(response);
+      });
+
+      // Send the message
+      ws.send(JSON.stringify(message));
+    });
   }
 
   /**
@@ -144,7 +238,7 @@ class CharacterAI {
   }
 
   /**
-   * Send a message to a character
+   * Send a message to a character using WebSocket
    * @param {string} characterId - Character ID
    * @param {string} chatId - Chat ID
    * @param {string} message - Message text
@@ -156,36 +250,77 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
-      const requestId = uuidv4();
-      
-      console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
-      
-      // Use the exact same endpoint and format as in the Python library
-      const response = await axios({
-        method: 'POST',
-        url: `${this.baseUrl}/chat/streaming/`,
-        headers: this.getHeaders(),
-        timeout: 60000, // 60 second timeout - longer for first messages
-        data: {
-          history_external_id: chatId,
-          character_external_id: characterId,
-          text: message,
-          request_id: requestId
-        }
-      });
+      if (!this.accountId) {
+        await this.fetchMe();
+      }
 
-      console.log('Character.AI send message response status:', response.status);
+      // Use the same message format as in the Python library
+      const candidateId = uuidv4();
+      const turnId = uuidv4();
+      const requestId = uuidv4();
+
+      console.log(`Sending message to character ${characterId} in chat ${chatId} via WebSocket...`);
+      
+      const wsMessage = {
+        command: "create_and_generate_turn",
+        origin_id: "web-next",
+        payload: {
+          character_id: characterId,
+          num_candidates: 1,
+          previous_annotations: {
+            bad_memory: 0,
+            boring: 0,
+            ends_chat_early: 0,
+            funny: 0,
+            helpful: 0,
+            inaccurate: 0,
+            interesting: 0,
+            long: 0,
+            not_bad_memory: 0,
+            not_boring: 0,
+            not_ends_chat_early: 0,
+            not_funny: 0,
+            not_helpful: 0,
+            not_inaccurate: 0,
+            not_interesting: 0,
+            not_long: 0,
+            not_out_of_character: 0,
+            not_repetitive: 0,
+            not_short: 0,
+            out_of_character: 0,
+            repetitive: 0,
+            short: 0,
+          },
+          selected_language: "",
+          tts_enabled: false,
+          turn: {
+            author: {
+              author_id: this.accountId,
+              is_human: true,
+              name: "",
+            },
+            candidates: [{ candidate_id: candidateId, raw_content: message }],
+            primary_candidate_id: candidateId,
+            turn_key: { chat_id: chatId, turn_id: turnId },
+          },
+          user_name: "",
+        },
+        request_id: requestId,
+      };
+
+      // Send the message via WebSocket
+      const response = await this.sendWebSocketMessage(wsMessage);
       
       // Process the response according to the Python implementation
-      if (response.data && response.data.turn && response.data.turn.candidates) {
-        const primaryCandidate = response.data.turn.candidates[0];
+      if (response && response.turn && response.turn.candidates) {
+        const primaryCandidate = response.turn.candidates[0];
         console.log('Got response from character:', primaryCandidate.text?.substring(0, 50) + '...');
         
         return {
-          turn_id: response.data.turn.turn_id,
-          author_name: response.data.turn.author.name || "Character",
+          turn_id: response.turn.turn_id,
+          author_name: response.turn.author.name || "Character",
           text: primaryCandidate.text || primaryCandidate.raw_content,
-          candidates: response.data.turn.candidates.map(candidate => ({
+          candidates: response.turn.candidates.map(candidate => ({
             candidate_id: candidate.candidate_id,
             text: candidate.text || candidate.raw_content
           })),
@@ -199,10 +334,6 @@ class CharacterAI {
       throw new Error('Invalid response from Character.AI API - missing turn data');
     } catch (error) {
       console.error('Error sending message:', error.message);
-      if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data));
-      }
       throw error;
     }
   }
@@ -276,6 +407,21 @@ class CharacterAI {
         console.error('Response data:', JSON.stringify(error.response.data));
       }
       throw error;
+    }
+  }
+
+  /**
+   * Close any open connections
+   */
+  async close() {
+    if (wsConnection) {
+      try {
+        wsConnection.close();
+        wsConnection = null;
+        console.log('WebSocket connection closed');
+      } catch (error) {
+        console.error('Error closing WebSocket connection:', error.message);
+      }
     }
   }
 }
