@@ -7,6 +7,12 @@ const activeChats = new Map();
 // Store active WebSocket connections
 const activeWebSockets = new Map();
 
+// Debug: Log all environment variables related to Character.AI
+console.log('CHARACTER.AI ENVIRONMENT VARIABLES:');
+console.log('CHARACTERAI_CHAT_ID:', process.env.CHARACTERAI_CHAT_ID || 'NOT SET');
+console.log('CHARACTERAI_CHARACTER_ID:', process.env.CHARACTERAI_CHARACTER_ID || 'NOT SET');
+console.log('CHARACTERAI_TOKEN length:', process.env.CHARACTERAI_TOKEN ? process.env.CHARACTERAI_TOKEN.length : 'NOT SET');
+
 /**
  * Character.AI API client implementation
  * Based on the PyCharacterAI Python library
@@ -26,7 +32,9 @@ class CharacterAI {
     // Use persistent chat ID from environment variable if available
     this.persistentChatId = process.env.CHARACTERAI_CHAT_ID || null;
     if (this.persistentChatId) {
-      console.log(`Using persistent Character.AI chat ID from environment: ${this.persistentChatId.substring(0, 10)}...`);
+      console.log(`Using persistent Character.AI chat ID from environment: ${this.persistentChatId}`);
+    } else {
+      console.log('No persistent Character.AI chat ID found in environment variables');
     }
   }
 
@@ -152,15 +160,18 @@ class CharacterAI {
         await this.fetchMe();
       }
       
+      // Check for persistent chat ID again (in case it was set after initialization)
+      const persistentChatId = process.env.CHARACTERAI_CHAT_ID || this.persistentChatId;
+      
       // If using a persistent chat ID from environment, return that instead of creating a new chat
-      if (this.persistentChatId) {
-        console.log(`Using persistent chat ID: ${this.persistentChatId}`);
+      if (persistentChatId) {
+        console.log(`Using persistent chat ID: ${persistentChatId}`);
         
         // Return a minimal chat object with the persistent chat ID
         return { 
           chat: {
-            chat_id: this.persistentChatId,
-            external_id: this.persistentChatId
+            chat_id: persistentChatId,
+            external_id: persistentChatId
           },
           greeting: null
         };
@@ -340,8 +351,11 @@ class CharacterAI {
         await this.fetchMe();
       }
       
+      // Check for persistent chat ID again (in case it was set after initialization)
+      const persistentChatId = process.env.CHARACTERAI_CHAT_ID || this.persistentChatId;
+      
       // If we have a persistent chat ID from environment, use it instead of the provided chatId
-      const effectiveChatId = this.persistentChatId || chatId;
+      const effectiveChatId = persistentChatId || chatId;
 
       // Generate UUIDs for the request
       const candidateId = uuidv4();
@@ -535,8 +549,11 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
       
+      // Check for persistent chat ID again (in case it was set after initialization)
+      const persistentChatId = process.env.CHARACTERAI_CHAT_ID || this.persistentChatId;
+      
       // If we have a persistent chat ID from environment, use it instead of the provided chatId
-      const effectiveChatId = this.persistentChatId || chatId;
+      const effectiveChatId = persistentChatId || chatId;
 
       const response = await axios({
         method: 'GET',

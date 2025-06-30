@@ -469,46 +469,46 @@ async function saveActiveChannels() {
     try {
       // Try to get the current file to get its SHA
       const { data: fileData } = await githubClient.repos.getContent({
-        owner,
+    owner,
         repo: repoName,
         path: filePath
-      });
+  });
       
       console.log('Found existing file, updating with SHA:', fileData.sha);
-      
+          
       // Update the file
       const updateResponse = await githubClient.repos.createOrUpdateFileContents({
-        owner,
+            owner,
         repo: repoName,
         path: filePath,
         message: 'Update active channels',
         content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64'),
         sha: fileData.sha
-      });
-      
+          });
+          
       console.log('GitHub API update response:', JSON.stringify(updateResponse.data, null, 2));
       console.log('Successfully updated active channels in GitHub');
-    } catch (error) {
-      if (error.status === 404) {
+        } catch (error) {
+          if (error.status === 404) {
         // File doesn't exist, create it
         console.log('File not found, creating new file');
         
         const createResponse = await githubClient.repos.createOrUpdateFileContents({
-          owner,
+              owner,
           repo: repoName,
           path: filePath,
           message: 'Create active channels file',
           content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64')
-        });
-        
+            });
+            
         console.log('GitHub API create response:', JSON.stringify(createResponse.data, null, 2));
         console.log('Successfully created active channels file in GitHub');
-      } else {
+          } else {
         console.error('GitHub API error:', error.message);
         console.error('Error details:', error.response ? error.response.data : 'No response data');
-        throw error;
-      }
-    }
+            throw error;
+          }
+        }
     
     // Also save locally as a backup
     try {
@@ -517,7 +517,7 @@ async function saveActiveChannels() {
     } catch (localError) {
       console.error('Error saving active channels locally:', localError);
     }
-  } catch (error) {
+      } catch (error) {
     console.error('Error saving active channels to GitHub:', error);
     
     // Try to save locally as a fallback
@@ -2593,6 +2593,14 @@ async function callCharacterAIAPI(messages, characterId) {
   
   console.log(`Using channel ID: ${channelId} for Character.AI chat`);
   
+  // Check if we have a persistent chat ID from environment variables
+  const persistentChatId = process.env.CHARACTERAI_CHAT_ID;
+  if (persistentChatId) {
+    console.log(`Found persistent chat ID in environment: ${persistentChatId}`);
+  } else {
+    console.log('No persistent chat ID found in environment, will create new chats');
+  }
+  
   while (keysTriedCount < CHARACTERAI_TOKENS.length) {
     try {
       // Initialize Character.AI client
@@ -2611,8 +2619,19 @@ async function callCharacterAIAPI(messages, characterId) {
       let chatData = null;
       let chatId = null;
       
-      // Get stored chat info for this channel if it exists
-      if (!characterAI.activeChats.has(channelId)) {
+      // If we have a persistent chat ID from environment, use it directly
+      if (persistentChatId) {
+        console.log(`Using persistent chat ID from environment: ${persistentChatId}`);
+        chatId = persistentChatId;
+        
+        // Store the chat info for future use
+        characterAI.activeChats.set(channelId, {
+          chatId: chatId,
+          characterId: targetCharacterId
+        });
+      }
+      // Otherwise get stored chat info for this channel if it exists
+      else if (!characterAI.activeChats.has(channelId)) {
         console.log(`Creating new Character.AI chat for channel ${channelId}`);
         try {
           // Create a new chat
@@ -2670,6 +2689,15 @@ async function callCharacterAIAPI(messages, characterId) {
         return response.text;
       } catch (sendError) {
         console.error('Error sending message:', sendError.message);
+        
+        // If using a persistent chat ID and getting errors, don't try to create a new chat
+        if (persistentChatId) {
+          console.error('Error with persistent chat ID. Check that the chat ID is correct and accessible.');
+          lastError = sendError;
+          getNextCharacterAIToken();
+          keysTriedCount++;
+          continue;
+        }
         
         // If the error is about the chat not existing, remove it from active chats and try to create a new one
         if (sendError.message.includes('no such chat')) {
