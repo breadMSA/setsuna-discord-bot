@@ -448,7 +448,7 @@ async function saveActiveChannels() {
       };
     }
 
-    console.log('Simplified active channels for saving:', JSON.stringify(simplifiedActiveChannels, null, 2));
+    // Prepare simplified active channels for saving
 
     // Set up GitHub client
     const githubClient = await setupGitHub();
@@ -2571,9 +2571,11 @@ async function callCharacterAIAPI(messages, characterId) {
   const CharacterAI = require('./characterai');
   
   // Use the character ID from environment variable if none provided
-  const targetCharacterId = characterId || CHARACTERAI_CHARACTER_ID;
+  const targetCharacterId = characterId || process.env.CHARACTERAI_CHARACTER_ID;
+  console.log(`Using Character.AI character ID: ${targetCharacterId}`);
+  
   if (!targetCharacterId) {
-    throw new Error('No Character.AI character ID provided');
+    throw new Error('No Character.AI character ID provided. Set CHARACTERAI_CHARACTER_ID in your environment variables.');
   }
   
   // Get channel ID from the messages
@@ -2595,7 +2597,9 @@ async function callCharacterAIAPI(messages, characterId) {
     try {
       // Initialize Character.AI client
       const characterAI = new CharacterAI();
-      characterAI.setToken(getCurrentCharacterAIToken());
+      const currentToken = getCurrentCharacterAIToken();
+      console.log(`Using Character.AI token: ${currentToken ? currentToken.substring(0, 5) + '...' : 'undefined'}`);
+      characterAI.setToken(currentToken);
       
       // Extract the last user message
       const lastUserMessage = messages.filter(msg => msg.role === 'user').pop();
@@ -2610,17 +2614,27 @@ async function callCharacterAIAPI(messages, characterId) {
       // Get stored chat info for this channel if it exists
       if (!characterAI.activeChats.has(channelId)) {
         console.log(`Creating new Character.AI chat for channel ${channelId}`);
-        // Create a new chat
-        const result = await characterAI.createChat(targetCharacterId);
-        chatData = result.chat;
-        chatId = chatData.chat_id || chatData.external_id;
-        
-        // Store the chat info for future use
-        characterAI.activeChats.set(channelId, {
-          chatId: chatId,
-          characterId: targetCharacterId
-        });
-        console.log(`Created new chat with ID: ${chatId}`);
+        try {
+          // Create a new chat
+          const result = await characterAI.createChat(targetCharacterId);
+          chatData = result.chat;
+          chatId = chatData.chat_id || chatData.external_id;
+          
+          // Store the chat info for future use
+          characterAI.activeChats.set(channelId, {
+            chatId: chatId,
+            characterId: targetCharacterId
+          });
+          console.log(`Created new chat with ID: ${chatId}`);
+        } catch (createError) {
+          console.error('Error creating chat:', createError.message);
+          // Try next token
+          lastError = createError;
+          getNextCharacterAIToken();
+          keysTriedCount++;
+          console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${createError.message}`);
+          continue;
+        }
       } else {
         // Use existing chat
         const storedChat = characterAI.activeChats.get(channelId);
@@ -2629,25 +2643,34 @@ async function callCharacterAIAPI(messages, characterId) {
       }
       
       // Send the message to Character.AI
-      const response = await characterAI.sendMessage(
-        targetCharacterId,
-        chatId,
-        lastUserMessage.content
-      );
-      
-      // Check for empty response
-      if (!response || !response.text) {
+      try {
+        const response = await characterAI.sendMessage(
+          targetCharacterId,
+          chatId,
+          lastUserMessage.content
+        );
+        
+        // Check for empty response
+        if (!response || !response.text) {
+          // Try next token
+          lastError = new Error('Empty response from Character.AI API');
+          getNextCharacterAIToken();
+          keysTriedCount++;
+          console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} returned empty response`);
+          continue;
+        }
+        
+        // Success! Return the response
+        return response.text;
+      } catch (sendError) {
+        console.error('Error sending message:', sendError.message);
         // Try next token
-        lastError = new Error('Empty response from Character.AI API');
+        lastError = sendError;
         getNextCharacterAIToken();
         keysTriedCount++;
-        console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} returned empty response`);
+        console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${sendError.message}`);
         continue;
       }
-      
-      // Success! Return the response
-      return response.text;
-      
     } catch (error) {
       // Try next token
       lastError = error;

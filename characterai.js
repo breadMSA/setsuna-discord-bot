@@ -12,8 +12,8 @@ class CharacterAI {
   constructor() {
     this.token = null;
     this.accountId = null;
-    // Use the old API URL as it's more stable
-    this.baseUrl = 'https://beta.character.ai';
+    // Use the Neo API URL as in the Python code
+    this.baseUrl = 'https://neo.character.ai';
     this.headers = {
       'Content-Type': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
@@ -34,7 +34,7 @@ class CharacterAI {
    */
   setToken(token) {
     this.token = token;
-    this.headers['Authorization'] = `Token ${token}`;
+    this.headers['authorization'] = `Token ${token}`;
   }
 
   /**
@@ -61,12 +61,13 @@ class CharacterAI {
       console.log('Fetching account info from Character.AI...');
       const response = await axios({
         method: 'GET',
-        url: `${this.baseUrl}/api/v1/user/`,
+        url: `${this.baseUrl}/chat/user/`,
         headers: this.getHeaders(),
         timeout: 10000 // 10 second timeout
       });
 
       console.log('Character.AI user API response status:', response.status);
+      console.log('Response data:', JSON.stringify(response.data, null, 2).substring(0, 500) + '...');
       
       if (response.data && response.data.user) {
         this.accountId = response.data.user.user_id;
@@ -96,40 +97,45 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
+      // Make sure we have the account ID
       if (!this.accountId) {
         await this.fetchMe();
       }
 
-      const chatId = uuidv4();
       const requestId = uuidv4();
 
       console.log(`Creating new chat with character ${characterId}...`);
       const response = await axios({
         method: 'POST',
-        url: `${this.baseUrl}/api/v1/chat/create/`,
+        url: `${this.baseUrl}/chat/history/create/`,
         headers: this.getHeaders(),
         timeout: 15000, // 15 second timeout
         data: {
           character_external_id: characterId,
-          history_external_id: null,
-          request_id: requestId
+          history_external_id: null
         }
       });
 
       console.log('Character.AI create chat response status:', response.status);
+      console.log('Response data:', JSON.stringify(response.data, null, 2).substring(0, 500) + '...');
       
       if (response.data && response.data.external_id) {
+        const chatId = response.data.external_id;
         let greeting = null;
         
         // Try to get the greeting message if available
-        if (response.data.turns && response.data.turns.length > 0) {
-          greeting = response.data.turns[0];
+        if (response.data.messages && response.data.messages.length > 0) {
+          greeting = response.data.messages[0];
         }
 
-        console.log(`Successfully created chat with ID: ${response.data.external_id}`);
+        console.log(`Successfully created chat with ID: ${chatId}`);
         
         return { 
-          chat: response.data, 
+          chat: {
+            chat_id: chatId,
+            external_id: chatId,
+            character_id: characterId
+          }, 
           greeting: greeting 
         };
       }
@@ -161,36 +167,35 @@ class CharacterAI {
       console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
       const response = await axios({
         method: 'POST',
-        url: `${this.baseUrl}/api/v1/chat/streaming/`,
+        url: `${this.baseUrl}/chat/streaming/recv/`,
         headers: this.getHeaders(),
         timeout: 30000, // 30 second timeout
         data: {
-          character_external_id: characterId,
           history_external_id: chatId,
-          text: message,
-          request_id: uuidv4()
+          character_external_id: characterId,
+          text: message
         }
       });
 
       console.log('Character.AI send message response status:', response.status);
       
-      // For streaming responses, we'd need to parse differently
-      // For now, we'll handle the non-streaming response
-      if (response.data && response.data.turn) {
-        console.log('Got response from character:', response.data.turn.candidates[0].text?.substring(0, 50) + '...');
+      // Process the response to extract the message
+      if (response.data && response.data.replies && response.data.replies.length > 0) {
+        const reply = response.data.replies[0];
+        console.log('Got response from character:', reply.text?.substring(0, 50) + '...');
         
         return {
-          turn_id: response.data.turn.turn_id,
-          author_name: response.data.turn.author.name || "Character",
-          text: response.data.turn.candidates[0].text || response.data.turn.candidates[0].raw_content,
-          candidates: response.data.turn.candidates.map(candidate => ({
-            candidate_id: candidate.candidate_id,
-            text: candidate.text || candidate.raw_content
-          }))
+          turn_id: reply.id || uuidv4(),
+          author_name: "Character",
+          text: reply.text,
+          candidates: [{ 
+            candidate_id: reply.id || uuidv4(),
+            text: reply.text
+          }]
         };
       }
 
-      throw new Error('Invalid response from Character.AI API - missing turn data');
+      throw new Error('Invalid response from Character.AI API - missing reply data');
     } catch (error) {
       console.error('Error sending message:', error.message);
       if (error.response) {
@@ -214,7 +219,7 @@ class CharacterAI {
 
       const response = await axios({
         method: 'GET',
-        url: `${this.baseUrl}/api/v1/chat/history/msgs/user/`,
+        url: `${this.baseUrl}/chat/history/msgs/user/`,
         headers: this.getHeaders(),
         timeout: 10000, // 10 second timeout
         params: {
@@ -250,7 +255,7 @@ class CharacterAI {
 
       const response = await axios({
         method: 'GET',
-        url: `${this.baseUrl}/api/v1/character/info/`,
+        url: `${this.baseUrl}/chat/character/info/`,
         headers: this.getHeaders(),
         timeout: 10000, // 10 second timeout
         params: {

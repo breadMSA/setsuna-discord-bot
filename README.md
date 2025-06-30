@@ -68,6 +68,8 @@
    CEREBRAS_API_KEY=你的 Cerebras API 金鑰
    GITHUB_REPO=你的 GitHub 倉庫名稱 (這是用於儲存頻道設定和模型偏好。範例：yourusername/yourrepository)
    GITHUB_TOKEN=你的 GitHub Personal Access Token (PAT)
+   CHARACTERAI_TOKEN=your_character_ai_token
+   CHARACTERAI_CHARACTER_ID=your_character_id_here
    ```
 4. 啟動機器人：
    ```
@@ -212,174 +214,86 @@ A Discord AI bot that connects to LLM API and chats with users in specific chann
   - ChatGPT (OpenAI's GPT models)
   - Together AI (Llama-3.3-70B-Instruct-Turbo)
   - DeepSeek (DeepSeek's AI models)
-  - Cerebras (various models including Llama 4, Llama 3.1, etc.)
-  - Character.AI (Chat with characters from Character.AI)
-- Allows setting different models for different channels
-- Automatic API key rotation for load balancing and reliability
-- Fallback mechanisms when API calls fail
+  - Cerebras (Llama 4 Scout/Maverick and other models)
+  - Character.AI (Use any character from Character.AI)
+- Allows different channels to use different models
+- Automatically rotates between multiple API keys to avoid rate limits
 
-### 🎨 Image Generation & Understanding
-- Generates images based on text descriptions
-- Identifies content in user-uploaded images
-- Supports image style transformation (e.g., oil painting style, pixel art, adding/removing objects)
-- Enables question answering based on images (e.g., "How many cats are in this picture?")
+### 🎨 Image Generation and Manipulation
+- Generates images based on text descriptions using Gemini
+- Can modify existing images based on user requests
+- Detects image generation and modification requests automatically
 
-### 📺 YouTube Video Understanding
-- Parses YouTube video links to display title, channel, and description
-- Provides YouTube video content summaries
-- Answers questions based on video content
-- Supports YouTube video search functionality
-
-### ⚙️ Advanced Features
-- Simple channel activation/deactivation commands
-- Customizable bot personality settings
-- Multiple API key rotation for service stability
-- Persistent channel settings and model preferences stored on GitHub
-
-## Invite Setsuna
-You can invite pre-built Setsuna to your Discord server using the following link:
-[Invite Setsuna to your Discord server](https://discord.com/oauth2/authorize?client_id=1372437324595462206&permissions=1689917160152128&integration_type=0&scope=applications.commands+bot) 
-
-For server setup tutorial, please refer to the [usage](https://github.com/breadMSA/setsuna-discord-bot?tab=readme-ov-file#usage) below.
+### 🔧 Easy Administration
+- Simple slash commands for bot management
+- Automatic backup of channel configurations to GitHub
+- Detailed logging for troubleshooting
 
 ## Setup
 
-### Local Development
+### Environment Variables
+Create a `.env` file in the root directory with the following variables:
+
+```
+# Discord Bot Token
+DISCORD_TOKEN=your_discord_bot_token
+
+# API Keys (at least one is required)
+DEEPSEEK_API_KEY=your_deepseek_api_key
+GEMINI_API_KEY=your_gemini_api_key
+CHATGPT_API_KEY=your_chatgpt_api_key
+TOGETHER_API_KEY=your_together_api_key
+GROQ_API_KEY=your_groq_api_key
+CEREBRAS_API_KEY=your_cerebras_api_key
+CHARACTERAI_TOKEN=your_character_ai_token
+
+# Character.AI Character ID
+CHARACTERAI_CHARACTER_ID=character_id_to_use
+
+# GitHub Integration (optional, for configuration backup)
+GITHUB_TOKEN=your_github_token
+GITHUB_REPO=username/repo/path
+```
+
+You can have multiple API keys for each service by adding numbers to the environment variable names:
+```
+DEEPSEEK_API_KEY_2=your_second_deepseek_api_key
+GEMINI_API_KEY_2=your_second_gemini_api_key
+# etc.
+```
+
+### Installation
 
 1. Clone this repository
-2. Install dependencies:
-   ```
-   npm install
-   ```
-3. Create a `.env` file with your API keys:
-   ```
-   DISCORD_TOKEN=your_discord_bot_token
-   GEMINI_API_KEY=your_gemini_api_key
-   DEEPSEEK_API_KEY=your_deepseek_api_key
-   CHATGPT_API_KEY=your_chatgpt_api_key
-   GROQ_API_KEY=your_groq_api_key
-   YOUTUBE_API_KEY=your_youtube_api_key (Required for YouTube video search and URL preview features)
-   BOT_OWNER_ID=your_discord_user_id,other_admin_id (Not necessary. But if you'd like to use the /setprofile command, you need to fill in.For multiple owners, separate IDs with a comma, e.g., `123456789012345678,987654321098765432`)
-   TOGETHER_API_KEY=your_together_ai_api_key
-   CEREBRAS_API_KEY=your_cerebras_api_key
-   GITHUB_REPO=your_github_repository_name (This is used to store channel settings and model preferences. E.g., yourusername/yourrepository)
-   GITHUB_TOKEN=your_github_personal_access_token (PAT)
-   CHARACTERAI_TOKEN=your_character_ai_token_here
-   CHARACTERAI_CHARACTER_ID=your_character_id_here
-   ```
-4. Run the bot:
-   ```
-   npm start
-   ```
+2. Run `npm install` to install dependencies
+3. Create a `.env` file with your API keys as described above
+4. Run `node index.js` to start the bot
 
-### GitHub Setup
-
-1. Create a new GitHub repository
-2. Push your code to the repository:
-   ```
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/yourusername/setsuna-discord-bot.git
-   git push -u origin main
-   ```
-
-## Deployment Options for 24/7 Operation
-
-### Option 1: Railway
-
-[Railway](https://railway.app/) offers a simple deployment platform with a free tier.
-
-1. Sign up for Railway and connect your GitHub repository
-2. Add your environment variables in the Railway dashboard
-3. Deploy your application
-
-### Option 2: Render
-
-[Render](https://render.com/) provides a free tier for web services.
-
-1. Sign up for Render and connect your GitHub repository
-2. Create a new Web Service
-3. Set the build command to `npm install`
-4. Set the start command to `node server.js & node index.js`
-5. Add your environment variables
-6. Deploy your application
-
-### Option 3: Heroku
-
-[Heroku](https://www.heroku.com/) is another popular option for hosting Discord bots.
-
-1. Sign up for Heroku and install the Heroku CLI
-2. Create a `Procfile` in your project root with the content:
-   ```
-   worker: npm start
-   ```
-3. Deploy to Heroku:
-   ```
-   heroku create
-   git push heroku main
-   ```
-4. Add your environment variables in the Heroku dashboard
-5. Scale your worker dyno:
-   ```
-   heroku ps:scale worker=1
-   ```
-
-### Option 4: GitHub Actions + Self-hosted Runner
-
-If you have a server or computer that can run 24/7:
-
-1. Set up a GitHub Actions workflow file (`.github/workflows/deploy.yml`):
-   ```yaml
-   name: Deploy Bot
-   
-   on:
-     push:
-       branches: [ main ]
-   
-   jobs:
-     deploy:
-       runs-on: self-hosted
-       steps:
-         - uses: actions/checkout@v2
-         - name: Use Node.js
-           uses: actions/setup-node@v2
-           with:
-             node-version: '16.x'
-         - run: npm ci
-         - run: pm2 restart setsuna || pm2 start index.js --name setsuna
-   ```
-2. Install PM2 on your server: `npm install -g pm2`
-3. Set up a self-hosted GitHub Actions runner on your server
-4. Push to GitHub to trigger the deployment
-
-## Usage
-
-Once the bot is running, you can use the following commands in your Discord server:
+## Commands
 
 - `/setsuna activate #channel-name [model] [groq_model/cerebras_model]` - Activate the bot in designated channel with optional model selection (Groq, Gemini, ChatGPT, Together AI, DeepSeek, Cerebras, Character.AI) and specific submodel.
-- `/setsuna deactivate #channel-name` - Deactivate the bot in the current channel.
-- `/setsuna setmodel [model] [groq_model/cerebras_model] #channel-name` - Change the model and specific submodel used in the specified channel.
-- `/setsuna checkmodel #channel-name` - Check which model is currently being used in the channel.
-- `/setsuna aidetect [true/false]`：Enables/disables AI detection for image generation requests.
-- `/setsuna setpersonality` - Set the bot's personality, customize its response style and character.
-- `/setsuna checkpersonality` - Check the current bot personality settings.
-- If #channel_name is not specified, defaults to the current channel.
-- If model is not specified, defaults to Groq.
-- If Groq is selected but no groq_model is specified, defaults to llama-3.1-8b-instant.
-- `/reset_chat [channel]` - (Manage Channels permission required) Resets the chat history for Setsuna in the specified or current channel.
+- `/setsuna deactivate #channel-name` - Deactivate the bot in the designated channel.
+- `/setsuna setmodel #channel-name [model] [groq_model/cerebras_model]` - Change the AI model used in the designated channel.
+- `/setsuna checkmodel #channel-name` - Check which AI model is currently being used in the designated channel.
+- `/setsuna setinstructions #channel-name [instructions]` - Set custom instructions for the AI in the designated channel.
+- `/setsuna setrole #channel-name [role]` - Set a custom role for the AI in the designated channel.
+- `/setsuna setstyle #channel-name [style]` - Set a custom speaking style for the AI in the designated channel.
+- `/setsuna setstructure #channel-name [structure]` - Set a custom text structure for the AI in the designated channel.
+- `/setsuna toggleimagedetection #channel-name` - Toggle AI-based image request detection in the designated channel.
+- `/setsuna help` - Display help information about the bot commands.
 
-- `/contact` - Contact the bot developer or join our community server for feedback and support
-- `/help` - View bot usage instructions
+## Character.AI Integration
 
-### 💬 Chatting with Setsuna
+The Character.AI integration allows you to use any character from Character.AI as a model in your bot. To use this feature:
 
-- Simply type your message in a channel where Setsuna is active.
-- Setsuna remembers the last 50 messages in the channel for context.
-- You can reply to Setsuna's messages or other users' messages, and Setsuna will understand the context.
-- If you send a YouTube video URL, Setsuna will show a preview of the video.
-- If you ask Setsuna to find a YouTube video (e.g., "help me find a cat video"), Setsuna will try to search and provide relevant video links.
+1. Get your Character.AI token by logging into Character.AI and copying it from your browser's cookies
+2. Set the `CHARACTERAI_TOKEN` environment variable with your token
+3. Set the `CHARACTERAI_CHARACTER_ID` environment variable with the ID of the character you want to use
+   - You can find the character ID in the URL when viewing a character on Character.AI
+   - Example: For `https://beta.character.ai/chat?char=abcdefgh`, the ID is `abcdefgh`
+4. Use `/setsuna activate #channel-name characterai` to activate the Character.AI model in a channel
+
+The bot will create a new chat with the character and use it for all conversations in that channel.
 
 ## License
 
