@@ -469,46 +469,46 @@ async function saveActiveChannels() {
     try {
       // Try to get the current file to get its SHA
       const { data: fileData } = await githubClient.repos.getContent({
-    owner,
+        owner,
         repo: repoName,
         path: filePath
-  });
+      });
       
       console.log('Found existing file, updating with SHA:', fileData.sha);
-          
+      
       // Update the file
       const updateResponse = await githubClient.repos.createOrUpdateFileContents({
-            owner,
+        owner,
         repo: repoName,
         path: filePath,
         message: 'Update active channels',
         content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64'),
         sha: fileData.sha
-          });
-          
+      });
+      
       console.log('GitHub API update response:', JSON.stringify(updateResponse.data, null, 2));
       console.log('Successfully updated active channels in GitHub');
-        } catch (error) {
-          if (error.status === 404) {
+    } catch (error) {
+      if (error.status === 404) {
         // File doesn't exist, create it
         console.log('File not found, creating new file');
         
         const createResponse = await githubClient.repos.createOrUpdateFileContents({
-              owner,
+          owner,
           repo: repoName,
           path: filePath,
           message: 'Create active channels file',
           content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64')
-            });
-            
+        });
+        
         console.log('GitHub API create response:', JSON.stringify(createResponse.data, null, 2));
         console.log('Successfully created active channels file in GitHub');
-          } else {
+      } else {
         console.error('GitHub API error:', error.message);
         console.error('Error details:', error.response ? error.response.data : 'No response data');
-            throw error;
-          }
-        }
+        throw error;
+      }
+    }
     
     // Also save locally as a backup
     try {
@@ -517,7 +517,7 @@ async function saveActiveChannels() {
     } catch (localError) {
       console.error('Error saving active channels locally:', localError);
     }
-      } catch (error) {
+  } catch (error) {
     console.error('Error saving active channels to GitHub:', error);
     
     // Try to save locally as a fallback
@@ -2607,32 +2607,48 @@ async function callCharacterAIAPI(messages, characterId) {
         throw new Error('No user message found in the conversation');
       }
       
-      // Send the message to Character.AI with retry logic
-      try {
-        let response = null;
-        let retryCount = 0;
-        const maxRetries = 2; // Try up to 3 times total (initial + 2 retries)
-        
-        while (!response && retryCount <= maxRetries) {
-          try {
-            // Use channel ID directly instead of chat ID
-            response = await characterAI.sendMessage(
-              targetCharacterId,
-              channelId,
-              lastUserMessage.content
-            );
-          } catch (sendRetryError) {
-            retryCount++;
-            if (retryCount <= maxRetries) {
-              console.log(`Retry attempt ${retryCount}/${maxRetries} for Character.AI message...`);
-              // Wait 2 seconds before retrying
-              await new Promise(resolve => setTimeout(resolve, 2000));
-            } else {
-              // Rethrow the error if we've exhausted all retries
-              throw sendRetryError;
-            }
-          }
+      // Check if we have an active chat for this channel
+      let chatData = null;
+      let chatId = null;
+      
+      // Get stored chat info for this channel if it exists
+      if (!characterAI.activeChats.has(channelId)) {
+        console.log(`Creating new Character.AI chat for channel ${channelId}`);
+        try {
+          // Create a new chat
+          const result = await characterAI.createChat(targetCharacterId);
+          chatData = result.chat;
+          chatId = chatData.chat_id || chatData.external_id;
+          
+          // Store the chat info for future use
+          characterAI.activeChats.set(channelId, {
+            chatId: chatId,
+            characterId: targetCharacterId
+          });
+          console.log(`Created new chat with ID: ${chatId}`);
+        } catch (createError) {
+          console.error('Error creating chat:', createError.message);
+          // Try next token
+          lastError = createError;
+          getNextCharacterAIToken();
+          keysTriedCount++;
+          console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${createError.message}`);
+          continue;
         }
+      } else {
+        // Use existing chat
+        const storedChat = characterAI.activeChats.get(channelId);
+        chatId = storedChat.chatId;
+        console.log(`Using existing Character.AI chat ${chatId} for channel ${channelId}`);
+      }
+      
+      // Send the message to Character.AI
+      try {
+        const response = await characterAI.sendMessage(
+          targetCharacterId,
+          chatId,
+          lastUserMessage.content
+        );
         
         // Check for empty response
         if (!response || !response.text) {
