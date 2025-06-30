@@ -2642,13 +2642,31 @@ async function callCharacterAIAPI(messages, characterId) {
         console.log(`Using existing Character.AI chat ${chatId} for channel ${channelId}`);
       }
       
-      // Send the message to Character.AI
+      // Send the message to Character.AI with retry logic
       try {
-        const response = await characterAI.sendMessage(
-          targetCharacterId,
-          chatId,
-          lastUserMessage.content
-        );
+        let response = null;
+        let retryCount = 0;
+        const maxRetries = 2; // Try up to 3 times total (initial + 2 retries)
+        
+        while (!response && retryCount <= maxRetries) {
+          try {
+            response = await characterAI.sendMessage(
+              targetCharacterId,
+              chatId,
+              lastUserMessage.content
+            );
+          } catch (sendRetryError) {
+            retryCount++;
+            if (retryCount <= maxRetries) {
+              console.log(`Retry attempt ${retryCount}/${maxRetries} for Character.AI message...`);
+              // Wait 2 seconds before retrying
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } else {
+              // Rethrow the error if we've exhausted all retries
+              throw sendRetryError;
+            }
+          }
+        }
         
         // Check for empty response
         if (!response || !response.text) {

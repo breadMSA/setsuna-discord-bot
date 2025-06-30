@@ -165,7 +165,7 @@ class CharacterAI {
         method: 'POST',
         url: `${this.baseUrl}/chat/streaming/`,
         headers: this.getHeaders(),
-        timeout: 30000, // 30 second timeout
+        timeout: 60000, // 60 second timeout - longer for first messages
         data: {
           history_external_id: chatId,
           character_external_id: characterId,
