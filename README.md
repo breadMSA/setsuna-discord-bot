@@ -234,17 +234,17 @@ A Discord AI bot that connects to LLM API and chats with users in specific chann
 ### Environment Variables
 Create a `.env` file in the root directory with the following variables:
 
-```
+   ```
 # Discord Bot Token
-DISCORD_TOKEN=your_discord_bot_token
+   DISCORD_TOKEN=your_discord_bot_token
 
 # API Keys (at least one is required)
 DEEPSEEK_API_KEY=your_deepseek_api_key
-GEMINI_API_KEY=your_gemini_api_key
-CHATGPT_API_KEY=your_chatgpt_api_key
+   GEMINI_API_KEY=your_gemini_api_key
+   CHATGPT_API_KEY=your_chatgpt_api_key
 TOGETHER_API_KEY=your_together_api_key
-GROQ_API_KEY=your_groq_api_key
-CEREBRAS_API_KEY=your_cerebras_api_key
+   GROQ_API_KEY=your_groq_api_key
+   CEREBRAS_API_KEY=your_cerebras_api_key
 CHARACTERAI_TOKEN=your_character_ai_token
 
 # Character.AI Character ID
