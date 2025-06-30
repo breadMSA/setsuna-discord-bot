@@ -251,9 +251,35 @@ class CharacterAI {
         });
         
         console.log('Streaming API response status:', response.status);
+        console.log('Response data keys:', Object.keys(response.data || {}));
+        
+        // Log the response data for debugging
+        if (response.data) {
+          const responseStr = JSON.stringify(response.data).substring(0, 500); // Log first 500 chars only
+          console.log('Response data (partial):', responseStr);
+        }
         
         // Process the response
         if (response.data) {
+          // If we have a valid turn response
+          if (response.data.status === 200 && response.data.turns && response.data.turns.length > 0) {
+            const turn = response.data.turns[0];
+            console.log('Got response from character (turns format):', turn.text.substring(0, 50) + '...');
+            
+            return {
+              turn_id: turn.id || requestId,
+              author_name: turn.name || "Character",
+              text: turn.text || '',
+              candidates: [{
+                candidate_id: turn.id || requestId,
+                text: turn.text || ''
+              }],
+              get_primary_candidate() {
+                return this.candidates[0];
+              }
+            };
+          }
+          
           // Check for turn data format
           if (response.data.turn && response.data.turn.candidates && response.data.turn.candidates.length > 0) {
             const candidate = response.data.turn.candidates[0];
@@ -309,9 +335,56 @@ class CharacterAI {
               }
             };
           }
+          
+          // Check for text property directly in response
+          if (response.data.text) {
+            console.log('Got response from character (direct text):', response.data.text.substring(0, 50) + '...');
+            
+            return {
+              turn_id: requestId,
+              author_name: "Character",
+              text: response.data.text,
+              candidates: [{
+                candidate_id: requestId,
+                text: response.data.text
+              }],
+              get_primary_candidate() {
+                return this.candidates[0];
+              }
+            };
+          }
+          
+          // Check for any response field that might contain text
+          const responseStr = JSON.stringify(response.data);
+          const textMatch = responseStr.match(/"text"\s*:\s*"([^"]+)"/);
+          if (textMatch && textMatch[1]) {
+            console.log('Found text content in response:', textMatch[1].substring(0, 50) + '...');
+            
+            return {
+              turn_id: requestId,
+              author_name: "Character",
+              text: textMatch[1],
+              candidates: [{
+                candidate_id: requestId,
+                text: textMatch[1]
+              }],
+              get_primary_candidate() {
+                return this.candidates[0];
+              }
+            };
+          }
+          
+          // If the streaming API returned successful but we couldn't parse the response,
+          // we'll try a different approach
+          if (response.status === 200) {
+            console.log('Streaming API returned success but in unexpected format, trying legacy API...');
+          }
         }
       } catch (error) {
         console.error('Error using streaming API:', error.message);
+        if (error.response && error.response.data) {
+          console.log('Streaming API error response:', JSON.stringify(error.response.data).substring(0, 200));
+        }
         // Fall through to try the message API
       }
       
@@ -331,9 +404,71 @@ class CharacterAI {
         
         console.log('Message API response status:', response.status);
         
+        if (response.data) {
+          console.log('Message API response keys:', Object.keys(response.data));
+          
+          if (response.data.replies && response.data.replies.length > 0) {
+            const reply = response.data.replies[0];
+            console.log('Got response from character (message API):', (reply.text || '').substring(0, 50) + '...');
+            
+            return {
+              turn_id: reply.id || uuidv4(),
+              author_name: reply.name || "Character",
+              text: reply.text || '',
+              candidates: [{
+                candidate_id: reply.id || uuidv4(),
+                text: reply.text || ''
+              }],
+              get_primary_candidate() {
+                return this.candidates[0];
+              }
+            };
+          }
+          
+          // Try other response formats
+          if (response.data.text) {
+            console.log('Got text from message API:', response.data.text.substring(0, 50) + '...');
+            
+            return {
+              turn_id: uuidv4(),
+              author_name: "Character",
+              text: response.data.text,
+              candidates: [{
+                candidate_id: uuidv4(),
+                text: response.data.text
+              }],
+              get_primary_candidate() {
+                return this.candidates[0];
+              }
+            };
+          }
+        }
+      } catch (error) {
+        console.error('Error using message API:', error.message);
+        if (error.response && error.response.data) {
+          console.log('Message API error response:', JSON.stringify(error.response.data).substring(0, 200));
+        }
+      }
+      
+      // Try the legacy turn API
+      try {
+        const response = await this.axiosInstance({
+          method: 'POST',
+          url: `${this.baseUrl}/chat/history/msgs/user/`,
+          headers: this.getHeaders(),
+          data: {
+            history_external_id: chatId,
+            text: message,
+            tgt: characterId
+          },
+          timeout: 90000 // 90 second timeout
+        });
+        
+        console.log('Legacy API response status:', response.status);
+        
         if (response.data && response.data.replies && response.data.replies.length > 0) {
           const reply = response.data.replies[0];
-          console.log('Got response from character (message API):', (reply.text || '').substring(0, 50) + '...');
+          console.log('Got response from character (legacy API):', (reply.text || '').substring(0, 50) + '...');
           
           return {
             turn_id: reply.id || uuidv4(),
@@ -349,10 +484,86 @@ class CharacterAI {
           };
         }
       } catch (error) {
-        console.error('Error using message API:', error.message);
+        console.error('Error using legacy API:', error.message);
+        if (error.response && error.response.data) {
+          console.log('Legacy API error response:', JSON.stringify(error.response.data).substring(0, 200));
+        }
       }
       
-      // If both fail, try the neo API
+      // Try the REST-based neo API approach (similar to PyCharacterAI)
+      try {
+        const turnId = uuidv4();
+        const candidateId = uuidv4();
+        
+        // First create a user turn using the REST API
+        const createTurnResponse = await this.axiosInstance({
+          method: 'POST',
+          url: `${this.neoBaseUrl}/turns/${chatId}/`,
+          headers: this.getHeaders(),
+          data: {
+            turn_key: {
+              chat_id: chatId,
+              turn_id: turnId
+            },
+            author: {
+              author_id: this.accountId,
+              is_human: true
+            },
+            candidates: [{
+              candidate_id: candidateId,
+              raw_content: message
+            }],
+            primary_candidate_id: candidateId
+          },
+          timeout: 30000 // 30 second timeout
+        });
+        
+        console.log('Neo REST API create turn response status:', createTurnResponse.status);
+        
+        if (createTurnResponse.status === 200) {
+          // Now generate the AI response
+          const generateResponse = await this.axiosInstance({
+            method: 'POST',
+            url: `${this.neoBaseUrl}/generate-turn/`,
+            headers: this.getHeaders(),
+            data: {
+              character_id: characterId,
+              turn_key: {
+                chat_id: chatId,
+                turn_id: turnId
+              }
+            },
+            timeout: 90000 // 90 second timeout
+          });
+          
+          console.log('Neo REST API generate response status:', generateResponse.status);
+          
+          if (generateResponse.data && generateResponse.data.turn) {
+            const turn = generateResponse.data.turn;
+            console.log('Got response from character (neo REST API):', (turn.candidates[0]?.raw_content || '').substring(0, 50) + '...');
+            
+            return {
+              turn_id: turn.turn_key?.turn_id || uuidv4(),
+              author_name: turn.author?.name || "Character",
+              text: turn.candidates[0]?.raw_content || '',
+              candidates: turn.candidates?.map(c => ({
+                candidate_id: c.candidate_id,
+                text: c.raw_content || ''
+              })) || [],
+              get_primary_candidate() {
+                return this.candidates[0];
+              }
+            };
+          }
+        }
+      } catch (error) {
+        console.error('Error using neo REST API:', error.message);
+        if (error.response && error.response.data) {
+          console.log('Neo REST API error response:', JSON.stringify(error.response.data).substring(0, 200));
+        }
+      }
+      
+      // If both fail, try the neo API with WebSocket-style polling
       try {
         const turnId = uuidv4();
         const candidateId = uuidv4();
@@ -398,7 +609,7 @@ class CharacterAI {
             // Look for the AI response after our turn
             let foundUserTurn = false;
             for (const turn of turnsResponse.data.turns) {
-              if (turn.turn_key.turn_id === turnId) {
+              if (turn.turn_key && turn.turn_key.turn_id === turnId) {
                 foundUserTurn = true;
                 continue;
               }
@@ -427,6 +638,9 @@ class CharacterAI {
         throw new Error('Timed out waiting for AI response');
       } catch (error) {
         console.error('Error using neo API:', error.message);
+        if (error.response && error.response.data) {
+          console.log('Neo API error response:', JSON.stringify(error.response.data).substring(0, 200));
+        }
       }
 
       throw new Error('Failed to send message - all APIs failed');
