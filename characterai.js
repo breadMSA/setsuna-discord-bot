@@ -7,6 +7,7 @@ const activeChats = new Map();
 let wsConnection = null;
 let messageCallbacks = new Map();
 let messageResponses = new Map();
+let csrfToken = null;
 
 /**
  * Character.AI API client implementation based on PyCharacterAI Python library
@@ -21,6 +22,14 @@ class CharacterAI {
       'Content-Type': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
     };
+    this.axiosInstance = axios.create({
+      withCredentials: true,
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+      },
+      maxRedirects: 5
+    });
   }
 
   /**
@@ -48,7 +57,72 @@ class CharacterAI {
     if (!this.token) {
       throw new Error('Token not set. Please call setToken() first.');
     }
-    return this.headers;
+    
+    const headers = {...this.headers};
+    
+    // Add CSRF token if available
+    if (csrfToken) {
+      headers['x-csrftoken'] = csrfToken;
+    }
+    
+    // Add important headers for CSRF protection
+    headers['Referer'] = this.baseUrl;
+    headers['Origin'] = this.baseUrl;
+    
+    return headers;
+  }
+
+  /**
+   * Fetch CSRF token from Character.AI
+   * @returns {Promise<string>} CSRF token
+   */
+  async fetchCsrfToken() {
+    try {
+      console.log('Fetching CSRF token from Character.AI...');
+      
+      // First make a GET request to the main site to get cookies
+      const response = await this.axiosInstance.get(this.baseUrl, {
+        headers: {
+          'User-Agent': this.headers['User-Agent']
+        }
+      });
+      
+      // Extract CSRF token from cookies or response
+      const cookies = response.headers['set-cookie'];
+      if (cookies) {
+        console.log('Received cookies from Character.AI');
+        
+        // Set cookies in axiosInstance for future requests
+        this.axiosInstance.defaults.headers.common['Cookie'] = cookies.join('; ');
+        
+        for (const cookie of cookies) {
+          const match = cookie.match(/csrftoken=([^;]+)/);
+          if (match && match[1]) {
+            csrfToken = match[1];
+            console.log('Successfully retrieved CSRF token:', csrfToken.substring(0, 10) + '...');
+            return csrfToken;
+          }
+        }
+      }
+      
+      // Try to extract from HTML if cookies didn't work
+      if (response.data && typeof response.data === 'string') {
+        const match = response.data.match(/csrfmiddlewaretoken['"]\s+value=['"](.*?)['"]/)
+          || response.data.match(/csrfToken['"]:.*?['"](.*?)['"]/);
+        
+        if (match && match[1]) {
+          csrfToken = match[1];
+          console.log('Successfully extracted CSRF token from HTML:', csrfToken.substring(0, 10) + '...');
+          return csrfToken;
+        }
+      }
+      
+      console.log('Could not find CSRF token in response');
+      return null;
+    } catch (error) {
+      console.error('Error fetching CSRF token:', error.message);
+      return null;
+    }
   }
 
   /**
@@ -96,9 +170,14 @@ class CharacterAI {
       const chatId = message.payload.turn.turn_key.chat_id;
       const text = message.payload.turn.candidates[0].raw_content;
       
-      // Send using HTTP API - use non-streaming endpoint to avoid stream aborted errors
-      console.log('Using non-streaming API endpoint to avoid stream aborted errors');
-      const response = await axios({
+      // Make sure we have a CSRF token
+      if (!csrfToken) {
+        await this.fetchCsrfToken();
+      }
+      
+      // Send using HTTP API - use message endpoint instead of streaming
+      console.log('Using message API endpoint with CSRF token');
+      const response = await this.axiosInstance({
         method: 'POST',
         url: `${this.baseUrl}/chat/message/`,
         headers: this.getHeaders(),
@@ -149,8 +228,13 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
+      // Make sure we have a CSRF token
+      if (!csrfToken) {
+        await this.fetchCsrfToken();
+      }
+
       console.log('Fetching account info from Character.AI...');
-      const response = await axios({
+      const response = await this.axiosInstance({
         method: 'GET',
         url: `${this.baseUrl}/chat/user/`,
         headers: this.getHeaders(),
@@ -187,13 +271,18 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
+      // Make sure we have a CSRF token
+      if (!csrfToken) {
+        await this.fetchCsrfToken();
+      }
+
       // Make sure we have the account ID
       if (!this.accountId) {
         await this.fetchMe();
       }
 
       console.log(`Creating new chat with character ${characterId}...`);
-      const response = await axios({
+      const response = await this.axiosInstance({
         method: 'POST',
         url: `${this.baseUrl}/chat/history/create/`,
         headers: this.getHeaders(),
@@ -251,16 +340,21 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
+      // Make sure we have a CSRF token
+      if (!csrfToken) {
+        await this.fetchCsrfToken();
+      }
+
       if (!this.accountId) {
         await this.fetchMe();
       }
 
       console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
       
-      // Use HTTP API directly instead of WebSocket - use non-streaming endpoint
+      // Use HTTP API directly with CSRF token
       const requestId = uuidv4();
-      console.log('Using non-streaming API endpoint to avoid stream aborted errors');
-      const response = await axios({
+      console.log('Using message API with CSRF token');
+      const response = await this.axiosInstance({
         method: 'POST',
         url: `${this.baseUrl}/chat/message/`,
         headers: this.getHeaders(),
@@ -317,7 +411,12 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
-      const response = await axios({
+      // Make sure we have a CSRF token
+      if (!csrfToken) {
+        await this.fetchCsrfToken();
+      }
+
+      const response = await this.axiosInstance({
         method: 'GET',
         url: `${this.baseUrl}/chat/history/msgs/user/`,
         headers: this.getHeaders(),
@@ -353,7 +452,12 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
-      const response = await axios({
+      // Make sure we have a CSRF token
+      if (!csrfToken) {
+        await this.fetchCsrfToken();
+      }
+
+      const response = await this.axiosInstance({
         method: 'POST',
         url: `${this.baseUrl}/chat/character/info/`,
         headers: this.getHeaders(),
