@@ -2571,7 +2571,7 @@ async function callCharacterAIAPI(messages, characterId) {
   const CharacterAI = require('./characterai');
   
   // Use the character ID from environment variable if none provided
-  const targetCharacterId = characterId || process.env.CHARACTERAI_CHARACTER_ID;
+  const targetCharacterId = characterId || CHARACTERAI_CHARACTER_ID;
   console.log(`Using Character.AI character ID: ${targetCharacterId}`);
   
   if (!targetCharacterId) {

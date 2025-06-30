@@ -12,8 +12,8 @@ class CharacterAI {
   constructor() {
     this.token = null;
     this.accountId = null;
-    // Use the Neo API URL as in the Python code
-    this.baseUrl = 'https://neo.character.ai';
+    // Use plus.character.ai as the base URL like in the Python code
+    this.baseUrl = 'https://plus.character.ai';
     this.headers = {
       'Content-Type': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
@@ -67,12 +67,11 @@ class CharacterAI {
       });
 
       console.log('Character.AI user API response status:', response.status);
-      console.log('Response data:', JSON.stringify(response.data, null, 2).substring(0, 500) + '...');
       
       if (response.data && response.data.user) {
-        this.accountId = response.data.user.user_id;
+        this.accountId = response.data.user.user.user_id;
         console.log('Successfully retrieved account ID:', this.accountId);
-        return response.data.user;
+        return response.data.user.user;
       }
 
       throw new Error('Failed to fetch account information - invalid response format');
@@ -102,8 +101,6 @@ class CharacterAI {
         await this.fetchMe();
       }
 
-      const requestId = uuidv4();
-
       console.log(`Creating new chat with character ${characterId}...`);
       const response = await axios({
         method: 'POST',
@@ -117,25 +114,20 @@ class CharacterAI {
       });
 
       console.log('Character.AI create chat response status:', response.status);
-      console.log('Response data:', JSON.stringify(response.data, null, 2).substring(0, 500) + '...');
       
       if (response.data && response.data.external_id) {
         const chatId = response.data.external_id;
         let greeting = null;
         
         // Try to get the greeting message if available
-        if (response.data.messages && response.data.messages.length > 0) {
-          greeting = response.data.messages[0];
+        if (response.data.turns && response.data.turns.length > 0) {
+          greeting = response.data.turns[0];
         }
 
         console.log(`Successfully created chat with ID: ${chatId}`);
         
         return { 
-          chat: {
-            chat_id: chatId,
-            external_id: chatId,
-            character_id: characterId
-          }, 
+          chat: response.data, 
           greeting: greeting 
         };
       }
@@ -164,38 +156,47 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
+      const requestId = uuidv4();
+      
       console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
+      
+      // Use the exact same endpoint and format as in the Python library
       const response = await axios({
         method: 'POST',
-        url: `${this.baseUrl}/chat/streaming/recv/`,
+        url: `${this.baseUrl}/chat/streaming/`,
         headers: this.getHeaders(),
         timeout: 30000, // 30 second timeout
         data: {
           history_external_id: chatId,
           character_external_id: characterId,
-          text: message
+          text: message,
+          request_id: requestId
         }
       });
 
       console.log('Character.AI send message response status:', response.status);
       
-      // Process the response to extract the message
-      if (response.data && response.data.replies && response.data.replies.length > 0) {
-        const reply = response.data.replies[0];
-        console.log('Got response from character:', reply.text?.substring(0, 50) + '...');
+      // Process the response according to the Python implementation
+      if (response.data && response.data.turn && response.data.turn.candidates) {
+        const primaryCandidate = response.data.turn.candidates[0];
+        console.log('Got response from character:', primaryCandidate.text?.substring(0, 50) + '...');
         
         return {
-          turn_id: reply.id || uuidv4(),
-          author_name: "Character",
-          text: reply.text,
-          candidates: [{ 
-            candidate_id: reply.id || uuidv4(),
-            text: reply.text
-          }]
+          turn_id: response.data.turn.turn_id,
+          author_name: response.data.turn.author.name || "Character",
+          text: primaryCandidate.text || primaryCandidate.raw_content,
+          candidates: response.data.turn.candidates.map(candidate => ({
+            candidate_id: candidate.candidate_id,
+            text: candidate.text || candidate.raw_content
+          })),
+          // Helper function to match Python implementation
+          get_primary_candidate: function() {
+            return this.candidates[0];
+          }
         };
       }
 
-      throw new Error('Invalid response from Character.AI API - missing reply data');
+      throw new Error('Invalid response from Character.AI API - missing turn data');
     } catch (error) {
       console.error('Error sending message:', error.message);
       if (error.response) {
@@ -254,11 +255,11 @@ class CharacterAI {
       }
 
       const response = await axios({
-        method: 'GET',
+        method: 'POST',
         url: `${this.baseUrl}/chat/character/info/`,
         headers: this.getHeaders(),
         timeout: 10000, // 10 second timeout
-        params: {
+        data: {
           external_id: characterId
         }
       });
