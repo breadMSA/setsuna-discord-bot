@@ -2607,41 +2607,6 @@ async function callCharacterAIAPI(messages, characterId) {
         throw new Error('No user message found in the conversation');
       }
       
-      // Check if we have an active chat for this channel
-      let chatData = null;
-      let chatId = null;
-      
-      // Get stored chat info for this channel if it exists
-      if (!characterAI.activeChats.has(channelId)) {
-        console.log(`Creating new Character.AI chat for channel ${channelId}`);
-        try {
-          // Create a new chat
-          const result = await characterAI.createChat(targetCharacterId);
-          chatData = result.chat;
-          chatId = chatData.chat_id || chatData.external_id;
-          
-          // Store the chat info for future use
-          characterAI.activeChats.set(channelId, {
-            chatId: chatId,
-            characterId: targetCharacterId
-          });
-          console.log(`Created new chat with ID: ${chatId}`);
-        } catch (createError) {
-          console.error('Error creating chat:', createError.message);
-          // Try next token
-          lastError = createError;
-          getNextCharacterAIToken();
-          keysTriedCount++;
-          console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${createError.message}`);
-          continue;
-        }
-      } else {
-        // Use existing chat
-        const storedChat = characterAI.activeChats.get(channelId);
-        chatId = storedChat.chatId;
-        console.log(`Using existing Character.AI chat ${chatId} for channel ${channelId}`);
-      }
-      
       // Send the message to Character.AI with retry logic
       try {
         let response = null;
@@ -2650,9 +2615,10 @@ async function callCharacterAIAPI(messages, characterId) {
         
         while (!response && retryCount <= maxRetries) {
           try {
+            // Use channel ID directly instead of chat ID
             response = await characterAI.sendMessage(
               targetCharacterId,
-              chatId,
+              channelId,
               lastUserMessage.content
             );
           } catch (sendRetryError) {

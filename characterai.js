@@ -140,13 +140,7 @@ class CharacterAI {
           }
 
           console.log(`Successfully created chat with ID: ${chatId}`);
-          
-          // Store in active chats
-          this.activeChats.set(chatId, {
-            characterId,
-            chatId
-          });
-          
+            
           return { 
             chat: {
               chat_id: chatId,
@@ -180,12 +174,6 @@ class CharacterAI {
         if (response.data && response.data.chat) {
           console.log(`Successfully created chat with ID: ${chatId} using Neo API`);
           
-          // Store in active chats
-          this.activeChats.set(chatId, {
-            characterId,
-            chatId
-          });
-          
           return {
             chat: {
               chat_id: chatId,
@@ -207,13 +195,47 @@ class CharacterAI {
   }
 
   /**
-   * Send a message to a character
+   * Get or create a chat for the given character and channel
+   * @param {string} characterId - Character ID to chat with
+   * @param {string} channelId - Discord channel ID (or other unique identifier)
+   * @returns {Promise<string>} Chat ID to use
+   */
+  async getOrCreateChat(characterId, channelId) {
+    try {
+      // Check if we have an existing chat for this channel
+      if (this.activeChats.has(channelId)) {
+        const chatInfo = this.activeChats.get(channelId);
+        console.log(`Using existing chat ID ${chatInfo.chatId} for channel ${channelId}`);
+        return chatInfo.chatId;
+      }
+
+      // Create a new chat
+      console.log(`No existing chat found for channel ${channelId}, creating new chat`);
+      const result = await this.createChat(characterId);
+      const chatId = result.chat.chat_id || result.chat.external_id;
+      
+      // Store the chat info for this channel
+      this.activeChats.set(channelId, {
+        chatId: chatId,
+        characterId: characterId
+      });
+      
+      console.log(`Created and stored new chat ID ${chatId} for channel ${channelId}`);
+      return chatId;
+    } catch (error) {
+      console.error('Error getting or creating chat:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Send a message to a character, automatically creating a chat if needed
    * @param {string} characterId - Character ID
-   * @param {string} chatId - Chat ID
+   * @param {string} channelId - Discord channel ID or other unique identifier
    * @param {string} message - Message text
    * @returns {Promise<Object>} Response turn object
    */
-  async sendMessage(characterId, chatId, message) {
+  async sendMessage(characterId, channelId, message) {
     try {
       if (!this.token) {
         throw new Error('Token not set. Please call setToken() first.');
@@ -222,7 +244,9 @@ class CharacterAI {
       if (!this.accountId) {
         await this.fetchMe();
       }
-
+      
+      // Get or create a chat for this channel
+      const chatId = await this.getOrCreateChat(characterId, channelId);
       console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
       
       // First try the streaming API
@@ -280,19 +304,19 @@ class CharacterAI {
             };
           }
           
-          // Check for turn data format
-          if (response.data.turn && response.data.turn.candidates && response.data.turn.candidates.length > 0) {
-            const candidate = response.data.turn.candidates[0];
-            console.log('Got response from character (turn format):', (candidate.text || candidate.raw_content || '').substring(0, 50) + '...');
-            
-            return {
-              turn_id: response.data.turn.turn_id || candidate.candidate_id || requestId,
-              author_name: response.data.turn.author?.name || "Character",
-              text: candidate.text || candidate.raw_content || '',
-              candidates: response.data.turn.candidates.map(c => ({
-                candidate_id: c.candidate_id || requestId,
-                text: c.text || c.raw_content || ''
-              })),
+        // Check for turn data format
+        if (response.data.turn && response.data.turn.candidates && response.data.turn.candidates.length > 0) {
+          const candidate = response.data.turn.candidates[0];
+          console.log('Got response from character (turn format):', (candidate.text || candidate.raw_content || '').substring(0, 50) + '...');
+          
+          return {
+            turn_id: response.data.turn.turn_id || candidate.candidate_id || requestId,
+            author_name: response.data.turn.author?.name || "Character",
+            text: candidate.text || candidate.raw_content || '',
+            candidates: response.data.turn.candidates.map(c => ({
+              candidate_id: c.candidate_id || requestId,
+              text: c.text || c.raw_content || ''
+            })),
               get_primary_candidate() {
                 return this.candidates[0];
               }
@@ -312,48 +336,48 @@ class CharacterAI {
                 text: response.data.message
               }],
               get_primary_candidate() {
-                return this.candidates[0];
-              }
-            };
-          }
+              return this.candidates[0];
+            }
+          };
+        }
+        
+        // Check for replies format
+        if (response.data.replies && response.data.replies.length > 0) {
+          const reply = response.data.replies[0];
+          console.log('Got response from character (replies format):', (reply.text || '').substring(0, 50) + '...');
           
-          // Check for replies format
-          if (response.data.replies && response.data.replies.length > 0) {
-            const reply = response.data.replies[0];
-            console.log('Got response from character (replies format):', (reply.text || '').substring(0, 50) + '...');
-            
-            return {
-              turn_id: reply.id || requestId,
-              author_name: reply.name || "Character",
-              text: reply.text || '',
-              candidates: [{
-                candidate_id: reply.id || requestId,
-                text: reply.text || ''
-              }],
+          return {
+            turn_id: reply.id || requestId,
+            author_name: reply.name || "Character",
+            text: reply.text || '',
+            candidates: [{
+              candidate_id: reply.id || requestId,
+              text: reply.text || ''
+            }],
               get_primary_candidate() {
-                return this.candidates[0];
-              }
-            };
-          }
-          
+              return this.candidates[0];
+            }
+          };
+        }
+        
           // Check for text property directly in response
-          if (response.data.text) {
+        if (response.data.text) {
             console.log('Got response from character (direct text):', response.data.text.substring(0, 50) + '...');
-            
-            return {
-              turn_id: requestId,
-              author_name: "Character",
-              text: response.data.text,
-              candidates: [{
-                candidate_id: requestId,
-                text: response.data.text
-              }],
-              get_primary_candidate() {
-                return this.candidates[0];
-              }
-            };
-          }
           
+          return {
+            turn_id: requestId,
+            author_name: "Character",
+            text: response.data.text,
+            candidates: [{
+              candidate_id: requestId,
+              text: response.data.text
+            }],
+              get_primary_candidate() {
+              return this.candidates[0];
+            }
+          };
+        }
+        
           // Check for any response field that might contain text
           const responseStr = JSON.stringify(response.data);
           const textMatch = responseStr.match(/"text"\s*:\s*"([^"]+)"/);
@@ -678,14 +702,14 @@ class CharacterAI {
       
       // If neo API fails, try the plus API
       try {
-        const response = await this.axiosInstance({
-          method: 'GET',
+      const response = await this.axiosInstance({
+        method: 'GET',
           url: `${this.plusBaseUrl}/chat/history/msgs/user/`,
-          headers: this.getHeaders(),
-          params: {
-            history_external_id: chatId
-          }
-        });
+        headers: this.getHeaders(),
+        params: {
+          history_external_id: chatId
+        }
+      });
 
         if (response.data && response.data.messages) {
           return response.data.messages;
@@ -729,14 +753,14 @@ class CharacterAI {
       
       // If neo API fails, try the plus API
       try {
-        const response = await this.axiosInstance({
-          method: 'POST',
+      const response = await this.axiosInstance({
+        method: 'POST',
           url: `${this.plusBaseUrl}/chat/character/info/`,
-          headers: this.getHeaders(),
-          data: {
-            external_id: characterId
-          }
-        });
+        headers: this.getHeaders(),
+        data: {
+          external_id: characterId
+        }
+      });
 
         if (response.data && response.data.character) {
           return response.data.character;
