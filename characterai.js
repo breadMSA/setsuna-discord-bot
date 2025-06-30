@@ -1,4 +1,4 @@
-﻿const axios = require('axios');
+const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const WebSocket = require('ws');
 
@@ -87,10 +87,27 @@ class CharacterAI {
     try {
       console.log('Fetching CSRF token from Character.AI...');
       
-      // First make a GET request to the main site to get cookies
-      const response = await this.axiosInstance.get(this.baseUrl, {
+      // Create new axios instance with cookie jar for this request
+      const requestInstance = axios.create({
+        withCredentials: true,
+        maxRedirects: 5,
+        timeout: 30000,
         headers: {
           'User-Agent': this.headers['User-Agent']
+        }
+      });
+      
+      // First make a GET request to the main site to get cookies
+      const response = await requestInstance.get(`${this.baseUrl}/`, {
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'max-age=0',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1'
         }
       });
       
@@ -115,14 +132,42 @@ class CharacterAI {
       
       // Try to extract from HTML if cookies didn't work
       if (response.data && typeof response.data === 'string') {
-        const match = response.data.match(/csrfmiddlewaretoken['"]\s+value=['"](.*?)['"]/)
-          || response.data.match(/csrfToken['"]:.*?['"](.*?)['"]/);
+        // Look for CSRF token in various formats
+        const patterns = [
+          /csrfmiddlewaretoken['"]\s+value=['"](.*?)['"]/,
+          /csrfToken['"]:.*?['"](.*?)['"]/,
+          /name="csrfmiddlewaretoken"\s+value="([^"]+)"/,
+          /"csrfmiddlewaretoken":"([^"]+)"/,
+          /\{"csrfmiddlewaretoken":"([^"]+)"\}/
+        ];
         
-        if (match && match[1]) {
-          csrfToken = match[1];
-          console.log('Successfully extracted CSRF token from HTML:', csrfToken.substring(0, 10) + '...');
+        for (const pattern of patterns) {
+          const match = response.data.match(pattern);
+          if (match && match[1]) {
+            csrfToken = match[1];
+            console.log('Successfully extracted CSRF token from HTML:', csrfToken.substring(0, 10) + '...');
+            return csrfToken;
+          }
+        }
+      }
+      
+      // If we still don't have a token, try the neo/csrf endpoint
+      console.log('Trying neo/csrf endpoint for CSRF token...');
+      try {
+        const csrfResponse = await requestInstance.get(`${this.baseUrl}/neo/csrf`, {
+          headers: {
+            'Accept': 'application/json',
+            'Cookie': this.cookies
+          }
+        });
+        
+        if (csrfResponse.data && csrfResponse.data.token) {
+          csrfToken = csrfResponse.data.token;
+          console.log('Successfully retrieved CSRF token from neo/csrf endpoint:', csrfToken.substring(0, 10) + '...');
           return csrfToken;
         }
+      } catch (csrfError) {
+        console.log('Error fetching from neo/csrf endpoint:', csrfError.message);
       }
       
       console.log('Could not find CSRF token in response');
@@ -179,41 +224,114 @@ class CharacterAI {
       const text = message.payload.turn.candidates[0].raw_content;
       
       // Make sure we have a CSRF token
-      if (!csrfToken) {
-        await this.fetchCsrfToken();
+      const token = await this.fetchCsrfToken();
+      if (!token) {
+        throw new Error('Failed to obtain CSRF token');
       }
       
-      // Send using HTTP API - use message endpoint instead of streaming
+      // Create a custom instance for this request
+      const requestInstance = axios.create({
+        withCredentials: true,
+        maxRedirects: 5,
+        timeout: 90000 // 90 second timeout
+      });
+      
+      // Get base headers
+      const headers = {
+        'User-Agent': this.headers['User-Agent'],
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${this.token}`,
+        'X-CSRFToken': token,
+        'Cookie': this.cookies,
+        'Accept': 'application/json',
+        'Referer': `${this.baseUrl}/chat?char=${characterId}`,
+        'Origin': this.baseUrl
+      };
+      
+      // Send using HTTP API - use streaming endpoint
       console.log('Using message API with CSRF token');
-      const response = await this.axiosInstance({
+      const response = await requestInstance({
         method: 'POST',
-        url: `${this.baseUrl}/chat/message/`,
-        headers: this.getHeaders(),
-        timeout: 90000, // 90 second timeout
+        url: `${this.baseUrl}/chat/streaming/`,
+        headers: headers,
         data: {
           history_external_id: chatId,
           character_external_id: characterId,
           text: text,
+          tgt: characterId,
+          ranking_method: 'random',
+          staging: false,
+          model_server_address: null,
+          override_prefix: null,
+          override_rank: null,
+          inject_memories: null,
+          streaming: false,
           request_id: requestId
         }
       });
       
+      // Update cookies if they're in the response
+      if (response.headers['set-cookie']) {
+        this.cookies = response.headers['set-cookie'].join('; ');
+        this.axiosInstance.defaults.headers.common['Cookie'] = this.cookies;
+      }
+      
       console.log('HTTP API response status:', response.status);
       
       // Convert HTTP response to WebSocket format
-      if (response.data && response.data.turn) {
-        return {
-          command: 'update_turn',
-          turn: response.data.turn
-        };
-      } else {
-        throw new Error('Invalid response from Character.AI API - missing turn data');
+      if (response.data) {
+        // Check for turn data format
+        if (response.data.turn && response.data.turn.candidates && response.data.turn.candidates.length > 0) {
+          return {
+            command: 'update_turn',
+            turn: response.data.turn
+          };
+        }
+        
+        // Check for message format
+        if (response.data.message) {
+          return {
+            command: 'update_turn',
+            turn: {
+              turn_id: requestId,
+              author: {
+                name: "Character"
+              },
+              candidates: [{
+                candidate_id: requestId,
+                text: response.data.message,
+                raw_content: response.data.message
+              }]
+            }
+          };
+        }
+        
+        // Check for replies format
+        if (response.data.replies && response.data.replies.length > 0) {
+          const reply = response.data.replies[0];
+          return {
+            command: 'update_turn',
+            turn: {
+              turn_id: reply.id || requestId,
+              author: {
+                name: reply.name || "Character"
+              },
+              candidates: [{
+                candidate_id: reply.id || requestId,
+                text: reply.text,
+                raw_content: reply.text
+              }]
+            }
+          };
+        }
       }
+      
+      throw new Error('Invalid response from Character.AI API - missing turn data');
     } catch (error) {
       console.error('Error sending message via HTTP:', error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data));
+        console.error('Response data:', error.response.data);
         
         // Convert HTTP error to WebSocket format
         return {
@@ -237,16 +355,36 @@ class CharacterAI {
       }
 
       // Make sure we have a CSRF token
-      if (!csrfToken) {
-        await this.fetchCsrfToken();
+      const token = await this.fetchCsrfToken();
+      if (!token) {
+        throw new Error('Failed to obtain CSRF token');
       }
 
       console.log('Fetching account info from Character.AI...');
-      const response = await this.axiosInstance({
+      
+      // Create a custom instance for this request
+      const requestInstance = axios.create({
+        withCredentials: true,
+        maxRedirects: 5,
+        timeout: 10000 // 10 second timeout
+      });
+      
+      // Get base headers
+      const headers = {
+        'User-Agent': this.headers['User-Agent'],
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${this.token}`,
+        'X-CSRFToken': token,
+        'Cookie': this.cookies,
+        'Accept': 'application/json',
+        'Referer': `${this.baseUrl}/`,
+        'Origin': this.baseUrl
+      };
+      
+      const response = await requestInstance({
         method: 'GET',
         url: `${this.baseUrl}/chat/user/`,
-        headers: this.getHeaders(),
-        timeout: 10000 // 10 second timeout
+        headers: headers
       });
 
       console.log('Character.AI user API response status:', response.status);
@@ -268,7 +406,7 @@ class CharacterAI {
       console.error('Error fetching account info:', error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data));
+        console.error('Response data:', error.response.data);
       }
       throw error;
     }
@@ -286,8 +424,9 @@ class CharacterAI {
       }
 
       // Make sure we have a CSRF token
-      if (!csrfToken) {
-        await this.fetchCsrfToken();
+      const token = await this.fetchCsrfToken();
+      if (!token) {
+        throw new Error('Failed to obtain CSRF token');
       }
 
       // Make sure we have the account ID
@@ -296,11 +435,30 @@ class CharacterAI {
       }
 
       console.log(`Creating new chat with character ${characterId}...`);
-      const response = await this.axiosInstance({
+      
+      // Create a custom instance for this request
+      const requestInstance = axios.create({
+        withCredentials: true,
+        maxRedirects: 5,
+        timeout: 15000 // 15 second timeout
+      });
+      
+      // Get base headers
+      const headers = {
+        'User-Agent': this.headers['User-Agent'],
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${this.token}`,
+        'X-CSRFToken': token,
+        'Cookie': this.cookies,
+        'Accept': 'application/json',
+        'Referer': `${this.baseUrl}/chat?char=${characterId}`,
+        'Origin': this.baseUrl
+      };
+      
+      const response = await requestInstance({
         method: 'POST',
         url: `${this.baseUrl}/chat/history/create/`,
-        headers: this.getHeaders(),
-        timeout: 15000, // 15 second timeout
+        headers: headers,
         data: {
           character_external_id: characterId,
           history_external_id: null
@@ -341,7 +499,7 @@ class CharacterAI {
       console.error('Error creating chat:', error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data));
+        console.error('Response data:', error.response.data);
       }
       throw error;
     }
@@ -361,7 +519,10 @@ class CharacterAI {
       }
 
       // Make sure we have a CSRF token and fresh cookies
-      await this.fetchCsrfToken();
+      const token = await this.fetchCsrfToken();
+      if (!token) {
+        throw new Error('Failed to obtain CSRF token');
+      }
 
       if (!this.accountId) {
         await this.fetchMe();
@@ -369,25 +530,47 @@ class CharacterAI {
 
       console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
       
-      // Use HTTP API directly with CSRF token
+      // Create request ID
       const requestId = uuidv4();
-      console.log('Using message API with CSRF token');
       
       // Create a custom instance for this request to ensure we have the latest cookies and CSRF token
-      const response = await axios({
-        method: 'POST',
-        url: `${this.baseUrl}/chat/message/`,
-        headers: {
-          ...this.getHeaders(),
-          'X-CSRFToken': csrfToken,
-          'Cookie': this.cookies
-        },
+      const requestInstance = axios.create({
         withCredentials: true,
-        timeout: 90000, // 90 second timeout
+        maxRedirects: 5,
+        timeout: 90000 // 90 second timeout
+      });
+      
+      // Get base headers
+      const headers = {
+        'User-Agent': this.headers['User-Agent'],
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${this.token}`,
+        'X-CSRFToken': token,
+        'Cookie': this.cookies,
+        'Accept': 'application/json',
+        'Referer': `${this.baseUrl}/chat?char=${characterId}`,
+        'Origin': this.baseUrl
+      };
+      
+      console.log('Using message API with CSRF token');
+      
+      // Send the request
+      const response = await requestInstance({
+        method: 'POST',
+        url: `${this.baseUrl}/chat/streaming/`,
+        headers: headers,
         data: {
           history_external_id: chatId,
           character_external_id: characterId,
           text: message,
+          tgt: characterId,
+          ranking_method: 'random',
+          staging: false,
+          model_server_address: null,
+          override_prefix: null,
+          override_rank: null,
+          inject_memories: null,
+          streaming: false,
           request_id: requestId
         }
       });
@@ -415,8 +598,7 @@ class CharacterAI {
               candidate_id: c.candidate_id || requestId,
               text: c.text || c.raw_content || ''
             })),
-            // Helper function to match Python implementation
-            get_primary_candidate: function() {
+            get_primary_candidate() {
               return this.candidates[0];
             }
           };
@@ -435,8 +617,7 @@ class CharacterAI {
               candidate_id: reply.id || requestId,
               text: reply.text || ''
             }],
-            // Helper function to match Python implementation
-            get_primary_candidate: function() {
+            get_primary_candidate() {
               return this.candidates[0];
             }
           };
@@ -454,8 +635,25 @@ class CharacterAI {
               candidate_id: requestId,
               text: response.data.text
             }],
-            // Helper function to match Python implementation
-            get_primary_candidate: function() {
+            get_primary_candidate() {
+              return this.candidates[0];
+            }
+          };
+        }
+        
+        // Check for the new response format (message key)
+        if (response.data.message) {
+          console.log('Got response from character (message format):', response.data.message.substring(0, 50) + '...');
+          
+          return {
+            turn_id: requestId,
+            author_name: "Character",
+            text: response.data.message,
+            candidates: [{
+              candidate_id: requestId,
+              text: response.data.message
+            }],
+            get_primary_candidate() {
               return this.candidates[0];
             }
           };
@@ -478,8 +676,7 @@ class CharacterAI {
                 candidate_id: requestId,
                 text: textMatch[1]
               }],
-              // Helper function to match Python implementation
-              get_primary_candidate: function() {
+              get_primary_candidate() {
                 return this.candidates[0];
               }
             };
@@ -492,7 +689,7 @@ class CharacterAI {
       console.error('Error sending message:', error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data));
+        console.error('Response data:', error.response.data);
       }
       throw error;
     }
@@ -510,15 +707,34 @@ class CharacterAI {
       }
 
       // Make sure we have a CSRF token
-      if (!csrfToken) {
-        await this.fetchCsrfToken();
+      const token = await this.fetchCsrfToken();
+      if (!token) {
+        throw new Error('Failed to obtain CSRF token');
       }
 
-      const response = await this.axiosInstance({
+      // Create a custom instance for this request
+      const requestInstance = axios.create({
+        withCredentials: true,
+        maxRedirects: 5,
+        timeout: 10000 // 10 second timeout
+      });
+      
+      // Get base headers
+      const headers = {
+        'User-Agent': this.headers['User-Agent'],
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${this.token}`,
+        'X-CSRFToken': token,
+        'Cookie': this.cookies,
+        'Accept': 'application/json',
+        'Referer': `${this.baseUrl}/chat/history`,
+        'Origin': this.baseUrl
+      };
+
+      const response = await requestInstance({
         method: 'GET',
         url: `${this.baseUrl}/chat/history/msgs/user/`,
-        headers: this.getHeaders(),
-        timeout: 10000, // 10 second timeout
+        headers: headers,
         params: {
           history_external_id: chatId
         }
@@ -539,7 +755,7 @@ class CharacterAI {
       console.error('Error fetching messages:', error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data));
+        console.error('Response data:', error.response.data);
       }
       throw error;
     }
@@ -557,15 +773,34 @@ class CharacterAI {
       }
 
       // Make sure we have a CSRF token
-      if (!csrfToken) {
-        await this.fetchCsrfToken();
+      const token = await this.fetchCsrfToken();
+      if (!token) {
+        throw new Error('Failed to obtain CSRF token');
       }
 
-      const response = await this.axiosInstance({
+      // Create a custom instance for this request
+      const requestInstance = axios.create({
+        withCredentials: true,
+        maxRedirects: 5,
+        timeout: 10000 // 10 second timeout
+      });
+      
+      // Get base headers
+      const headers = {
+        'User-Agent': this.headers['User-Agent'],
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${this.token}`,
+        'X-CSRFToken': token,
+        'Cookie': this.cookies,
+        'Accept': 'application/json',
+        'Referer': `${this.baseUrl}/chat?char=${characterId}`,
+        'Origin': this.baseUrl
+      };
+
+      const response = await requestInstance({
         method: 'POST',
         url: `${this.baseUrl}/chat/character/info/`,
-        headers: this.getHeaders(),
-        timeout: 10000, // 10 second timeout
+        headers: headers,
         data: {
           external_id: characterId
         }
@@ -586,7 +821,7 @@ class CharacterAI {
       console.error('Error fetching character info:', error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data));
+        console.error('Response data:', error.response.data);
       }
       throw error;
     }

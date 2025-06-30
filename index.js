@@ -469,46 +469,46 @@ async function saveActiveChannels() {
     try {
       // Try to get the current file to get its SHA
       const { data: fileData } = await githubClient.repos.getContent({
-        owner,
+    owner,
         repo: repoName,
         path: filePath
-      });
+  });
       
       console.log('Found existing file, updating with SHA:', fileData.sha);
-      
+          
       // Update the file
       const updateResponse = await githubClient.repos.createOrUpdateFileContents({
-        owner,
+            owner,
         repo: repoName,
         path: filePath,
         message: 'Update active channels',
         content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64'),
         sha: fileData.sha
-      });
-      
+          });
+          
       console.log('GitHub API update response:', JSON.stringify(updateResponse.data, null, 2));
       console.log('Successfully updated active channels in GitHub');
-    } catch (error) {
-      if (error.status === 404) {
+        } catch (error) {
+          if (error.status === 404) {
         // File doesn't exist, create it
         console.log('File not found, creating new file');
         
         const createResponse = await githubClient.repos.createOrUpdateFileContents({
-          owner,
+              owner,
           repo: repoName,
           path: filePath,
           message: 'Create active channels file',
           content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64')
-        });
-        
+            });
+            
         console.log('GitHub API create response:', JSON.stringify(createResponse.data, null, 2));
         console.log('Successfully created active channels file in GitHub');
-      } else {
+          } else {
         console.error('GitHub API error:', error.message);
         console.error('Error details:', error.response ? error.response.data : 'No response data');
-        throw error;
-      }
-    }
+            throw error;
+          }
+        }
     
     // Also save locally as a backup
     try {
@@ -517,7 +517,7 @@ async function saveActiveChannels() {
     } catch (localError) {
       console.error('Error saving active channels locally:', localError);
     }
-  } catch (error) {
+      } catch (error) {
     console.error('Error saving active channels to GitHub:', error);
     
     // Try to save locally as a fallback
