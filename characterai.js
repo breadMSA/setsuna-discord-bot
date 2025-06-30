@@ -22,6 +22,12 @@ class CharacterAI {
       'Content-Type': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
     };
+    
+    // Use persistent chat ID from environment variable if available
+    this.persistentChatId = process.env.CHARACTERAI_CHAT_ID || null;
+    if (this.persistentChatId) {
+      console.log(`Using persistent Character.AI chat ID from environment: ${this.persistentChatId.substring(0, 10)}...`);
+    }
   }
 
   /**
@@ -144,6 +150,20 @@ class CharacterAI {
       // Make sure we have the account ID
       if (!this.accountId) {
         await this.fetchMe();
+      }
+      
+      // If using a persistent chat ID from environment, return that instead of creating a new chat
+      if (this.persistentChatId) {
+        console.log(`Using persistent chat ID: ${this.persistentChatId}`);
+        
+        // Return a minimal chat object with the persistent chat ID
+        return { 
+          chat: {
+            chat_id: this.persistentChatId,
+            external_id: this.persistentChatId
+          },
+          greeting: null
+        };
       }
 
       console.log(`Creating new chat with character ${characterId}...`);
@@ -319,13 +339,16 @@ class CharacterAI {
       if (!this.accountId) {
         await this.fetchMe();
       }
+      
+      // If we have a persistent chat ID from environment, use it instead of the provided chatId
+      const effectiveChatId = this.persistentChatId || chatId;
 
       // Generate UUIDs for the request
       const candidateId = uuidv4();
       const turnId = uuidv4();
       const requestId = uuidv4();
       
-      console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
+      console.log(`Sending message to character ${characterId} in chat ${effectiveChatId}...`);
       
       // Format the WebSocket message following the Python implementation
       const wsMessage = {
@@ -368,7 +391,7 @@ class CharacterAI {
             },
             candidates: [{ candidate_id: candidateId, raw_content: message }],
             primary_candidate_id: candidateId,
-            turn_key: { chat_id: chatId, turn_id: turnId },
+            turn_key: { chat_id: effectiveChatId, turn_id: turnId },
           },
           user_name: "",
         },
@@ -511,6 +534,9 @@ class CharacterAI {
       if (!this.token) {
         throw new Error('Token not set. Please call setToken() first.');
       }
+      
+      // If we have a persistent chat ID from environment, use it instead of the provided chatId
+      const effectiveChatId = this.persistentChatId || chatId;
 
       const response = await axios({
         method: 'GET',
@@ -518,7 +544,7 @@ class CharacterAI {
         headers: this.getHeaders(),
         timeout: 10000, // 10 second timeout
         params: {
-          history_external_id: chatId
+          history_external_id: effectiveChatId
         }
       });
 

@@ -70,6 +70,7 @@
    GITHUB_TOKEN=你的 GitHub Personal Access Token (PAT)
    CHARACTERAI_TOKEN=your_character_ai_token
    CHARACTERAI_CHARACTER_ID=your_character_id_here
+   CHARACTERAI_CHAT_ID=your_persistent_chat_id_here (選填，設定後將使用固定的聊天ID而非每次創建新的聊天)
    ```
 4. 啟動機器人：
    ```
@@ -185,6 +186,15 @@
 - 如果你傳送 YouTube 影片的網址，Setsuna 會顯示影片的預覽資訊。
 - 如果你請 Setsuna 幫忙找 YouTube 影片 (例如：「幫我找貓咪的影片」)，Setsuna 會嘗試搜尋並提供相關的影片連結。
 
+### Character.AI 整合
+
+- 使用 `/setsuna setmodel characterai` 啟用 Character.AI 模型
+- 在 `.env` 檔案中設定 `CHARACTERAI_TOKEN` 和 `CHARACTERAI_CHARACTER_ID`
+- 若要使用固定的聊天 ID 而非每次創建新的聊天，請設定 `CHARACTERAI_CHAT_ID`：
+  1. 在 Character.AI 網站上與你的角色建立一個聊天
+  2. 查看 URL，格式為：https://character.ai/chat?char=CHAR_ID&hist=CHAT_ID
+  3. 複製 &hist= 後面的 CHAT_ID 部分並設定為 `CHARACTERAI_CHAT_ID`
+
 ## 授權條款
 
 MIT
@@ -253,6 +263,9 @@ CHARACTERAI_CHARACTER_ID=character_id_to_use
 # GitHub Integration (optional, for configuration backup)
 GITHUB_TOKEN=your_github_token
 GITHUB_REPO=username/repo/path
+
+# Character.AI Chat ID (optional, when set will use a fixed chat ID instead of creating new chats)
+CHARACTERAI_CHAT_ID=your_persistent_chat_id_here
 ```
 
 You can have multiple API keys for each service by adding numbers to the environment variable names:
@@ -294,6 +307,16 @@ The Character.AI integration allows you to use any character from Character.AI a
 4. Use `/setsuna activate #channel-name characterai` to activate the Character.AI model in a channel
 
 The bot will create a new chat with the character and use it for all conversations in that channel.
+
+### Using a Persistent Chat ID
+
+To avoid creating new chats each time (which can cause "chat not found" errors):
+
+1. Create a chat with your character on the Character.AI website
+2. Check the URL, which will look like: `https://character.ai/chat?char=CHAR_ID&hist=CHAT_ID`
+3. Copy the CHAT_ID part after `&hist=` and set it as `CHARACTERAI_CHAT_ID` in your .env file
+
+When this environment variable is set, the bot will always use this specific chat ID instead of creating new chats.
 
 ## License
 
