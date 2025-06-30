@@ -448,6 +448,8 @@ async function saveActiveChannels() {
       };
     }
 
+    console.log('Simplified active channels for saving:', JSON.stringify(simplifiedActiveChannels, null, 2));
+
     // Set up GitHub client
     const githubClient = await setupGitHub();
     if (!githubClient) {
@@ -461,44 +463,83 @@ async function saveActiveChannels() {
     const filePath = `${global.githubSubPath}active_channels_backup.json`;
     
     console.log(`Attempting to save file to GitHub: ${owner}/${repoName}/${filePath}`);
+    console.log(`GitHub token length: ${process.env.GITHUB_TOKEN ? process.env.GITHUB_TOKEN.length : 0}`);
+    console.log(`GitHub repo: ${process.env.GITHUB_REPO}`);
     
     try {
       // Try to get the current file to get its SHA
       const { data: fileData } = await githubClient.repos.getContent({
-    owner,
+        owner,
         repo: repoName,
         path: filePath
-  });
-          
+      });
+      
+      console.log('Found existing file, updating with SHA:', fileData.sha);
+      
       // Update the file
-          await githubClient.repos.createOrUpdateFileContents({
-            owner,
+      const updateResponse = await githubClient.repos.createOrUpdateFileContents({
+        owner,
         repo: repoName,
         path: filePath,
         message: 'Update active channels',
         content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64'),
         sha: fileData.sha
-          });
-          
+      });
+      
+      console.log('GitHub API update response:', JSON.stringify(updateResponse.data, null, 2));
       console.log('Successfully updated active channels in GitHub');
-        } catch (error) {
-          if (error.status === 404) {
+    } catch (error) {
+      if (error.status === 404) {
         // File doesn't exist, create it
-            await githubClient.repos.createOrUpdateFileContents({
-              owner,
+        console.log('File not found, creating new file');
+        
+        const createResponse = await githubClient.repos.createOrUpdateFileContents({
+          owner,
           repo: repoName,
           path: filePath,
           message: 'Create active channels file',
           content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64')
-            });
-            
+        });
+        
+        console.log('GitHub API create response:', JSON.stringify(createResponse.data, null, 2));
         console.log('Successfully created active channels file in GitHub');
-          } else {
-            throw error;
-          }
-        }
-      } catch (error) {
+      } else {
+        console.error('GitHub API error:', error.message);
+        console.error('Error details:', error.response ? error.response.data : 'No response data');
+        throw error;
+      }
+    }
+    
+    // Also save locally as a backup
+    try {
+      fs.writeFileSync(CHANNELS_FILE, JSON.stringify(simplifiedActiveChannels, null, 2));
+      console.log('Successfully saved active channels locally');
+    } catch (localError) {
+      console.error('Error saving active channels locally:', localError);
+    }
+  } catch (error) {
     console.error('Error saving active channels to GitHub:', error);
+    
+    // Try to save locally as a fallback
+    try {
+      const simplifiedActiveChannels = {};
+      for (const [channelId, channelData] of activeChannels.entries()) {
+        simplifiedActiveChannels[channelId] = {
+          model: channelData.model,
+          groqModel: channelData.groqModel,
+          cerebrasModel: channelData.cerebrasModel,
+          customInstructions: channelData.customInstructions || null,
+          customRole: channelData.customRole || null,
+          customSpeakingStyle: channelData.customSpeakingStyle || null,
+          customTextStructure: channelData.customTextStructure || null,
+          useAIToDetectImageRequest: channelData.useAIToDetectImageRequest || false
+        };
+      }
+      fs.writeFileSync(CHANNELS_FILE, JSON.stringify(simplifiedActiveChannels, null, 2));
+      console.log('Saved active channels locally as fallback');
+    } catch (localError) {
+      console.error('Error saving active channels locally:', localError);
+    }
   }
 }
 
@@ -1094,6 +1135,12 @@ client.on('interactionCreate', async interaction => {
           // If no specific Cerebras model is selected, use default
           channelCerebrasModelPreferences.set(targetChannel.id, defaultCerebrasModel);
         }
+      }
+      
+      // Make sure the model is saved in the activeChannels map
+      if (activeChannels.has(targetChannel.id)) {
+        activeChannels.get(targetChannel.id).model = model;
+        console.log(`Saving model preference for channel ${targetChannel.id}: ${model}`);
       }
       
       // 立即保存頻道配置到 JSON 文件

@@ -12,7 +12,8 @@ class CharacterAI {
   constructor() {
     this.token = null;
     this.accountId = null;
-    this.baseUrl = 'https://neo.character.ai';
+    // Use the old API URL as it's more stable
+    this.baseUrl = 'https://beta.character.ai';
     this.headers = {
       'Content-Type': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
@@ -57,20 +58,29 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
+      console.log('Fetching account info from Character.AI...');
       const response = await axios({
         method: 'GET',
-        url: `${this.baseUrl}/api/v1/user/me`,
+        url: `${this.baseUrl}/api/v1/user/`,
         headers: this.getHeaders(),
+        timeout: 10000 // 10 second timeout
       });
 
+      console.log('Character.AI user API response status:', response.status);
+      
       if (response.data && response.data.user) {
         this.accountId = response.data.user.user_id;
+        console.log('Successfully retrieved account ID:', this.accountId);
         return response.data.user;
       }
 
-      throw new Error('Failed to fetch account information');
+      throw new Error('Failed to fetch account information - invalid response format');
     } catch (error) {
       console.error('Error fetching account info:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data));
+      }
       throw error;
     }
   }
@@ -93,27 +103,22 @@ class CharacterAI {
       const chatId = uuidv4();
       const requestId = uuidv4();
 
+      console.log(`Creating new chat with character ${characterId}...`);
       const response = await axios({
         method: 'POST',
-        url: `${this.baseUrl}/api/v1/chat/create`,
+        url: `${this.baseUrl}/api/v1/chat/create/`,
         headers: this.getHeaders(),
+        timeout: 15000, // 15 second timeout
         data: {
-          request_id: requestId,
-          command: "create_chat",
-          payload: {
-            chat: {
-              chat_id: chatId,
-              creator_id: this.accountId,
-              visibility: "VISIBILITY_PRIVATE",
-              character_id: characterId,
-              type: "TYPE_ONE_ON_ONE"
-            },
-            with_greeting: true
-          }
+          character_external_id: characterId,
+          history_external_id: null,
+          request_id: requestId
         }
       });
 
-      if (response.data && response.data.chat) {
+      console.log('Character.AI create chat response status:', response.status);
+      
+      if (response.data && response.data.external_id) {
         let greeting = null;
         
         // Try to get the greeting message if available
@@ -121,15 +126,21 @@ class CharacterAI {
           greeting = response.data.turns[0];
         }
 
+        console.log(`Successfully created chat with ID: ${response.data.external_id}`);
+        
         return { 
-          chat: response.data.chat, 
+          chat: response.data, 
           greeting: greeting 
         };
       }
 
-      throw new Error('Failed to create chat');
+      throw new Error('Failed to create chat - invalid response format');
     } catch (error) {
       console.error('Error creating chat:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data));
+      }
       throw error;
     }
   }
@@ -147,52 +158,27 @@ class CharacterAI {
         throw new Error('Token not set. Please call setToken() first.');
       }
 
-      if (!this.accountId) {
-        await this.fetchMe();
-      }
-
-      const turnId = uuidv4();
-      const candidateId = uuidv4();
-      const requestId = uuidv4();
-
+      console.log(`Sending message to character ${characterId} in chat ${chatId}...`);
       const response = await axios({
         method: 'POST',
         url: `${this.baseUrl}/api/v1/chat/streaming/`,
         headers: this.getHeaders(),
+        timeout: 30000, // 30 second timeout
         data: {
-          command: "create_and_generate_turn",
-          origin_id: "web-next",
-          request_id: requestId,
-          payload: {
-            character_id: characterId,
-            num_candidates: 1,
-            turn: {
-              author: {
-                author_id: this.accountId,
-                is_human: true,
-                name: ""
-              },
-              candidates: [
-                {
-                  candidate_id: candidateId,
-                  raw_content: message
-                }
-              ],
-              primary_candidate_id: candidateId,
-              turn_key: {
-                chat_id: chatId,
-                turn_id: turnId
-              }
-            },
-            tts_enabled: false,
-            selected_language: ""
-          }
+          character_external_id: characterId,
+          history_external_id: chatId,
+          text: message,
+          request_id: uuidv4()
         }
       });
 
+      console.log('Character.AI send message response status:', response.status);
+      
       // For streaming responses, we'd need to parse differently
       // For now, we'll handle the non-streaming response
       if (response.data && response.data.turn) {
+        console.log('Got response from character:', response.data.turn.candidates[0].text?.substring(0, 50) + '...');
+        
         return {
           turn_id: response.data.turn.turn_id,
           author_name: response.data.turn.author.name || "Character",
@@ -204,9 +190,13 @@ class CharacterAI {
         };
       }
 
-      throw new Error('Invalid response from Character.AI API');
+      throw new Error('Invalid response from Character.AI API - missing turn data');
     } catch (error) {
       console.error('Error sending message:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data));
+      }
       throw error;
     }
   }
@@ -226,18 +216,23 @@ class CharacterAI {
         method: 'GET',
         url: `${this.baseUrl}/api/v1/chat/history/msgs/user/`,
         headers: this.getHeaders(),
+        timeout: 10000, // 10 second timeout
         params: {
           history_external_id: chatId
         }
       });
 
       if (!response.data || !response.data.messages) {
-        throw new Error('Invalid response from Character.AI API');
+        throw new Error('Invalid response from Character.AI API - missing messages');
       }
 
       return response.data.messages;
     } catch (error) {
       console.error('Error fetching messages:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data));
+      }
       throw error;
     }
   }
@@ -255,17 +250,25 @@ class CharacterAI {
 
       const response = await axios({
         method: 'GET',
-        url: `${this.baseUrl}/api/v1/characters/${characterId}`,
-        headers: this.getHeaders()
+        url: `${this.baseUrl}/api/v1/character/info/`,
+        headers: this.getHeaders(),
+        timeout: 10000, // 10 second timeout
+        params: {
+          external_id: characterId
+        }
       });
 
       if (!response.data || !response.data.character) {
-        throw new Error('Invalid response from Character.AI API');
+        throw new Error('Invalid response from Character.AI API - missing character data');
       }
 
       return response.data.character;
     } catch (error) {
       console.error('Error fetching character info:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data));
+      }
       throw error;
     }
   }
