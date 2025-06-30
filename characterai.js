@@ -6,6 +6,7 @@ const WebSocket = require('ws');
 const activeChats = new Map();
 let wsConnection = null;
 let messageCallbacks = new Map();
+let messageResponses = new Map();
 
 /**
  * Character.AI API client implementation based on PyCharacterAI Python library
@@ -88,11 +89,37 @@ class CharacterAI {
       ws.on('message', (data) => {
         try {
           const message = JSON.parse(data);
+          console.log('WebSocket message received:', JSON.stringify(message).substring(0, 150) + '...');
+          
           const requestId = message.request_id;
           
-          if (requestId && messageCallbacks.has(requestId)) {
-            const callback = messageCallbacks.get(requestId);
-            callback(message);
+          if (requestId) {
+            // Store the response for this request ID
+            if (!messageResponses.has(requestId)) {
+              messageResponses.set(requestId, []);
+            }
+            
+            const responses = messageResponses.get(requestId);
+            responses.push(message);
+            messageResponses.set(requestId, responses);
+            
+            // If we have a callback for this request ID and certain conditions are met, call it
+            if (messageCallbacks.has(requestId)) {
+              const callback = messageCallbacks.get(requestId);
+              
+              // For update_turn and add_turn commands with is_final=true, call the callback
+              if (message.command === 'update_turn' || message.command === 'add_turn') {
+                if (message.turn && 
+                    message.turn.candidates && 
+                    message.turn.candidates.length > 0 && 
+                    message.turn.candidates[0].is_final === true) {
+                  callback(message);
+                }
+              } else if (message.command === 'neo_error') {
+                // For error messages, call the callback immediately
+                callback(message);
+              }
+            }
           }
         } catch (err) {
           console.error('Error processing WebSocket message:', err.message);
@@ -112,7 +139,7 @@ class CharacterAI {
   }
 
   /**
-   * Send a message via WebSocket
+   * Send a message via WebSocket and wait for specific response
    * @param {Object} message - Message to send
    * @returns {Promise<Object>} Response
    */
@@ -124,21 +151,52 @@ class CharacterAI {
       message.request_id = requestId;
     }
 
+    // Clear any previous responses for this request
+    messageResponses.delete(requestId);
+
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         messageCallbacks.delete(requestId);
+        
+        // Check if we have any responses for this request before failing
+        if (messageResponses.has(requestId)) {
+          const responses = messageResponses.get(requestId);
+          console.log(`Timeout but found ${responses.length} responses for request ${requestId}`);
+          
+          // Find the last update_turn or add_turn response
+          for (let i = responses.length - 1; i >= 0; i--) {
+            const response = responses[i];
+            if (response.command === 'update_turn' || response.command === 'add_turn') {
+              if (response.turn && response.turn.candidates && response.turn.candidates.length > 0) {
+                console.log('Found valid response in collected messages, using it despite timeout');
+                messageResponses.delete(requestId);
+                return resolve(response);
+              }
+            }
+          }
+        }
+        
         reject(new Error('WebSocket request timed out'));
-      }, 60000); // 60 second timeout
+      }, 90000); // 90 second timeout - character.ai can be slow
 
       // Set up callback for this request
       messageCallbacks.set(requestId, (response) => {
         clearTimeout(timeoutId);
         messageCallbacks.delete(requestId);
+        messageResponses.delete(requestId);
         resolve(response);
       });
 
       // Send the message
-      ws.send(JSON.stringify(message));
+      try {
+        ws.send(JSON.stringify(message));
+        console.log('WebSocket message sent for request:', requestId);
+      } catch (error) {
+        clearTimeout(timeoutId);
+        messageCallbacks.delete(requestId);
+        messageResponses.delete(requestId);
+        reject(error);
+      }
     });
   }
 
@@ -221,7 +279,11 @@ class CharacterAI {
         console.log(`Successfully created chat with ID: ${chatId}`);
         
         return { 
-          chat: response.data, 
+          chat: {
+            chat_id: chatId,
+            external_id: chatId,
+            character_id: characterId
+          }, 
           greeting: greeting 
         };
       }
@@ -295,7 +357,7 @@ class CharacterAI {
           tts_enabled: false,
           turn: {
             author: {
-              author_id: this.accountId,
+              author_id: this.accountId || "user",
               is_human: true,
               name: "",
             },
@@ -311,6 +373,11 @@ class CharacterAI {
       // Send the message via WebSocket
       const response = await this.sendWebSocketMessage(wsMessage);
       
+      // Handle error response
+      if (response.command === 'neo_error') {
+        throw new Error(`Character.AI error: ${response.comment || 'Unknown error'}`);
+      }
+      
       // Process the response according to the Python implementation
       if (response && response.turn && response.turn.candidates) {
         const primaryCandidate = response.turn.candidates[0];
@@ -318,7 +385,7 @@ class CharacterAI {
         
         return {
           turn_id: response.turn.turn_id,
-          author_name: response.turn.author.name || "Character",
+          author_name: response.turn.author?.name || "Character",
           text: primaryCandidate.text || primaryCandidate.raw_content,
           candidates: response.turn.candidates.map(candidate => ({
             candidate_id: candidate.candidate_id,
