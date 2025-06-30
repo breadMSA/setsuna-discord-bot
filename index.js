@@ -2618,7 +2618,13 @@ async function callCharacterAIAPI(messages, characterId) {
           // Create a new chat
           const result = await characterAI.createChat(targetCharacterId);
           chatData = result.chat;
+          
+          // Get chat ID - prefer chat_id (WebSocket API format) if available, otherwise use external_id (HTTP API format)
           chatId = chatData.chat_id || chatData.external_id;
+          
+          if (!chatId) {
+            throw new Error('Failed to get chat ID from Character.AI API response');
+          }
           
           // Store the chat info for future use
           characterAI.activeChats.set(channelId, {
@@ -2664,12 +2670,60 @@ async function callCharacterAIAPI(messages, characterId) {
         return response.text;
       } catch (sendError) {
         console.error('Error sending message:', sendError.message);
-        // Try next token
-        lastError = sendError;
-        getNextCharacterAIToken();
-        keysTriedCount++;
-        console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${sendError.message}`);
-        continue;
+        
+        // If the error is about the chat not existing, remove it from active chats and try to create a new one
+        if (sendError.message.includes('no such chat')) {
+          console.log('Chat not found, removing from active chats and creating a new one');
+          characterAI.activeChats.delete(channelId);
+          
+          try {
+            // Create a new chat
+            const result = await characterAI.createChat(targetCharacterId);
+            chatData = result.chat;
+            chatId = chatData.chat_id || chatData.external_id;
+            
+            if (!chatId) {
+              throw new Error('Failed to get chat ID from Character.AI API response');
+            }
+            
+            // Store the chat info for future use
+            characterAI.activeChats.set(channelId, {
+              chatId: chatId,
+              characterId: targetCharacterId
+            });
+            console.log(`Created new chat with ID: ${chatId}`);
+            
+            // Try sending the message again with the new chat
+            const response = await characterAI.sendMessage(
+              targetCharacterId,
+              chatId,
+              lastUserMessage.content
+            );
+            
+            // Check for empty response
+            if (!response || !response.text) {
+              throw new Error('Empty response from Character.AI API after creating new chat');
+            }
+            
+            // Success! Return the response
+            return response.text;
+          } catch (retryError) {
+            console.error('Error after recreating chat:', retryError.message);
+            // Try next token
+            lastError = retryError;
+            getNextCharacterAIToken();
+            keysTriedCount++;
+            console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error after retry: ${retryError.message}`);
+            continue;
+          }
+        } else {
+          // For other errors, try next token
+          lastError = sendError;
+          getNextCharacterAIToken();
+          keysTriedCount++;
+          console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${sendError.message}`);
+          continue;
+        }
       }
     } catch (error) {
       // Try next token
