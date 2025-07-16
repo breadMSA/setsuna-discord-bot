@@ -883,9 +883,20 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   // Check if server-only commands are used in DMs
-  if ((interaction.commandName === 'setsuna' || interaction.commandName === 'reset') && !interaction.inGuild()) {
+  if (interaction.commandName === 'reset' && !interaction.inGuild()) {
     await interaction.reply({ content: '這個指令只能在伺服器頻道中使用喔！', ephemeral: true });
     return;
+  }
+  
+  // For setsuna command, only block server administration subcommands in DMs
+  if (interaction.commandName === 'setsuna' && !interaction.inGuild()) {
+    const subcommand = interaction.options.getSubcommand();
+    // Block server-only subcommands
+    if (subcommand === 'activate' || subcommand === 'deactivate') {
+      await interaction.reply({ content: '這個子指令只能在伺服器頻道中使用喔！', ephemeral: true });
+      return;
+    }
+    // Allow other subcommands like setmodel, checkmodel, etc. in DMs
   }
 
   // Handle simple commands first
@@ -1080,9 +1091,22 @@ client.on('interactionCreate', async interaction => {
     } else if (subcommand === 'setmodel') {
       const model = interaction.options.getString('model');
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
+      const isDM = !interaction.inGuild();
       
-      // Check if the channel is active
-      if (!activeChannels.has(targetChannel.id)) {
+      // For DMs, automatically activate the channel if not already active
+      if (isDM && !activeChannels.has(targetChannel.id)) {
+        console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
+        activeChannels.set(targetChannel.id, {
+          messageHistory: [],
+          model: model || 'characterai', // Use selected model or default to characterai
+          caiChatId: null,               // No Character.AI chat ID initially
+          isDM: true,                    // Mark as DM channel
+          username: interaction.user.username // Store username for reference
+        });
+        await saveActiveChannels();
+      }
+      // For servers, check if the channel is active
+      else if (!isDM && !activeChannels.has(targetChannel.id)) {
         await interaction.reply({
           content: `I haven't been activated in ${targetChannel} ! Use \`/setsuna activate\` to activate me first.`,
           ephemeral: true
@@ -1180,9 +1204,22 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply(`Alright, I will be using ${modelNames[model]} model in ${targetChannel}!`);  
     } else if (subcommand === 'checkmodel') {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
+      const isDM = !interaction.inGuild();
       
-      // Check if the channel is active
-      if (!activeChannels.has(targetChannel.id)) {
+      // For DMs, automatically activate the channel if not already active
+      if (isDM && !activeChannels.has(targetChannel.id)) {
+        console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
+        activeChannels.set(targetChannel.id, {
+          messageHistory: [],
+          model: 'characterai',         // Default to characterai for DMs
+          caiChatId: null,              // No Character.AI chat ID initially
+          isDM: true,                   // Mark as DM channel
+          username: interaction.user.username // Store username for reference
+        });
+        await saveActiveChannels();
+      }
+      // For servers, check if the channel is active
+      else if (!isDM && !activeChannels.has(targetChannel.id)) {
         await interaction.reply({
           content: `I haven't been activated in ${targetChannel}! Use \`/setsuna activate\` to activate me first.`,
           flags: 64
@@ -1231,11 +1268,24 @@ client.on('interactionCreate', async interaction => {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
       const personality = interaction.options.getString('custom_personality');
       const resetToDefault = interaction.options.getBoolean('default');
+      const isDM = !interaction.inGuild();
 
       console.log(`setpersonality command received: personality=${personality}, resetToDefault=${resetToDefault}`);
 
-      // Check if the channel is active
-      if (!activeChannels.has(targetChannel.id)) {
+      // For DMs, automatically activate the channel if not already active
+      if (isDM && !activeChannels.has(targetChannel.id)) {
+        console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
+        activeChannels.set(targetChannel.id, {
+          messageHistory: [],
+          model: 'characterai',         // Default to characterai for DMs
+          caiChatId: null,              // No Character.AI chat ID initially
+          isDM: true,                   // Mark as DM channel
+          username: interaction.user.username // Store username for reference
+        });
+        await saveActiveChannels();
+      }
+      // For servers, check if the channel is active
+      else if (!isDM && !activeChannels.has(targetChannel.id)) {
         await interaction.reply({
           content: `I haven't been activated in ${targetChannel}! Use \`/setsuna activate\` to activate me first.`,
           flags: 64
@@ -1283,9 +1333,22 @@ client.on('interactionCreate', async interaction => {
     } else if (subcommand === 'aidetect') {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
       const enableAIDetect = interaction.options.getBoolean('enable');
+      const isDM = !interaction.inGuild();
       
-      // Check if the channel is active
-      if (!activeChannels.has(targetChannel.id)) {
+      // For DMs, automatically activate the channel if not already active
+      if (isDM && !activeChannels.has(targetChannel.id)) {
+        console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
+        activeChannels.set(targetChannel.id, {
+          messageHistory: [],
+          model: 'characterai',         // Default to characterai for DMs
+          caiChatId: null,              // No Character.AI chat ID initially
+          isDM: true,                   // Mark as DM channel
+          username: interaction.user.username // Store username for reference
+        });
+        await saveActiveChannels();
+      }
+      // For servers, check if the channel is active
+      else if (!isDM && !activeChannels.has(targetChannel.id)) {
         await interaction.reply({
           content: `I haven't been activated in ${targetChannel}! Use \`/setsuna activate\` to activate me first.`,
           flags: 64
@@ -1310,9 +1373,22 @@ client.on('interactionCreate', async interaction => {
       });
     } else if (subcommand === 'checkpersonality') {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
+      const isDM = !interaction.inGuild();
       
-      // Check if the channel is active
-      if (!activeChannels.has(targetChannel.id)) {
+      // For DMs, automatically activate the channel if not already active
+      if (isDM && !activeChannels.has(targetChannel.id)) {
+        console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
+        activeChannels.set(targetChannel.id, {
+          messageHistory: [],
+          model: 'characterai',         // Default to characterai for DMs
+          caiChatId: null,              // No Character.AI chat ID initially
+          isDM: true,                   // Mark as DM channel
+          username: interaction.user.username // Store username for reference
+        });
+        await saveActiveChannels();
+      }
+      // For servers, check if the channel is active
+      else if (!isDM && !activeChannels.has(targetChannel.id)) {
         await interaction.reply({
           content: `I haven't been activated in ${targetChannel}! Use \`/setsuna activate\` to activate me first.`,
           flags: 64
