@@ -243,19 +243,19 @@ class CharacterAI {
         if (response.data && response.data.user) {
           // Try different paths to find the account ID
           if (response.data.user.id) {
-            this.accountId = response.data.user.id;
+            this.accountId = String(response.data.user.id);
             console.log('Successfully retrieved account ID (path: user.id):', this.accountId);
             return response.data.user;
           } else if (response.data.user.user && response.data.user.user.id) {
-            this.accountId = response.data.user.user.id;
+            this.accountId = String(response.data.user.user.id);
             console.log('Successfully retrieved account ID (path: user.user.id):', this.accountId);
             return response.data.user.user;
           } else if (response.data.user.user_id) {
-            this.accountId = response.data.user.user_id;
+            this.accountId = String(response.data.user.user_id);
             console.log('Successfully retrieved account ID (path: user.user_id):', this.accountId);
             return response.data.user;
           } else if (response.data.user.user && response.data.user.user.user_id) {
-            this.accountId = response.data.user.user.user_id;
+            this.accountId = String(response.data.user.user.user_id);
             console.log('Successfully retrieved account ID (path: user.user.user_id):', this.accountId);
             return response.data.user.user;
           }
@@ -267,7 +267,7 @@ class CharacterAI {
         
         if (response.data && response.data.status === "OK" && response.data.user_id) {
           // Alternative response format
-          this.accountId = response.data.user_id;
+          this.accountId = String(response.data.user_id);
           console.log('Successfully retrieved account ID (alternative format):', this.accountId);
           return response.data;
         }
@@ -291,7 +291,7 @@ class CharacterAI {
         console.log('Full neo user response data:', JSON.stringify(neoResponse.data, null, 2));
         
         if (neoResponse.data && neoResponse.data.user && neoResponse.data.user.user_id) {
-          this.accountId = neoResponse.data.user.user_id;
+          this.accountId = String(neoResponse.data.user.user_id);
           console.log('Successfully retrieved account ID from neo API:', this.accountId);
           return neoResponse.data.user;
         }
@@ -299,7 +299,7 @@ class CharacterAI {
         // Try additional paths
         if (neoResponse.data && neoResponse.data.user) {
           if (neoResponse.data.user.id) {
-            this.accountId = neoResponse.data.user.id;
+            this.accountId = String(neoResponse.data.user.id);
             console.log('Successfully retrieved account ID from neo API (path: user.id):', this.accountId);
             return neoResponse.data.user;
           }
@@ -319,7 +319,7 @@ class CharacterAI {
       // If we still don't have an account ID, try to generate one
       if (!this.accountId) {
         // Generate a UUID to use as account ID if we can't get one from the API
-        this.accountId = uuidv4();
+        this.accountId = String(uuidv4());
         console.log('Generated fallback account ID:', this.accountId);
         return { user_id: this.accountId };
       }
@@ -334,7 +334,7 @@ class CharacterAI {
       }
       
       // Generate a UUID to use as account ID if we can't get one from the API
-      this.accountId = uuidv4();
+      this.accountId = String(uuidv4());
       console.log('Generated fallback account ID after error:', this.accountId);
       return { user_id: this.accountId };
     }
