@@ -3146,7 +3146,7 @@ client.on('messageCreate', async (message) => {
      !previousMessage.content.includes('我將轉換成黑白版本'))
   );
   
-  // 記錄上一條消息的信息，幫助診斷問題
+  /* 記錄上一條消息的信息，幫助診斷問題
   console.log('上一條消息來自:', previousMessage ? (previousMessage.author && previousMessage.author.bot ? '機器人' : '用戶') : '無');
   if (previousMessage && previousMessage.content) {
     console.log('上一條消息內容:', previousMessage.content.substring(0, 50) + (previousMessage.content.length > 50 ? '...' : ''));
@@ -3159,6 +3159,7 @@ client.on('messageCreate', async (message) => {
       });
     }
   }
+  */
   
   // 更全面的圖片修改請求檢測
   const isImageModificationRequest = 
