@@ -64,27 +64,66 @@ class CharacterAI {
   async getWebSocket() {
     // Check if we already have an active connection for this token
     if (activeWebSockets.has(this.token) && activeWebSockets.get(this.token).readyState === WebSocket.OPEN) {
+      console.log('Using existing WebSocket connection');
       return activeWebSockets.get(this.token);
     }
 
     // Create a new WebSocket connection
     return new Promise((resolve, reject) => {
       console.log('Creating new WebSocket connection to Character.AI...');
+      
+      // Close any existing connection that might be in a bad state
+      if (activeWebSockets.has(this.token)) {
+        try {
+          const oldWs = activeWebSockets.get(this.token);
+          if (oldWs.readyState !== WebSocket.CLOSED) {
+            console.log('Closing existing WebSocket connection');
+            oldWs.terminate();
+          }
+        } catch (error) {
+          console.error('Error closing existing WebSocket:', error.message);
+        }
+      }
+      
+      // Create new connection with proper headers
       const ws = new WebSocket(this.wsUrl, {
         headers: {
-          'Cookie': `HTTP_AUTHORIZATION=Token ${this.token}`
+          'Cookie': `HTTP_AUTHORIZATION=Token ${this.token}`,
+          'User-Agent': this.headers['User-Agent'],
+          'Origin': 'https://character.ai',
+          'Referer': 'https://character.ai/'
         }
       });
 
       ws.on('open', () => {
         console.log('WebSocket connection established');
         activeWebSockets.set(this.token, ws);
+        
+        // Send a ping to verify the connection is working
+        try {
+          ws.send(JSON.stringify({ command: "ping" }));
+          console.log('Sent ping to WebSocket');
+        } catch (error) {
+          console.error('Error sending ping:', error.message);
+        }
+        
         resolve(ws);
       });
 
       ws.on('error', (error) => {
         console.error('WebSocket connection error:', error.message);
         reject(error);
+      });
+      
+      ws.on('message', (data) => {
+        try {
+          const message = JSON.parse(data.toString());
+          if (message.command === 'pong') {
+            console.log('Received pong from WebSocket');
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error.message);
+        }
       });
 
       // Set a timeout for connection
@@ -119,11 +158,18 @@ class CharacterAI {
       console.log('Character.AI user API response status:', response.status);
       
       if (response.data && response.data.user) {
+        // The user ID is nested inside the response
         this.accountId = response.data.user.user.user_id;
         console.log('Successfully retrieved account ID:', this.accountId);
         return response.data.user.user;
+      } else if (response.data && response.data.status === "OK" && response.data.user_id) {
+        // Alternative response format
+        this.accountId = response.data.user_id;
+        console.log('Successfully retrieved account ID (alternative format):', this.accountId);
+        return response.data;
       }
 
+      console.error('Invalid response format:', JSON.stringify(response.data));
       throw new Error('Failed to fetch account information - invalid response format');
     } catch (error) {
       console.error('Error fetching account info:', error.message);
@@ -153,51 +199,90 @@ class CharacterAI {
       
       console.log(`Creating new chat with character ${characterId}...`);
       
-      // First try the WebSocket API to create the chat (more reliable for subsequent message sending)
       try {
+        // Create a new WebSocket connection
         const ws = await this.getWebSocket();
         const requestId = uuidv4();
+        const chatId = uuidv4();
         
+        // Format the WebSocket message following the Python implementation
         const createChatMessage = {
           command: "create_chat",
-          origin_id: "web-next",
+          request_id: requestId,
           payload: {
-            character_id: characterId,
-            history_id: null
+            chat: {
+              chat_id: chatId,
+              creator_id: this.accountId,
+              visibility: "VISIBILITY_PRIVATE",
+              character_id: characterId,
+              type: "TYPE_ONE_ON_ONE"
+            },
+            with_greeting: true
           },
-          request_id: requestId
+          origin_id: "web-next"
         };
         
-        const chatData = await new Promise((resolve, reject) => {
+        console.log('Sending create_chat message:', JSON.stringify(createChatMessage));
+        
+        // Send the message and wait for response
+        return await new Promise((resolve, reject) => {
+          let newChat = null;
+          let greetingTurn = null;
+          
           // Handle WebSocket messages for this specific request
           const messageHandler = (data) => {
             try {
               const response = JSON.parse(data.toString());
+              console.log('Received WebSocket response:', response.command);
               
               // Check if the response is for our request
-              if (response.request_id !== requestId) {
+              if (response.request_id !== requestId && 
+                  !['create_chat_response', 'add_turn', 'neo_error'].includes(response.command)) {
                 return; // Ignore messages for other requests
               }
               
               const command = response.command;
               
-              if (!command) {
-                reject(new Error('Invalid response from WebSocket - missing command'));
-                return;
-              }
-              
               if (command === 'neo_error') {
                 const errorComment = response.comment || '';
+                cleanup();
                 reject(new Error(`Character.AI API error: ${errorComment}`));
                 return;
               }
               
-              if (command === 'chat') {
-                cleanup();
-                resolve(response);
+              if (command === 'create_chat_response') {
+                newChat = response.chat;
+                
+                // If we're not expecting a greeting, resolve now
+                if (!createChatMessage.payload.with_greeting) {
+                  cleanup();
+                  resolve({ 
+                    chat: newChat,
+                    greeting: null
+                  });
+                }
+                
+                // Otherwise, wait for the greeting turn
+                return;
+              }
+              
+              if (command === 'add_turn') {
+                greetingTurn = response.turn;
+                
+                // We have both the chat and greeting, resolve
+                if (newChat) {
+                  cleanup();
+                  resolve({ 
+                    chat: newChat,
+                    greeting: greetingTurn
+                  });
+                }
+                
+                return;
               }
             } catch (error) {
               console.error('Error processing WebSocket message:', error.message);
+              cleanup();
               reject(error);
             }
           };
@@ -221,6 +306,7 @@ class CharacterAI {
             ws.removeListener('message', messageHandler);
             ws.removeListener('error', errorHandler);
             ws.removeListener('close', closeHandler);
+            clearTimeout(timeout);
           };
           
           // Set up event listeners
@@ -232,71 +318,86 @@ class CharacterAI {
           const timeout = setTimeout(() => {
             cleanup();
             reject(new Error('Timeout waiting for Character.AI response'));
-          }, 15000); // 15 second timeout
+          }, 30000); // 30 second timeout
           
           // Send the message
           ws.send(JSON.stringify(createChatMessage), (error) => {
             if (error) {
-              clearTimeout(timeout);
               cleanup();
               reject(error);
             }
           });
         });
+      } catch (wsError) {
+        // WebSocket method failed, try HTTP fallback
+        console.log(`WebSocket chat creation failed, falling back to HTTP API: ${wsError.message}`);
         
-        // Extract chat ID from WebSocket response
-        if (chatData && chatData.chat && chatData.chat.chat_id) {
-          const chatId = chatData.chat.chat_id;
-          console.log(`Successfully created chat with ID: ${chatId} (WebSocket API)`);
+        // Try the HTTP API to create a chat
+        console.log('Attempting to create chat using HTTP API...');
+        
+        // First try the neo API
+        try {
+          const neoResponse = await axios({
+            method: 'POST',
+            url: 'https://neo.character.ai/chat/',
+            headers: this.getHeaders(),
+            timeout: 15000, // 15 second timeout
+            data: {
+              character_id: characterId
+            }
+          });
           
-          return { 
-            chat: chatData.chat,
-            greeting: chatData.chat.turns && chatData.chat.turns.length > 0 ? chatData.chat.turns[0] : null
+          console.log('Character.AI neo create chat response status:', neoResponse.status);
+          
+          if (neoResponse.data && neoResponse.data.chat && neoResponse.data.chat.chat_id) {
+            const chatId = neoResponse.data.chat.chat_id;
+            console.log(`Successfully created chat with ID: ${chatId} (Neo HTTP API)`);
+            
+            return {
+              chat: neoResponse.data.chat,
+              greeting: null // Neo API doesn't return greeting with the create call
+            };
+          }
+        } catch (neoError) {
+          console.log(`Neo HTTP API failed, trying legacy API: ${neoError.message}`);
+        }
+        
+        // If Neo API fails, try the legacy API
+        const legacyResponse = await axios({
+          method: 'POST',
+          url: `${this.baseUrl}/chat/history/create/`,
+          headers: this.getHeaders(),
+          timeout: 15000, // 15 second timeout
+          data: {
+            character_external_id: characterId,
+            history_external_id: null
+          }
+        });
+        
+        console.log('Character.AI legacy create chat response status:', legacyResponse.status);
+        
+        if (legacyResponse.data && legacyResponse.data.external_id) {
+          const chatId = legacyResponse.data.external_id;
+          let greeting = null;
+          
+          // Try to get the greeting message if available
+          if (legacyResponse.data.turns && legacyResponse.data.turns.length > 0) {
+            greeting = legacyResponse.data.turns[0];
+          }
+          
+          console.log(`Successfully created chat with ID: ${chatId} (Legacy HTTP API)`);
+          
+          return {
+            chat: {
+              ...legacyResponse.data,
+              chat_id: chatId // Add WebSocket compatible chat_id
+            },
+            greeting: greeting
           };
         }
-      } catch (wsError) {
-        console.log(`WebSocket chat creation failed, falling back to HTTP API: ${wsError.message}`);
-        // Continue with HTTP API fallback
+        
+        throw new Error('Failed to create chat using both WebSocket and HTTP methods');
       }
-      
-      // Fallback to HTTP API if WebSocket fails
-      const response = await axios({
-        method: 'POST',
-        url: `${this.baseUrl}/chat/history/create/`,
-        headers: this.getHeaders(),
-        timeout: 15000, // 15 second timeout
-        data: {
-          character_external_id: characterId,
-          history_external_id: null
-        }
-      });
-
-      console.log('Character.AI create chat response status:', response.status);
-      
-      if (response.data && response.data.external_id) {
-        const chatId = response.data.external_id;
-        let greeting = null;
-        
-        // Try to get the greeting message if available
-        if (response.data.turns && response.data.turns.length > 0) {
-          greeting = response.data.turns[0];
-        }
-
-        console.log(`Successfully created chat with ID: ${chatId} (HTTP API)`);
-        
-        // Store the chat ID in the format expected by the WebSocket API
-        const wsCompatChatId = response.data.external_id;
-        
-        return { 
-          chat: {
-            ...response.data,
-            chat_id: wsCompatChatId // Add WebSocket compatible chat_id
-          },
-          greeting: greeting 
-        };
-      }
-
-      throw new Error('Failed to create chat - invalid response format');
     } catch (error) {
       console.error('Error creating chat:', error.message);
       if (error.response) {

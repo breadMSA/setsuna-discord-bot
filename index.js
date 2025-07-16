@@ -2690,14 +2690,44 @@ async function callCharacterAIAPI(messages, characterId) {
         try {
           // Create a new chat
           const result = await characterAI.createChat(targetCharacterId);
+          
+          if (!result || !result.chat) {
+            throw new Error('Failed to create chat - empty response');
+          }
+          
           chatData = result.chat;
           
-          // Get chat ID - prefer chat_id (WebSocket API format) if available, otherwise use external_id (HTTP API format)
-          chatId = chatData.chat_id || chatData.external_id;
+          // Get chat ID - there are multiple possible formats:
+          // 1. chat_id property (WebSocket API format)
+          // 2. external_id property (HTTP API format)
+          // 3. history_external_id property (sometimes used)
+          // 4. In URLs, it's in the "hist" parameter
+          
+          // Try to extract chat ID from various properties
+          if (chatData.chat_id) {
+            chatId = chatData.chat_id;
+          } else if (chatData.external_id) {
+            chatId = chatData.external_id;
+          } else if (chatData.history_external_id) {
+            chatId = chatData.history_external_id;
+          } else if (chatData.id) {
+            chatId = chatData.id;
+          }
+          
+          // If we have a URL with a hist parameter, extract that
+          if (chatData.url && chatData.url.includes('hist=')) {
+            const match = chatData.url.match(/hist=([^&]+)/);
+            if (match && match[1]) {
+              chatId = match[1];
+            }
+          }
           
           if (!chatId) {
+            console.error('Chat data:', JSON.stringify(chatData, null, 2));
             throw new Error('Failed to get chat ID from Character.AI API response');
           }
+          
+          console.log(`Created new chat with ID: ${chatId}`);
           
           // Store the chat info in CharacterAI client for this session
           characterAI.activeChats.set(channelId, {
@@ -2754,12 +2784,34 @@ async function callCharacterAIAPI(messages, characterId) {
         try {
           // Create a new chat
           const result = await characterAI.createChat(targetCharacterId);
+          
+          if (!result || !result.chat) {
+            throw new Error('Failed to create chat - empty response');
+          }
+          
           chatData = result.chat;
           
-          // Get chat ID - prefer chat_id (WebSocket API format) if available, otherwise use external_id (HTTP API format)
-          chatId = chatData.chat_id || chatData.external_id;
+          // Get chat ID from various possible properties
+          if (chatData.chat_id) {
+            chatId = chatData.chat_id;
+          } else if (chatData.external_id) {
+            chatId = chatData.external_id;
+          } else if (chatData.history_external_id) {
+            chatId = chatData.history_external_id;
+          } else if (chatData.id) {
+            chatId = chatData.id;
+          }
+          
+          // If we have a URL with a hist parameter, extract that
+          if (chatData.url && chatData.url.includes('hist=')) {
+            const match = chatData.url.match(/hist=([^&]+)/);
+            if (match && match[1]) {
+              chatId = match[1];
+            }
+          }
           
           if (!chatId) {
+            console.error('Chat data:', JSON.stringify(chatData, null, 2));
             throw new Error('Failed to get chat ID from Character.AI API response');
           }
           
