@@ -1007,14 +1007,37 @@ client.on('interactionCreate', async interaction => {
   }
   
   if (interaction.commandName === 'setsuna') {
-    // Check if user has admin permissions
-    if (!interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+    // Check if user has admin permissions (only for guild commands)
+    if (interaction.inGuild() && !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
       await interaction.reply({ content: 'You don\'t have permission to use this command! Admin privileges required.', flags: 64 });
       return;
     }
     
     const subcommand = interaction.options.getSubcommand();
     const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
+    const isDM = !interaction.inGuild();
+    
+    // For DMs, only allow certain subcommands
+    if (isDM) {
+      const allowedDMSubcommands = ['setmodel', 'checkmodel', 'setpersonality', 'checkpersonality', 'aidetect'];
+      if (!allowedDMSubcommands.includes(subcommand)) {
+        await interaction.reply({ content: '這個子指令只能在伺服器頻道中使用喔！', ephemeral: true });
+        return;
+      }
+      
+      // Auto-activate DM channel if not already active
+      if (!activeChannels.has(targetChannel.id)) {
+        console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
+        activeChannels.set(targetChannel.id, {
+          messageHistory: [],
+          model: 'characterai', // Default model for DMs
+          caiChatId: null,      // No Character.AI chat ID initially
+          isDM: true,           // Mark as DM channel
+          username: interaction.user.username // Store username for reference
+        });
+        await saveActiveChannels();
+      }
+    }
     
     if (subcommand === 'activate') {
       // Get optional model parameters
@@ -1077,7 +1100,7 @@ client.on('interactionCreate', async interaction => {
         'gemini': 'Gemini',
         'chatgpt': 'ChatGPT',
         'together': 'Together AI',
-        'groq': 'Groq (Llama-3.1)',
+        'groq': 'Groq (gemma2-9b-it)',
         'cerebras': 'Cerebras',
         'characterai': 'Character.AI'
       };
@@ -1196,7 +1219,7 @@ client.on('interactionCreate', async interaction => {
         'gemini': 'Gemini',
         'chatgpt': 'ChatGPT',
         'together': 'Together AI',
-        'groq': 'Groq (Llama-3.1)',
+        'groq': 'Groq (gemma2-9b-it)',
         'cerebras': 'Cerebras',
         'characterai': 'Character.AI'
       };
@@ -2757,17 +2780,27 @@ async function callCharacterAIAPI(messages, characterId) {
           messageWithContext += "[Previous conversation]\n";
           
           for (const msg of contextMessages) {
-            // Don't add role labels, just add the raw message content
-            // This prevents Character.AI from being influenced by "Human" and "Assistant" labels
-            messageWithContext += `${msg.content}\n`;
+            // Add role labels with usernames to help Character.AI understand who is speaking
+            if (msg.role === 'user') {
+              // Get username from the message if available, or from activeChannels
+              const username = msg.username || 
+                (activeChannels.has(channelId) && activeChannels.get(channelId).username) || 
+                'User';
+              messageWithContext += `${username}: ${msg.content}\n`;
+            } else if (msg.role === 'assistant') {
+              messageWithContext += `Setsuna: ${msg.content}\n`;
+            }
           }
           
           messageWithContext += "[End of previous conversation]\n\n";
         }
       }
       
-      // Add the actual message the user sent
-      messageWithContext += lastMessageContent;
+      // Add the actual message the user sent with username
+      const username = lastUserMessage.username || 
+        (activeChannels.has(channelId) && activeChannels.get(channelId).username) || 
+        'User';
+      messageWithContext += `${username}: ${lastMessageContent}`;
       
       // Check if we have an active chat for this channel
       let chatData = null;
@@ -4152,10 +4185,22 @@ if (isReply) {
     // Add personality prompt as system message
     const formattedMessages = [
       { role: 'system', content: channelPersonality },
-      ...messageHistory.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }))
+      ...messageHistory.map(msg => {
+        // For Character.AI, ensure username is included in every message
+        // This helps the model understand who is speaking
+        const content = msg.role === 'user' 
+          ? (msg.content.startsWith(`[${msg.author}]`) ? msg.content : `[${msg.author}]: ${msg.content}`)
+          : msg.content;
+          
+        return {
+          role: msg.role,
+          content: content,
+          username: msg.author, // Include username for all messages
+          channelId: message.channelId,
+          channelType: message.channel.type,
+          isDM: message.channel.type === ChannelType.DM
+        };
+      })
     ];
     
     // Get channel's preferred model or use default

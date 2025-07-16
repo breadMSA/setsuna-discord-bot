@@ -122,7 +122,7 @@ class CharacterAI {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
                 'Origin': 'https://character.ai',
                 'Referer': 'https://character.ai/'
-              }
+        }
             }, 2);
           } else if (attempt === 2) {
             // Third attempt: Try with token in URL
@@ -141,11 +141,11 @@ class CharacterAI {
             reject(new Error('All WebSocket connection attempts failed'));
           }
         }, 10000);
-        
-        ws.on('open', () => {
+
+      ws.on('open', () => {
           clearTimeout(connectionTimeout);
           console.log(`WebSocket connection established on attempt ${attempt}`);
-          activeWebSockets.set(this.token, ws);
+        activeWebSockets.set(this.token, ws);
           
           // Send a ping to verify the connection is working
           try {
@@ -155,10 +155,10 @@ class CharacterAI {
             console.error('Error sending ping:', error.message);
           }
           
-          resolve(ws);
-        });
+        resolve(ws);
+      });
 
-        ws.on('error', (error) => {
+      ws.on('error', (error) => {
           clearTimeout(connectionTimeout);
           console.error(`WebSocket connection error on attempt ${attempt}:`, error.message);
           
@@ -187,10 +187,10 @@ class CharacterAI {
             }, 3, wsUrlWithToken);
           } else {
             // All attempts failed
-            reject(error);
+        reject(error);
           }
-        });
-        
+      });
+
         ws.on('message', (data) => {
           try {
             const message = JSON.parse(data.toString());
@@ -229,18 +229,18 @@ class CharacterAI {
       
       // Try the primary API endpoint first
       try {
-        const response = await axios({
-          method: 'GET',
-          url: `${this.baseUrl}/chat/user/`,
-          headers: this.getHeaders(),
-          timeout: 10000 // 10 second timeout
-        });
+      const response = await axios({
+        method: 'GET',
+        url: `${this.baseUrl}/chat/user/`,
+        headers: this.getHeaders(),
+        timeout: 10000 // 10 second timeout
+      });
 
-        console.log('Character.AI user API response status:', response.status);
+      console.log('Character.AI user API response status:', response.status);
         console.log('Full user response data:', JSON.stringify(response.data, null, 2));
-        
+      
         // Try multiple possible paths for account ID
-        if (response.data && response.data.user) {
+      if (response.data && response.data.user) {
           // Try different paths to find the account ID
           if (response.data.user.id) {
             this.accountId = String(response.data.user.id);
@@ -257,9 +257,9 @@ class CharacterAI {
           } else if (response.data.user.user && response.data.user.user.user_id) {
             this.accountId = String(response.data.user.user.user_id);
             console.log('Successfully retrieved account ID (path: user.user.user_id):', this.accountId);
-            return response.data.user.user;
-          }
-          
+        return response.data.user.user;
+      }
+
           // If we couldn't find the ID in the expected paths, log the structure and try a fallback
           console.log('Could not find account ID in expected paths. User object structure:', 
                      JSON.stringify(response.data.user, null, 2));
@@ -355,7 +355,7 @@ class CharacterAI {
       if (!this.accountId) {
         await this.fetchMe();
       }
-      
+
       console.log(`Creating new chat with character ${characterId}...`);
       
       try {
@@ -373,7 +373,7 @@ class CharacterAI {
               chat_id: chatId,
               creator_id: this.accountId,
               visibility: "VISIBILITY_PRIVATE",
-              character_id: characterId,
+            character_id: characterId,
               type: "TYPE_ONE_ON_ONE"
             },
             with_greeting: true
@@ -413,9 +413,9 @@ class CharacterAI {
                     chat: newChat,
                     greeting: null
                   });
-                  return;
-                }
-                
+                return;
+              }
+              
                 // Otherwise, wait for the greeting turn
                 return;
               }
@@ -426,7 +426,7 @@ class CharacterAI {
                 
                 // We have both the chat and greeting, resolve
                 if (newChat) {
-                  cleanup();
+                cleanup();
                   resolve({ 
                     chat: newChat,
                     greeting: greetingTurn
@@ -616,7 +616,7 @@ class CharacterAI {
       if (!this.accountId) {
         await this.fetchMe();
       }
-      
+
       // Generate UUIDs for the request
       const candidateId = uuidv4();
       const turnId = uuidv4();
