@@ -102,61 +102,116 @@ class CharacterAI {
         }
       }
       
-      // Create new connection with proper headers
-      // Looking at the Python implementation in requester.py, they use:
-      // cookies={"HTTP_AUTHORIZATION": f"Token {token}"}
-      const wsOptions = {
+      // Try multiple authentication approaches
+      // First, try with HTTP_AUTHORIZATION cookie (Python implementation)
+      const tryConnection = (options, attempt = 1, url = this.wsUrl) => {
+        console.log(`WebSocket connection attempt ${attempt} with options:`, JSON.stringify(options));
+        
+        const ws = new WebSocket(url, options);
+        
+        const connectionTimeout = setTimeout(() => {
+          console.log(`WebSocket connection attempt ${attempt} timed out`);
+          ws.terminate();
+          
+          // Try next approach if this one fails
+          if (attempt === 1) {
+            // Second attempt: Try with Authorization cookie
+            tryConnection({
+              headers: {
+                'Cookie': `Authorization=Token ${this.token}`,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
+                'Origin': 'https://character.ai',
+                'Referer': 'https://character.ai/'
+              }
+            }, 2);
+          } else if (attempt === 2) {
+            // Third attempt: Try with token in URL
+            const wsUrlWithToken = `${this.wsUrl}?token=${this.token}`;
+            console.log(`Connecting to WebSocket with token in URL: ${wsUrlWithToken.substring(0, 40)}...`);
+            
+            tryConnection({
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
+                'Origin': 'https://character.ai',
+                'Referer': 'https://character.ai/'
+              }
+            }, 3, wsUrlWithToken);
+          } else {
+            // All attempts failed
+            reject(new Error('All WebSocket connection attempts failed'));
+          }
+        }, 10000);
+        
+        ws.on('open', () => {
+          clearTimeout(connectionTimeout);
+          console.log(`WebSocket connection established on attempt ${attempt}`);
+          activeWebSockets.set(this.token, ws);
+          
+          // Send a ping to verify the connection is working
+          try {
+            ws.send(JSON.stringify({ command: "ping" }));
+            console.log('Sent ping to WebSocket');
+          } catch (error) {
+            console.error('Error sending ping:', error.message);
+          }
+          
+          resolve(ws);
+        });
+
+        ws.on('error', (error) => {
+          clearTimeout(connectionTimeout);
+          console.error(`WebSocket connection error on attempt ${attempt}:`, error.message);
+          
+          // Try next approach if this one fails
+          if (attempt === 1) {
+            // Second attempt: Try with Authorization cookie
+            tryConnection({
+              headers: {
+                'Cookie': `Authorization=Token ${this.token}`,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
+                'Origin': 'https://character.ai',
+                'Referer': 'https://character.ai/'
+              }
+            }, 2);
+          } else if (attempt === 2) {
+            // Third attempt: Try with token in URL
+            const wsUrlWithToken = `${this.wsUrl}?token=${this.token}`;
+            console.log(`Connecting to WebSocket with token in URL: ${wsUrlWithToken.substring(0, 40)}...`);
+            
+            tryConnection({
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
+                'Origin': 'https://character.ai',
+                'Referer': 'https://character.ai/'
+              }
+            }, 3, wsUrlWithToken);
+          } else {
+            // All attempts failed
+            reject(error);
+          }
+        });
+        
+        ws.on('message', (data) => {
+          try {
+            const message = JSON.parse(data.toString());
+            if (message.command === 'pong') {
+              console.log('Received pong from WebSocket');
+            }
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error.message);
+          }
+        });
+      };
+      
+      // Start with first attempt - HTTP_AUTHORIZATION cookie
+      tryConnection({
         headers: {
           'Cookie': `HTTP_AUTHORIZATION=Token ${this.token}`,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
           'Origin': 'https://character.ai',
           'Referer': 'https://character.ai/'
         }
-      };
-      
-      console.log('Connecting to WebSocket with headers:', JSON.stringify(wsOptions.headers));
-      
-      const ws = new WebSocket(this.wsUrl, wsOptions);
-
-      ws.on('open', () => {
-        console.log('WebSocket connection established');
-        activeWebSockets.set(this.token, ws);
-        
-        // Send a ping to verify the connection is working
-        try {
-          ws.send(JSON.stringify({ command: "ping" }));
-          console.log('Sent ping to WebSocket');
-        } catch (error) {
-          console.error('Error sending ping:', error.message);
-        }
-        
-        resolve(ws);
-      });
-
-      ws.on('error', (error) => {
-        console.error('WebSocket connection error:', error.message);
-        reject(error);
-      });
-      
-      ws.on('message', (data) => {
-        try {
-          const message = JSON.parse(data.toString());
-          if (message.command === 'pong') {
-            console.log('Received pong from WebSocket');
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error.message);
-        }
-      });
-
-      // Set a timeout for connection
-      const timeout = setTimeout(() => {
-        ws.terminate();
-        reject(new Error('WebSocket connection timeout'));
-      }, 15000);
-
-      // Clear timeout when connected
-      ws.on('open', () => clearTimeout(timeout));
+      }, 1, this.wsUrl);
     });
   }
 
@@ -182,13 +237,35 @@ class CharacterAI {
         });
 
         console.log('Character.AI user API response status:', response.status);
+        console.log('Full user response data:', JSON.stringify(response.data, null, 2));
         
+        // Try multiple possible paths for account ID
         if (response.data && response.data.user) {
-          // The user ID is nested inside the response
-          this.accountId = response.data.user.user.user_id;
-          console.log('Successfully retrieved account ID:', this.accountId);
-          return response.data.user.user;
-        } else if (response.data && response.data.status === "OK" && response.data.user_id) {
+          // Try different paths to find the account ID
+          if (response.data.user.id) {
+            this.accountId = response.data.user.id;
+            console.log('Successfully retrieved account ID (path: user.id):', this.accountId);
+            return response.data.user;
+          } else if (response.data.user.user && response.data.user.user.id) {
+            this.accountId = response.data.user.user.id;
+            console.log('Successfully retrieved account ID (path: user.user.id):', this.accountId);
+            return response.data.user.user;
+          } else if (response.data.user.user_id) {
+            this.accountId = response.data.user.user_id;
+            console.log('Successfully retrieved account ID (path: user.user_id):', this.accountId);
+            return response.data.user;
+          } else if (response.data.user.user && response.data.user.user.user_id) {
+            this.accountId = response.data.user.user.user_id;
+            console.log('Successfully retrieved account ID (path: user.user.user_id):', this.accountId);
+            return response.data.user.user;
+          }
+          
+          // If we couldn't find the ID in the expected paths, log the structure and try a fallback
+          console.log('Could not find account ID in expected paths. User object structure:', 
+                     JSON.stringify(response.data.user, null, 2));
+        }
+        
+        if (response.data && response.data.status === "OK" && response.data.user_id) {
           // Alternative response format
           this.accountId = response.data.user_id;
           console.log('Successfully retrieved account ID (alternative format):', this.accountId);
@@ -196,6 +273,9 @@ class CharacterAI {
         }
       } catch (primaryError) {
         console.log(`Primary user API failed: ${primaryError.message}, trying neo API...`);
+        if (primaryError.response) {
+          console.log('Primary API error response:', JSON.stringify(primaryError.response.data, null, 2));
+        }
       }
       
       // Try the neo API endpoint if the primary fails
@@ -208,14 +288,32 @@ class CharacterAI {
         });
         
         console.log('Character.AI neo user API response status:', neoResponse.status);
+        console.log('Full neo user response data:', JSON.stringify(neoResponse.data, null, 2));
         
         if (neoResponse.data && neoResponse.data.user && neoResponse.data.user.user_id) {
           this.accountId = neoResponse.data.user.user_id;
           console.log('Successfully retrieved account ID from neo API:', this.accountId);
           return neoResponse.data.user;
         }
+        
+        // Try additional paths
+        if (neoResponse.data && neoResponse.data.user) {
+          if (neoResponse.data.user.id) {
+            this.accountId = neoResponse.data.user.id;
+            console.log('Successfully retrieved account ID from neo API (path: user.id):', this.accountId);
+            return neoResponse.data.user;
+          }
+        }
+        
+        // If user object exists but no ID found, log the structure
+        if (neoResponse.data && neoResponse.data.user) {
+          console.log('Neo API user object structure:', JSON.stringify(neoResponse.data.user, null, 2));
+        }
       } catch (neoError) {
         console.log(`Neo user API failed: ${neoError.message}`);
+        if (neoError.response) {
+          console.log('Neo API error response:', JSON.stringify(neoError.response.data, null, 2));
+        }
       }
       
       // If we still don't have an account ID, try to generate one
@@ -232,7 +330,7 @@ class CharacterAI {
       console.error('Error fetching account info:', error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data));
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
       }
       
       // Generate a UUID to use as account ID if we can't get one from the API
@@ -387,134 +485,118 @@ class CharacterAI {
           });
         });
       } catch (wsError) {
-        // WebSocket method failed, try HTTP fallback
-        console.log(`WebSocket chat creation failed, falling back to HTTP API: ${wsError.message}`);
-        
-        // Try the HTTP API to create a chat
-        console.log('Attempting to create chat using HTTP API...');
-        
-        // First try the neo API
-        try {
-          const neoResponse = await axios({
-            method: 'POST',
-            url: 'https://neo.character.ai/chat/',
-            headers: this.getHeaders(),
-            timeout: 15000, // 15 second timeout
-            data: {
-              character_id: characterId
-            }
-          });
-          
-          console.log('Character.AI neo create chat response status:', neoResponse.status);
-          
-          if (neoResponse.data && neoResponse.data.chat && neoResponse.data.chat.chat_id) {
-            const chatId = neoResponse.data.chat.chat_id;
-            console.log(`Successfully created chat with ID: ${chatId} (Neo HTTP API)`);
-            
-            return {
-              chat: neoResponse.data.chat,
-              greeting: null // Neo API doesn't return greeting with the create call
-            };
-          }
-        } catch (neoError) {
-          console.log(`Neo HTTP API failed, trying legacy API: ${neoError.message}`);
-          
-          // Log the error details
-          if (neoError.response) {
-            console.error('Neo API response status:', neoError.response.status);
-            console.error('Neo API response data:', JSON.stringify(neoError.response.data));
-          }
-        }
-        
-        // Try another Neo API endpoint
-        try {
-          const neoAltResponse = await axios({
-            method: 'POST',
-            url: 'https://neo.character.ai/chat/history/create/',
-            headers: this.getHeaders(),
-            timeout: 15000, // 15 second timeout
-            data: {
-              character_id: characterId
-            }
-          });
-          
-          console.log('Character.AI neo alt create chat response status:', neoAltResponse.status);
-          
-          if (neoAltResponse.data && (neoAltResponse.data.chat_id || neoAltResponse.data.external_id)) {
-            const chatId = neoAltResponse.data.chat_id || neoAltResponse.data.external_id;
-            console.log(`Successfully created chat with ID: ${chatId} (Neo Alt HTTP API)`);
-            
-            return {
-              chat: neoAltResponse.data,
-              greeting: null
-            };
-          }
-        } catch (neoAltError) {
-          console.log(`Neo Alt HTTP API failed, trying legacy API: ${neoAltError.message}`);
-          
-          // Log the error details
-          if (neoAltError.response) {
-            console.error('Neo Alt API response status:', neoAltError.response.status);
-            console.error('Neo Alt API response data:', JSON.stringify(neoAltError.response.data));
-          }
-        }
-        
-        // If Neo API fails, try the legacy API
-        try {
-          const legacyResponse = await axios({
-            method: 'POST',
-            url: `${this.baseUrl}/chat/history/create/`,
-            headers: this.getHeaders(),
-            timeout: 15000, // 15 second timeout
-            data: {
-              character_external_id: characterId,
-              history_external_id: null
-            }
-          });
-          
-          console.log('Character.AI legacy create chat response status:', legacyResponse.status);
-          
-          if (legacyResponse.data && legacyResponse.data.external_id) {
-            const chatId = legacyResponse.data.external_id;
-            let greeting = null;
-            
-            // Try to get the greeting message if available
-            if (legacyResponse.data.turns && legacyResponse.data.turns.length > 0) {
-              greeting = legacyResponse.data.turns[0];
-            }
-            
-            console.log(`Successfully created chat with ID: ${chatId} (Legacy HTTP API)`);
-            
-            return {
-              chat: {
-                ...legacyResponse.data,
-                chat_id: chatId // Add WebSocket compatible chat_id
-              },
-              greeting: greeting
-            };
-          }
-        } catch (legacyError) {
-          console.error('Legacy API error:', legacyError.message);
-          
-          // Log the error details
-          if (legacyError.response) {
-            console.error('Legacy API response status:', legacyError.response.status);
-            console.error('Legacy API response data:', JSON.stringify(legacyError.response.data));
-          }
-          
-          throw legacyError; // Re-throw the error after logging
-        }
-        
-        throw new Error('Failed to create chat using both WebSocket and HTTP methods');
+        // WebSocket method failed, try direct HTTP API calls
+        console.log(`WebSocket chat creation failed: ${wsError.message}`);
+        return await this.createChatWithHTTP(characterId);
       }
     } catch (error) {
       console.error('Error creating chat:', error.message);
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data));
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
       }
       throw error;
     }
+  }
+
+  /**
+   * Create a chat using direct HTTP API calls
+   * @param {string} characterId - Character ID to chat with
+   * @returns {Promise<Object>} Chat object
+   */
+  async createChatWithHTTP(characterId) {
+    console.log('Attempting to create chat using direct HTTP API calls...');
+    
+    // Try multiple API endpoints
+    const endpoints = [
+      {
+        url: 'https://beta.character.ai/chat/history/create/',
+        method: 'POST',
+        data: { character_external_id: characterId, history_external_id: null },
+        name: 'Beta API'
+      },
+      {
+        url: 'https://neo.character.ai/chat/',
+        method: 'POST',
+        data: { character_id: characterId },
+        name: 'Neo API'
+      },
+      {
+        url: 'https://neo.character.ai/chat/history/create/',
+        method: 'POST',
+        data: { character_id: characterId },
+        name: 'Neo History API'
+      },
+      {
+        url: `${this.baseUrl}/chat/history/create/`,
+        method: 'POST',
+        data: { character_external_id: characterId, history_external_id: null },
+        name: 'Legacy API'
+      }
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`Trying ${endpoint.name} at ${endpoint.url}...`);
+        const response = await axios({
+          method: endpoint.method,
+          url: endpoint.url,
+          headers: this.getHeaders(),
+          timeout: 15000, // 15 second timeout
+          data: endpoint.data
+        });
+        
+        console.log(`${endpoint.name} response status:`, response.status);
+        console.log(`${endpoint.name} response data:`, JSON.stringify(response.data, null, 2));
+        
+        // Extract chat ID from various possible formats
+        let chatId = null;
+        let chat = null;
+        
+        if (response.data) {
+          // Neo API format
+          if (response.data.chat && response.data.chat.chat_id) {
+            chatId = response.data.chat.chat_id;
+            chat = response.data.chat;
+          } 
+          // Legacy API format
+          else if (response.data.external_id) {
+            chatId = response.data.external_id;
+            chat = {
+              ...response.data,
+              chat_id: response.data.external_id
+            };
+          }
+          // Other possible formats
+          else if (response.data.chat_id) {
+            chatId = response.data.chat_id;
+            chat = response.data;
+          } else if (response.data.id) {
+            chatId = response.data.id;
+            chat = response.data;
+          }
+          
+          // If we found a chat ID, return it
+          if (chatId) {
+            console.log(`Successfully created chat with ID: ${chatId} using ${endpoint.name}`);
+            return { 
+              chat: chat,
+              greeting: null // Direct API calls don't usually return greetings
+            };
+          }
+        }
+        
+        console.log(`${endpoint.name} response did not contain a valid chat ID`);
+      } catch (error) {
+        console.log(`${endpoint.name} failed:`, error.message);
+        if (error.response) {
+          console.log(`${endpoint.name} error status:`, error.response.status);
+          console.log(`${endpoint.name} error data:`, JSON.stringify(error.response.data, null, 2));
+        }
+      }
+    }
+    
+    throw new Error('All HTTP API endpoints failed to create a chat');
   }
 
   /**
