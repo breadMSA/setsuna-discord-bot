@@ -117,7 +117,7 @@ class CharacterAI {
           if (attempt === 1) {
             // Second attempt: Try with Authorization cookie
             tryConnection({
-              headers: {
+        headers: {
                 'Cookie': `Authorization=Token ${this.token}`,
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
                 'Origin': 'https://character.ai',

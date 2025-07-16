@@ -13,9 +13,10 @@
 - 能夠識別用戶指定回覆的訊息，並針對回覆內容做出相應回應
 - 支援長對話記憶，可記住頻道中最近的50則對話
 - 可設定個性化回覆風格，讓機器人在不同頻道展現不同性格
+- 支援私人訊息（DM）聊天，無需在伺服器中啟用
 
 ### 🔌 多模型支援
-- 整合多種 LLM API（Groq、Gemini、ChatGPT、Together AI、DeepSeek、Cerebras）
+- 整合多種 LLM API（Groq、Gemini、ChatGPT、Together AI、DeepSeek、Cerebras、Character.AI）
 - 可在啟用頻道時選擇使用的模型
 - 支援選擇特定的 Groq 模型（12種）和 Cerebras 模型（4種）
 - 可隨時切換頻道使用的模型
@@ -68,9 +69,8 @@
    CEREBRAS_API_KEY=你的 Cerebras API 金鑰
    GITHUB_REPO=你的 GitHub 倉庫名稱 (這是用於儲存頻道設定和模型偏好。範例：yourusername/yourrepository)
    GITHUB_TOKEN=你的 GitHub Personal Access Token (PAT)
-   CHARACTERAI_TOKEN=your_character_ai_token
-   CHARACTERAI_CHARACTER_ID=your_character_id_here
-   CHARACTERAI_CHAT_ID=your_persistent_chat_id_here (選填，設定後將使用固定的聊天ID而非每次創建新的聊天)
+   CHARACTERAI_TOKEN=你的 Character.AI 訪問令牌
+   CHARACTERAI_CHARACTER_ID=你想使用的 Character.AI 角色 ID
    ```
 4. 啟動機器人：
    ```
@@ -181,6 +181,7 @@
 ### 💬 與 Setsuna 聊天
 
 - 在 Setsuna 已啟用的頻道中直接輸入訊息即可開始聊天。
+- 你也可以直接私訊（DM）Setsuna 進行聊天，無需額外啟用。
 - Setsuna 會記住頻道中最近的 50 則訊息以了解對話脈絡。
 - 你可以回覆 Setsuna 或其他用戶的訊息，Setsuna 能夠理解回覆的上下文。
 - 如果你傳送 YouTube 影片的網址，Setsuna 會顯示影片的預覽資訊。
@@ -188,36 +189,27 @@
 
 ### Character.AI 整合
 
-The bot can use Character.AI for responses. To use this feature, you need to:
+## Character.AI Integration
 
-1. Get a Character.AI access token (from browser cookies, see below)
-2. Set the environment variables:
-   - `CHARACTERAI_TOKEN` - Your Character.AI access token
-   - `CHARACTERAI_CHARACTER_ID` - The ID of your Character.AI character
-   - `CHARACTERAI_CHAT_ID` (optional) - A persistent chat ID to maintain conversation state
+機器人可以使用 Character.AI 進行回應。要使用此功能，你需要：
 
-The bot now sends conversation history to Character.AI to maintain context between messages, similar to how it works with other AI models.
+1. 獲取 Character.AI 訪問令牌（從瀏覽器 cookies 中獲取，詳見下方）
+2. 設置以下環境變數：
+   - `CHARACTERAI_TOKEN` - 你的 Character.AI 訪問令牌
+   - `CHARACTERAI_CHARACTER_ID` - 你想使用的 Character.AI 角色 ID
 
-### Setting up Character.AI Token
+機器人會將對話歷史發送到 Character.AI 以保持消息間的上下文連貫，類似於它與其他 AI 模型的工作方式。
 
-1. Get your Character.AI token by logging into Character.AI and copying it from your browser's cookies
-2. Set the `CHARACTERAI_TOKEN` environment variable with your token
-3. Set the `CHARACTERAI_CHARACTER_ID` environment variable with the ID of the character you want to use
-   - You can find the character ID in the URL when viewing a character on Character.AI
-   - Example: For `https://beta.character.ai/chat?char=abcdefgh`, the ID is `abcdefgh`
-4. Use `/setsuna activate #channel-name characterai` to activate the Character.AI model in a channel
+### 設置 Character.AI 令牌
 
-The bot will create a new chat with the character and use it for all conversations in that channel.
+1. 登錄 Character.AI 並從瀏覽器的 cookies 中複製你的令牌
+2. 將你的令牌設置為 `CHARACTERAI_TOKEN` 環境變數
+3. 將你想使用的角色 ID 設置為 `CHARACTERAI_CHARACTER_ID` 環境變數
+   - 你可以在查看 Character.AI 上的角色時從 URL 中找到角色 ID
+   - 例如：對於 `https://beta.character.ai/chat?char=abcdefgh`，ID 是 `abcdefgh`
+4. 使用 `/setsuna activate #頻道名稱 characterai` 在頻道中啟用 Character.AI 模型
 
-### Using a Persistent Chat ID
-
-To avoid creating new chats each time (which can cause "chat not found" errors):
-
-1. Create a chat with your character on the Character.AI website
-2. Check the URL, which will look like: `https://character.ai/chat?char=CHAR_ID&hist=CHAT_ID`
-3. Copy the CHAT_ID part after `&hist=` and set it as `CHARACTERAI_CHAT_ID` in your .env file
-
-When this environment variable is set, the bot will always use this specific chat ID instead of creating new chats.
+機器人會為該頻道創建一個新的與角色的對話，並用於該頻道的所有對話。
 
 ## 授權條款
 
@@ -240,6 +232,7 @@ A Discord AI bot that connects to LLM API and chats with users in specific chann
 - Recognizes which messages users reply to, and responds accordingly to the reply context
 - Supports long conversation memory, remembering the last 50 messages in a channel
 - Allows customizable response styles to give the bot different personalities in different channels
+- Supports direct messages (DM) chat without requiring server activation
 
 ### 🔄 Multiple AI Models Support
 - Supports multiple AI models:
@@ -270,26 +263,29 @@ Create a `.env` file in the root directory with the following variables:
 
    ```
 # Discord Bot Token
-   DISCORD_TOKEN=your_discord_bot_token
+DISCORD_TOKEN=your_discord_bot_token
 
 # API Keys (at least one is required)
 DEEPSEEK_API_KEY=your_deepseek_api_key
-   GEMINI_API_KEY=your_gemini_api_key
-   CHATGPT_API_KEY=your_chatgpt_api_key
+GEMINI_API_KEY=your_gemini_api_key
+CHATGPT_API_KEY=your_chatgpt_api_key
 TOGETHER_API_KEY=your_together_api_key
-   GROQ_API_KEY=your_groq_api_key
-   CEREBRAS_API_KEY=your_cerebras_api_key
+GROQ_API_KEY=your_groq_api_key
+CEREBRAS_API_KEY=your_cerebras_api_key
 CHARACTERAI_TOKEN=your_character_ai_token
 
 # Character.AI Character ID
 CHARACTERAI_CHARACTER_ID=character_id_to_use
 
+# YouTube API Key (for video search and preview)
+YOUTUBE_API_KEY=your_youtube_api_key
+
+# Bot Owner ID (optional, for /setprofile command)
+BOT_OWNER_ID=your_discord_user_id,other_admin_id
+
 # GitHub Integration (optional, for configuration backup)
 GITHUB_TOKEN=your_github_token
 GITHUB_REPO=username/repo/path
-
-# Character.AI Chat ID (optional, when set will use a fixed chat ID instead of creating new chats)
-CHARACTERAI_CHAT_ID=your_persistent_chat_id_here
 ```
 
 You can have multiple API keys for each service by adding numbers to the environment variable names:
@@ -310,18 +306,40 @@ GEMINI_API_KEY_2=your_second_gemini_api_key
 
 - `/setsuna activate #channel-name [model] [groq_model/cerebras_model]` - Activate the bot in designated channel with optional model selection (Groq, Gemini, ChatGPT, Together AI, DeepSeek, Cerebras, Character.AI) and specific submodel.
 - `/setsuna deactivate #channel-name` - Deactivate the bot in the designated channel.
-- `/setsuna setmodel #channel-name [model] [groq_model/cerebras_model]` - Change the AI model used in the designated channel.
+- `/setsuna setmodel [model] [groq_model/cerebras_model] #channel-name` - Change the AI model used in the designated channel.
 - `/setsuna checkmodel #channel-name` - Check which AI model is currently being used in the designated channel.
-- `/setsuna setinstructions #channel-name [instructions]` - Set custom instructions for the AI in the designated channel.
-- `/setsuna setrole #channel-name [role]` - Set a custom role for the AI in the designated channel.
-- `/setsuna setstyle #channel-name [style]` - Set a custom speaking style for the AI in the designated channel.
-- `/setsuna setstructure #channel-name [structure]` - Set a custom text structure for the AI in the designated channel.
-- `/setsuna toggleimagedetection #channel-name` - Toggle AI-based image request detection in the designated channel.
-- `/setsuna help` - Display help information about the bot commands.
+- `/setsuna aidetect [true/false]` - Toggle AI-based image request detection.
+- `/setsuna setpersonality` - Set custom personality for the bot.
+- `/setsuna checkpersonality` - Check the current bot personality.
+- If no #channel-name is specified, the current channel is used by default.
+- If no model is specified, Groq is used by default.
+- If Groq is selected but no groq_model is specified, llama-3.1-8b-instant is used by default.
+- `/reset_chat [channel]` - (Requires Manage Channel permission) Reset the chat history for the specified or current channel.
+
+- `/contact` - Contact the bot developer or join our community server for feedback and support.
+- `/help` - View bot usage instructions.
+
+### 💬 Chatting with Setsuna
+
+- Simply type a message in a channel where Setsuna is activated to start chatting.
+- You can also direct message (DM) Setsuna to chat without needing to activate it in a server.
+- Setsuna remembers the last 50 messages in a channel to understand conversation context.
+- You can reply to Setsuna's or other users' messages, and Setsuna will understand the reply context.
+- If you send a YouTube video URL, Setsuna will display preview information for the video.
+- If you ask Setsuna to find YouTube videos (e.g., "Find me cat videos"), Setsuna will attempt to search and provide relevant video links.
 
 ## Character.AI Integration
 
-The Character.AI integration allows you to use any character from Character.AI as a model in your bot. To use this feature:
+The bot can use Character.AI for responses. To use this feature, you need to:
+
+1. Get a Character.AI access token (from browser cookies, see below)
+2. Set the environment variables:
+   - `CHARACTERAI_TOKEN` - Your Character.AI access token
+   - `CHARACTERAI_CHARACTER_ID` - The ID of your Character.AI character
+
+The bot sends conversation history to Character.AI to maintain context between messages, similar to how it works with other AI models.
+
+### Setting up Character.AI Token
 
 1. Get your Character.AI token by logging into Character.AI and copying it from your browser's cookies
 2. Set the `CHARACTERAI_TOKEN` environment variable with your token
@@ -331,16 +349,6 @@ The Character.AI integration allows you to use any character from Character.AI a
 4. Use `/setsuna activate #channel-name characterai` to activate the Character.AI model in a channel
 
 The bot will create a new chat with the character and use it for all conversations in that channel.
-
-### Using a Persistent Chat ID
-
-To avoid creating new chats each time (which can cause "chat not found" errors):
-
-1. Create a chat with your character on the Character.AI website
-2. Check the URL, which will look like: `https://character.ai/chat?char=CHAR_ID&hist=CHAT_ID`
-3. Copy the CHAT_ID part after `&hist=` and set it as `CHARACTERAI_CHAT_ID` in your .env file
-
-When this environment variable is set, the bot will always use this specific chat ID instead of creating new chats.
 
 ## License
 
