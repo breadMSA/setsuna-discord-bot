@@ -411,6 +411,12 @@ async function loadActiveChannels() {
         if (config.useAIToDetectImageRequest) {
           activeChannels.get(channelId).useAIToDetectImageRequest = config.useAIToDetectImageRequest;
         }
+        
+        // Set Character.AI chat ID if available
+        if (config.caiChatId) {
+          activeChannels.get(channelId).caiChatId = config.caiChatId;
+          console.log(`Loaded Character.AI chat ID ${config.caiChatId} for channel ${channelId}`);
+        }
       }
       
       console.log(`Loaded ${Object.keys(data).length} channel configurations from GitHub`);
@@ -444,7 +450,9 @@ async function saveActiveChannels() {
         customSpeakingStyle: channelData.customSpeakingStyle || null,
         customTextStructure: channelData.customTextStructure || null,
         // Keep useAIToDetectImageRequest if it exists
-        useAIToDetectImageRequest: channelData.useAIToDetectImageRequest || false
+        useAIToDetectImageRequest: channelData.useAIToDetectImageRequest || false,
+        // Store Character.AI chat ID for per-channel chat persistence
+        caiChatId: channelData.caiChatId || null
       };
     }
 
@@ -516,7 +524,7 @@ async function saveActiveChannels() {
       console.log('Successfully saved active channels locally');
     } catch (localError) {
       console.error('Error saving active channels locally:', localError);
-    }
+        }
       } catch (error) {
     console.error('Error saving active channels to GitHub:', error);
     
@@ -532,7 +540,8 @@ async function saveActiveChannels() {
           customRole: channelData.customRole || null,
           customSpeakingStyle: channelData.customSpeakingStyle || null,
           customTextStructure: channelData.customTextStructure || null,
-          useAIToDetectImageRequest: channelData.useAIToDetectImageRequest || false
+          useAIToDetectImageRequest: channelData.useAIToDetectImageRequest || false,
+          caiChatId: channelData.caiChatId || null
         };
       }
       fs.writeFileSync(CHANNELS_FILE, JSON.stringify(simplifiedActiveChannels, null, 2));
@@ -2593,14 +2602,6 @@ async function callCharacterAIAPI(messages, characterId) {
   
   console.log(`Using channel ID: ${channelId} for Character.AI chat`);
   
-  // Check if we have a persistent chat ID from environment variables
-  const persistentChatId = process.env.CHARACTERAI_CHAT_ID;
-  if (persistentChatId) {
-    console.log(`Found persistent chat ID in environment: ${persistentChatId}`);
-  } else {
-    console.log('No persistent chat ID found in environment, will create new chats');
-  }
-  
   while (keysTriedCount < CHARACTERAI_TOKENS.length) {
     try {
       // Initialize Character.AI client
@@ -2665,19 +2666,26 @@ async function callCharacterAIAPI(messages, characterId) {
       let chatData = null;
       let chatId = null;
       
-      // If we have a persistent chat ID from environment, use it directly
-      if (persistentChatId) {
-        console.log(`Using persistent chat ID from environment: ${persistentChatId}`);
-        chatId = persistentChatId;
-        
-        // Store the chat info for future use
-        characterAI.activeChats.set(channelId, {
-          chatId: chatId,
-          characterId: targetCharacterId
-        });
+      // Check if this channel has a stored chat ID in activeChannels
+      if (activeChannels.has(channelId) && activeChannels.get(channelId).caiChatId) {
+        chatId = activeChannels.get(channelId).caiChatId;
+        console.log(`Using existing Character.AI chat ID from activeChannels: ${chatId}`);
       }
-      // Otherwise get stored chat info for this channel if it exists
-      else if (!characterAI.activeChats.has(channelId)) {
+      // Otherwise check if there's a stored chat in the CharacterAI client
+      else if (characterAI.activeChats.has(channelId)) {
+        // Use existing chat from CharacterAI client
+        const storedChat = characterAI.activeChats.get(channelId);
+        chatId = storedChat.chatId;
+        console.log(`Using existing Character.AI chat ${chatId} for channel ${channelId} from CharacterAI client`);
+        
+        // Also store it in activeChannels for persistence
+        if (activeChannels.has(channelId)) {
+          activeChannels.get(channelId).caiChatId = chatId;
+          await saveActiveChannels();
+        }
+      } 
+      // Create a new chat if we don't have one
+      else {
         console.log(`Creating new Character.AI chat for channel ${channelId}`);
         try {
           // Create a new chat
@@ -2691,12 +2699,19 @@ async function callCharacterAIAPI(messages, characterId) {
             throw new Error('Failed to get chat ID from Character.AI API response');
           }
           
-          // Store the chat info for future use
+          // Store the chat info in CharacterAI client for this session
           characterAI.activeChats.set(channelId, {
             chatId: chatId,
             characterId: targetCharacterId
           });
-          console.log(`Created new chat with ID: ${chatId}`);
+          
+          // Also store it in activeChannels for persistence
+          if (activeChannels.has(channelId)) {
+            activeChannels.get(channelId).caiChatId = chatId;
+            await saveActiveChannels();
+          }
+          
+          console.log(`Created new chat with ID: ${chatId} and saved to activeChannels`);
         } catch (createError) {
           console.error('Error creating chat:', createError.message);
           // Try next token
@@ -2706,11 +2721,6 @@ async function callCharacterAIAPI(messages, characterId) {
           console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${createError.message}`);
           continue;
         }
-      } else {
-        // Use existing chat
-        const storedChat = characterAI.activeChats.get(channelId);
-        chatId = storedChat.chatId;
-        console.log(`Using existing Character.AI chat ${chatId} for channel ${channelId}`);
       }
       
       // Send the message to Character.AI
@@ -2738,70 +2748,64 @@ async function callCharacterAIAPI(messages, characterId) {
       } catch (sendError) {
         console.error('Error sending message:', sendError.message);
         
-        // If using a persistent chat ID and getting errors, don't try to create a new chat
-        if (persistentChatId) {
-          console.error('Error with persistent chat ID. Check that the chat ID is correct and accessible.');
-          lastError = sendError;
-          getNextCharacterAIToken();
-          keysTriedCount++;
-          continue;
-        }
+        // If the error might be due to an invalid chat ID, try creating a new chat
+        console.log('Chat might be invalid. Creating a new chat...');
         
-        // If the error is about the chat not existing, remove it from active chats and try to create a new one
-        if (sendError.message.includes('no such chat')) {
-          console.log('Chat not found, removing from active chats and creating a new one');
-          characterAI.activeChats.delete(channelId);
+        try {
+          // Create a new chat
+          const result = await characterAI.createChat(targetCharacterId);
+          chatData = result.chat;
           
-          try {
-            // Create a new chat
-            const result = await characterAI.createChat(targetCharacterId);
-            chatData = result.chat;
-            chatId = chatData.chat_id || chatData.external_id;
-            
-            if (!chatId) {
-              throw new Error('Failed to get chat ID from Character.AI API response');
-            }
-            
-            // Store the chat info for future use
-            characterAI.activeChats.set(channelId, {
-              chatId: chatId,
-              characterId: targetCharacterId
-            });
-            console.log(`Created new chat with ID: ${chatId}`);
-            
-            // Try sending the message again with the new chat
-            const response = await characterAI.sendMessage(
-              targetCharacterId,
-              chatId,
-              messageWithContext
-            );
-            
-            // Check for empty response
-            if (!response || !response.text) {
-              throw new Error('Empty response from Character.AI API after creating new chat');
-            }
-            
-            // Success! Return the response
-            return response.text;
-          } catch (retryError) {
-            console.error('Error after recreating chat:', retryError.message);
+          // Get chat ID - prefer chat_id (WebSocket API format) if available, otherwise use external_id (HTTP API format)
+          chatId = chatData.chat_id || chatData.external_id;
+          
+          if (!chatId) {
+            throw new Error('Failed to get chat ID from Character.AI API response');
+          }
+          
+          // Store the chat info in CharacterAI client
+          characterAI.activeChats.set(channelId, {
+            chatId: chatId,
+            characterId: targetCharacterId
+          });
+          
+          // Also store it in activeChannels for persistence
+          if (activeChannels.has(channelId)) {
+            activeChannels.get(channelId).caiChatId = chatId;
+            await saveActiveChannels();
+          }
+          
+          console.log(`Created new chat with ID: ${chatId} after error`);
+          
+          // Try sending the message again with the new chat
+          const response = await characterAI.sendMessage(
+            targetCharacterId,
+            chatId,
+            messageWithContext
+          );
+          
+          // Check for empty response
+          if (!response || !response.text) {
             // Try next token
-            lastError = retryError;
+            lastError = new Error('Empty response from Character.AI API with new chat');
             getNextCharacterAIToken();
             keysTriedCount++;
-            console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error after retry: ${retryError.message}`);
             continue;
           }
-        } else {
-          // For other errors, try next token
-          lastError = sendError;
+          
+          // Success! Return the response
+          return response.text;
+        } catch (retryError) {
+          console.error('Error creating new chat after send failure:', retryError.message);
+          // Try next token
+          lastError = retryError;
           getNextCharacterAIToken();
           keysTriedCount++;
-          console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${sendError.message}`);
           continue;
         }
       }
     } catch (error) {
+      console.error('Error in Character.AI API call:', error.message);
       // Try next token
       lastError = error;
       getNextCharacterAIToken();
