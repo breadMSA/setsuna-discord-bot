@@ -2602,6 +2602,20 @@ async function callCharacterAIAPI(messages, characterId) {
   
   console.log(`Using channel ID: ${channelId} for Character.AI chat`);
   
+  // Check if any message contains a Character.AI URL with a hist parameter
+  // This could be used to connect to an existing chat
+  let histIdFromUrl = null;
+  for (const msg of messages) {
+    if (msg.content && msg.content.includes('character.ai/chat/') && msg.content.includes('hist=')) {
+      const match = msg.content.match(/hist=([^&\s]+)/);
+      if (match && match[1]) {
+        histIdFromUrl = match[1];
+        console.log(`Found Character.AI hist ID in message: ${histIdFromUrl}`);
+        break;
+      }
+    }
+  }
+  
   while (keysTriedCount < CHARACTERAI_TOKENS.length) {
     try {
       // Initialize Character.AI client
@@ -2666,8 +2680,26 @@ async function callCharacterAIAPI(messages, characterId) {
       let chatData = null;
       let chatId = null;
       
+      // If we found a hist ID in a URL, use that first
+      if (histIdFromUrl) {
+        chatId = histIdFromUrl;
+        console.log(`Using Character.AI chat ID from URL: ${chatId}`);
+        
+        // Store it in activeChannels for persistence
+        if (activeChannels.has(channelId)) {
+          activeChannels.get(channelId).caiChatId = chatId;
+          await saveActiveChannels();
+          console.log(`Saved chat ID from URL to activeChannels`);
+        }
+        
+        // Also store it in CharacterAI client
+        characterAI.activeChats.set(channelId, {
+          chatId: chatId,
+          characterId: targetCharacterId
+        });
+      }
       // Check if this channel has a stored chat ID in activeChannels
-      if (activeChannels.has(channelId) && activeChannels.get(channelId).caiChatId) {
+      else if (activeChannels.has(channelId) && activeChannels.get(channelId).caiChatId) {
         chatId = activeChannels.get(channelId).caiChatId;
         console.log(`Using existing Character.AI chat ID from activeChannels: ${chatId}`);
       }

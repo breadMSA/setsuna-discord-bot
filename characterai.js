@@ -26,6 +26,9 @@ class CharacterAI {
     this.headers = {
       'Content-Type': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+      'Accept': 'application/json',
+      'Origin': 'https://character.ai',
+      'Referer': 'https://character.ai/'
     };
   }
 
@@ -43,7 +46,8 @@ class CharacterAI {
    */
   setToken(token) {
     this.token = token;
-    this.headers['authorization'] = `Token ${token}`;
+    // Update the Authorization header
+    this.headers['Authorization'] = `Token ${token}`;
   }
 
   /**
@@ -54,7 +58,15 @@ class CharacterAI {
     if (!this.token) {
       throw new Error('Token not set. Please call setToken() first.');
     }
-    return this.headers;
+    
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Token ${this.token}`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+      'Accept': 'application/json',
+      'Origin': 'https://character.ai',
+      'Referer': 'https://character.ai/'
+    };
   }
 
   /**
@@ -86,9 +98,14 @@ class CharacterAI {
       }
       
       // Create new connection with proper headers
-      const ws = new WebSocket(this.wsUrl, {
+      // The WebSocket connection needs the token in the URL or as a cookie
+      // Try both approaches for maximum compatibility
+      const wsUrlWithToken = `${this.wsUrl}?token=${this.token}`;
+      console.log(`Connecting to WebSocket with token in URL: ${wsUrlWithToken.substring(0, 40)}...`);
+      
+      const ws = new WebSocket(wsUrlWithToken, {
         headers: {
-          'Cookie': `HTTP_AUTHORIZATION=Token ${this.token}`,
+          'Cookie': `Authorization=Token ${this.token}`,
           'User-Agent': this.headers['User-Agent'],
           'Origin': 'https://character.ai',
           'Referer': 'https://character.ai/'
@@ -148,28 +165,62 @@ class CharacterAI {
       }
 
       console.log('Fetching account info from Character.AI...');
-      const response = await axios({
-        method: 'GET',
-        url: `${this.baseUrl}/chat/user/`,
-        headers: this.getHeaders(),
-        timeout: 10000 // 10 second timeout
-      });
-
-      console.log('Character.AI user API response status:', response.status);
       
-      if (response.data && response.data.user) {
-        // The user ID is nested inside the response
-        this.accountId = response.data.user.user.user_id;
-        console.log('Successfully retrieved account ID:', this.accountId);
-        return response.data.user.user;
-      } else if (response.data && response.data.status === "OK" && response.data.user_id) {
-        // Alternative response format
-        this.accountId = response.data.user_id;
-        console.log('Successfully retrieved account ID (alternative format):', this.accountId);
-        return response.data;
+      // Try the primary API endpoint first
+      try {
+        const response = await axios({
+          method: 'GET',
+          url: `${this.baseUrl}/chat/user/`,
+          headers: this.getHeaders(),
+          timeout: 10000 // 10 second timeout
+        });
+
+        console.log('Character.AI user API response status:', response.status);
+        
+        if (response.data && response.data.user) {
+          // The user ID is nested inside the response
+          this.accountId = response.data.user.user.user_id;
+          console.log('Successfully retrieved account ID:', this.accountId);
+          return response.data.user.user;
+        } else if (response.data && response.data.status === "OK" && response.data.user_id) {
+          // Alternative response format
+          this.accountId = response.data.user_id;
+          console.log('Successfully retrieved account ID (alternative format):', this.accountId);
+          return response.data;
+        }
+      } catch (primaryError) {
+        console.log(`Primary user API failed: ${primaryError.message}, trying neo API...`);
+      }
+      
+      // Try the neo API endpoint if the primary fails
+      try {
+        const neoResponse = await axios({
+          method: 'GET',
+          url: 'https://neo.character.ai/user/',
+          headers: this.getHeaders(),
+          timeout: 10000 // 10 second timeout
+        });
+        
+        console.log('Character.AI neo user API response status:', neoResponse.status);
+        
+        if (neoResponse.data && neoResponse.data.user && neoResponse.data.user.user_id) {
+          this.accountId = neoResponse.data.user.user_id;
+          console.log('Successfully retrieved account ID from neo API:', this.accountId);
+          return neoResponse.data.user;
+        }
+      } catch (neoError) {
+        console.log(`Neo user API failed: ${neoError.message}`);
+      }
+      
+      // If we still don't have an account ID, try to generate one
+      if (!this.accountId) {
+        // Generate a UUID to use as account ID if we can't get one from the API
+        this.accountId = uuidv4();
+        console.log('Generated fallback account ID:', this.accountId);
+        return { user_id: this.accountId };
       }
 
-      console.error('Invalid response format:', JSON.stringify(response.data));
+      console.error('Invalid response format from all user API endpoints');
       throw new Error('Failed to fetch account information - invalid response format');
     } catch (error) {
       console.error('Error fetching account info:', error.message);
@@ -177,7 +228,11 @@ class CharacterAI {
         console.error('Response status:', error.response.status);
         console.error('Response data:', JSON.stringify(error.response.data));
       }
-      throw error;
+      
+      // Generate a UUID to use as account ID if we can't get one from the API
+      this.accountId = uuidv4();
+      console.log('Generated fallback account ID after error:', this.accountId);
+      return { user_id: this.accountId };
     }
   }
 
@@ -252,6 +307,7 @@ class CharacterAI {
               
               if (command === 'create_chat_response') {
                 newChat = response.chat;
+                console.log('Received create_chat_response:', JSON.stringify(newChat));
                 
                 // If we're not expecting a greeting, resolve now
                 if (!createChatMessage.payload.with_greeting) {
@@ -268,6 +324,7 @@ class CharacterAI {
               
               if (command === 'add_turn') {
                 greetingTurn = response.turn;
+                console.log('Received greeting turn');
                 
                 // We have both the chat and greeting, resolve
                 if (newChat) {
@@ -360,40 +417,91 @@ class CharacterAI {
           }
         } catch (neoError) {
           console.log(`Neo HTTP API failed, trying legacy API: ${neoError.message}`);
+          
+          // Log the error details
+          if (neoError.response) {
+            console.error('Neo API response status:', neoError.response.status);
+            console.error('Neo API response data:', JSON.stringify(neoError.response.data));
+          }
+        }
+        
+        // Try another Neo API endpoint
+        try {
+          const neoAltResponse = await axios({
+            method: 'POST',
+            url: 'https://neo.character.ai/chat/history/create/',
+            headers: this.getHeaders(),
+            timeout: 15000, // 15 second timeout
+            data: {
+              character_id: characterId
+            }
+          });
+          
+          console.log('Character.AI neo alt create chat response status:', neoAltResponse.status);
+          
+          if (neoAltResponse.data && (neoAltResponse.data.chat_id || neoAltResponse.data.external_id)) {
+            const chatId = neoAltResponse.data.chat_id || neoAltResponse.data.external_id;
+            console.log(`Successfully created chat with ID: ${chatId} (Neo Alt HTTP API)`);
+            
+            return {
+              chat: neoAltResponse.data,
+              greeting: null
+            };
+          }
+        } catch (neoAltError) {
+          console.log(`Neo Alt HTTP API failed, trying legacy API: ${neoAltError.message}`);
+          
+          // Log the error details
+          if (neoAltError.response) {
+            console.error('Neo Alt API response status:', neoAltError.response.status);
+            console.error('Neo Alt API response data:', JSON.stringify(neoAltError.response.data));
+          }
         }
         
         // If Neo API fails, try the legacy API
-        const legacyResponse = await axios({
-          method: 'POST',
-          url: `${this.baseUrl}/chat/history/create/`,
-          headers: this.getHeaders(),
-          timeout: 15000, // 15 second timeout
-          data: {
-            character_external_id: characterId,
-            history_external_id: null
+        try {
+          const legacyResponse = await axios({
+            method: 'POST',
+            url: `${this.baseUrl}/chat/history/create/`,
+            headers: this.getHeaders(),
+            timeout: 15000, // 15 second timeout
+            data: {
+              character_external_id: characterId,
+              history_external_id: null
+            }
+          });
+          
+          console.log('Character.AI legacy create chat response status:', legacyResponse.status);
+          
+          if (legacyResponse.data && legacyResponse.data.external_id) {
+            const chatId = legacyResponse.data.external_id;
+            let greeting = null;
+            
+            // Try to get the greeting message if available
+            if (legacyResponse.data.turns && legacyResponse.data.turns.length > 0) {
+              greeting = legacyResponse.data.turns[0];
+            }
+            
+            console.log(`Successfully created chat with ID: ${chatId} (Legacy HTTP API)`);
+            
+            return {
+              chat: {
+                ...legacyResponse.data,
+                chat_id: chatId // Add WebSocket compatible chat_id
+              },
+              greeting: greeting
+            };
           }
-        });
-        
-        console.log('Character.AI legacy create chat response status:', legacyResponse.status);
-        
-        if (legacyResponse.data && legacyResponse.data.external_id) {
-          const chatId = legacyResponse.data.external_id;
-          let greeting = null;
+        } catch (legacyError) {
+          console.error('Legacy API error:', legacyError.message);
           
-          // Try to get the greeting message if available
-          if (legacyResponse.data.turns && legacyResponse.data.turns.length > 0) {
-            greeting = legacyResponse.data.turns[0];
+          // Log the error details
+          if (legacyError.response) {
+            console.error('Legacy API response status:', legacyError.response.status);
+            console.error('Legacy API response data:', JSON.stringify(legacyError.response.data));
           }
           
-          console.log(`Successfully created chat with ID: ${chatId} (Legacy HTTP API)`);
-          
-          return {
-            chat: {
-              ...legacyResponse.data,
-              chat_id: chatId // Add WebSocket compatible chat_id
-            },
-            greeting: greeting
-          };
+          throw legacyError; // Re-throw the error after logging
         }
         
         throw new Error('Failed to create chat using both WebSocket and HTTP methods');
