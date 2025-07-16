@@ -23,9 +23,10 @@ class CharacterAI {
     // Use plus.character.ai as the base URL like in the Python code
     this.baseUrl = 'https://plus.character.ai';
     this.wsUrl = 'wss://neo.character.ai/ws/';
+    // Use Firefox 135 user agent as in the Python implementation
     this.headers = {
       'Content-Type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
       'Accept': 'application/json',
       'Origin': 'https://character.ai',
       'Referer': 'https://character.ai/'
@@ -59,13 +60,17 @@ class CharacterAI {
       throw new Error('Token not set. Please call setToken() first.');
     }
     
+    // Based on the Python implementation, they use:
+    // impersonate="firefox135" for the user agent
+    // and HTTP_AUTHORIZATION cookie for authentication
     return {
       'Content-Type': 'application/json',
       'Authorization': `Token ${this.token}`,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
       'Accept': 'application/json',
       'Origin': 'https://character.ai',
-      'Referer': 'https://character.ai/'
+      'Referer': 'https://character.ai/',
+      'Cookie': `HTTP_AUTHORIZATION=Token ${this.token}`
     };
   }
 
@@ -98,19 +103,20 @@ class CharacterAI {
       }
       
       // Create new connection with proper headers
-      // The WebSocket connection needs the token in the URL or as a cookie
-      // Try both approaches for maximum compatibility
-      const wsUrlWithToken = `${this.wsUrl}?token=${this.token}`;
-      console.log(`Connecting to WebSocket with token in URL: ${wsUrlWithToken.substring(0, 40)}...`);
-      
-      const ws = new WebSocket(wsUrlWithToken, {
+      // Looking at the Python implementation in requester.py, they use:
+      // cookies={"HTTP_AUTHORIZATION": f"Token {token}"}
+      const wsOptions = {
         headers: {
-          'Cookie': `Authorization=Token ${this.token}`,
-          'User-Agent': this.headers['User-Agent'],
+          'Cookie': `HTTP_AUTHORIZATION=Token ${this.token}`,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0',
           'Origin': 'https://character.ai',
           'Referer': 'https://character.ai/'
         }
-      });
+      };
+      
+      console.log('Connecting to WebSocket with headers:', JSON.stringify(wsOptions.headers));
+      
+      const ws = new WebSocket(this.wsUrl, wsOptions);
 
       ws.on('open', () => {
         console.log('WebSocket connection established');
@@ -260,7 +266,7 @@ class CharacterAI {
         const requestId = uuidv4();
         const chatId = uuidv4();
         
-        // Format the WebSocket message following the Python implementation
+        // Format the WebSocket message exactly like the Python implementation
         const createChatMessage = {
           command: "create_chat",
           request_id: requestId,
@@ -273,8 +279,7 @@ class CharacterAI {
               type: "TYPE_ONE_ON_ONE"
             },
             with_greeting: true
-          },
-          origin_id: "web-next"
+          }
         };
         
         console.log('Sending create_chat message:', JSON.stringify(createChatMessage));
@@ -290,22 +295,16 @@ class CharacterAI {
               const response = JSON.parse(data.toString());
               console.log('Received WebSocket response:', response.command);
               
-              // Check if the response is for our request
-              if (response.request_id !== requestId && 
-                  !['create_chat_response', 'add_turn', 'neo_error'].includes(response.command)) {
-                return; // Ignore messages for other requests
-              }
-              
-              const command = response.command;
-              
-              if (command === 'neo_error') {
+              // Check if the response is for our request or is a relevant command
+              // The Python implementation doesn't check request_id for certain commands
+              if (response.command === 'neo_error') {
                 const errorComment = response.comment || '';
                 cleanup();
                 reject(new Error(`Character.AI API error: ${errorComment}`));
                 return;
               }
               
-              if (command === 'create_chat_response') {
+              if (response.command === 'create_chat_response') {
                 newChat = response.chat;
                 console.log('Received create_chat_response:', JSON.stringify(newChat));
                 
@@ -316,13 +315,14 @@ class CharacterAI {
                     chat: newChat,
                     greeting: null
                   });
+                  return;
                 }
                 
                 // Otherwise, wait for the greeting turn
                 return;
               }
               
-              if (command === 'add_turn') {
+              if (response.command === 'add_turn') {
                 greetingTurn = response.turn;
                 console.log('Received greeting turn');
                 
@@ -333,6 +333,7 @@ class CharacterAI {
                     chat: newChat,
                     greeting: greetingTurn
                   });
+                  return;
                 }
                 
                 return;
@@ -784,6 +785,46 @@ class CharacterAI {
         console.error('Response data:', JSON.stringify(error.response.data));
       }
       throw error;
+    }
+  }
+
+  /**
+   * Get chat ID from a Character.AI URL hist parameter
+   * @param {string} histId - The hist parameter from a Character.AI URL
+   * @returns {Promise<string>} The chat ID to use with the API
+   */
+  async getChatIdFromHistId(histId) {
+    try {
+      if (!this.token) {
+        throw new Error('Token not set. Please call setToken() first.');
+      }
+
+      console.log(`Trying to get chat ID from hist ID: ${histId}`);
+      
+      // Try to get the chat directly from the neo API
+      try {
+        const response = await axios({
+          method: 'GET',
+          url: `https://neo.character.ai/chat/history/${histId}/`,
+          headers: this.getHeaders(),
+          timeout: 10000 // 10 second timeout
+        });
+
+        console.log('Character.AI get chat by hist ID response status:', response.status);
+        
+        if (response.data && response.data.chat_id) {
+          console.log(`Successfully retrieved chat ID: ${response.data.chat_id} from hist ID`);
+          return response.data.chat_id;
+        }
+      } catch (error) {
+        console.log(`Error getting chat by hist ID: ${error.message}`);
+      }
+      
+      // If the neo API fails, just use the hist ID directly
+      return histId;
+    } catch (error) {
+      console.error('Error getting chat ID from hist ID:', error.message);
+      return histId; // Fall back to using the hist ID directly
     }
   }
 }
