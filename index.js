@@ -232,8 +232,13 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages, // Add support for direct messages
   ],
-  partials: [Partials.Channel],
+  partials: [
+    Partials.Channel,
+    Partials.Message, // For handling uncached messages
+    Partials.User    // For handling uncached users
+  ],
 });
 
 // Store channels where the bot should respond
@@ -876,6 +881,12 @@ if (!process.env.YOUTUBE_API_KEY) {
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+
+  // Check if server-only commands are used in DMs
+  if ((interaction.commandName === 'setsuna' || interaction.commandName === 'reset') && !interaction.inGuild()) {
+    await interaction.reply({ content: '這個指令只能在伺服器頻道中使用喔！', ephemeral: true });
+    return;
+  }
 
   // Handle simple commands first
   if (interaction.commandName === 'help') {
@@ -2589,9 +2600,15 @@ async function callCharacterAIAPI(messages, characterId) {
   
   // Get channel ID from the messages
   let channelId = null;
+  let isDM = false;
+  
   for (const msg of messages) {
     if (msg.channelId) {
       channelId = msg.channelId;
+      // Check if this is a DM channel
+      if (msg.channelType === ChannelType.DM) {
+        isDM = true;
+      }
       break;
     }
   }
@@ -2600,7 +2617,7 @@ async function callCharacterAIAPI(messages, characterId) {
     throw new Error('No channel ID found in messages');
   }
   
-  console.log(`Using channel ID: ${channelId} for Character.AI chat`);
+  console.log(`Using channel ID: ${channelId} for Character.AI chat${isDM ? ' (DM channel)' : ''}`);
   
   // Check if any message contains a Character.AI URL with a hist parameter
   // This could be used to connect to an existing chat
@@ -2910,11 +2927,32 @@ async function callCharacterAIAPI(messages, characterId) {
 }
 
 client.on('messageCreate', async (message) => {
+  // Ignore messages from bots
   if (message.author.bot) return;
 
-  // Check if the message is in an active channel
+  // Check if the message is a DM or in an active channel
+  const isDM = message.channel.type === ChannelType.DM;
   const channelConfig = activeChannels.get(message.channelId);
-  if (!channelConfig) return;
+
+  // If not a DM and not in an active channel, ignore the message
+  if (!isDM && !channelConfig) {
+    return;
+  }
+
+  // For DMs, automatically activate the channel if not already active
+  if (isDM && !channelConfig) {
+    console.log(`Received first DM from ${message.author.username}, activating DM channel: ${message.channelId}`);
+    // Create default settings for this DM channel
+    activeChannels.set(message.channelId, {
+      messageHistory: [],
+      model: 'characterai', // Default model for DMs
+      caiChatId: null,      // No Character.AI chat ID initially
+      isDM: true,           // Mark as DM channel
+      username: message.author.username // Store username for reference
+    });
+    // Save the DM channel settings
+    await saveActiveChannels();
+  }
 
   // Show typing indicator immediately
   await message.channel.sendTyping();
@@ -2989,7 +3027,9 @@ client.on('messageCreate', async (message) => {
       previousMessage.content.includes('生成的圖片') ||
       previousMessage.content.includes('根據你的描述') ||
       previousMessage.content.includes('這是轉換成彩色的圖片') ||
-      previousMessage.content.includes('這是根據你的要求生成的圖片')
+      previousMessage.content.includes('這是根據你的要求生成的圖片') ||
+      previousMessage.content.includes('這是根據你的要求修改後的圖片') ||
+      previousMessage.content.includes('這是根據你的要求修改後的圖片：')
     )) ||
     // 檢查機器人的消息是否包含圖片附件，且不是回覆用戶的圖片修改請求
     (previousMessage.attachments && previousMessage.attachments.size > 0 && 
@@ -4117,10 +4157,11 @@ if (isReply) {
       case 'characterai':
         if (CHARACTERAI_TOKENS.length > 0) {
           try {
-            // Add channel ID to the messages for chat persistence
+            // Add channel ID and type to the messages for chat persistence
             const messagesWithChannel = formattedMessages.map(msg => ({
               ...msg,
-              channelId: message.channelId
+              channelId: message.channelId,
+              channelType: message.channel.type
             }));
             response = await callCharacterAIAPI(messagesWithChannel);
             modelUsed = 'Character.AI';
