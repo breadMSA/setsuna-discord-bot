@@ -911,7 +911,7 @@ client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
   // Initialize music player
-  musicModule.setupMusicPlayer(client);
+  await musicModule.setupMusicPlayer(client);
 
   // Load active channels
   await loadActiveChannels();

@@ -1,4 +1,5 @@
-const { Player, QueryType } = require('discord-player');
+const { Player } = require('discord-player');
+const { YoutubeiExtractor } = require('discord-player-youtubei');
 const { EmbedBuilder } = require('discord.js');
 
 // Music player instance (will be initialized in setupMusicPlayer)
@@ -8,16 +9,16 @@ let player = null;
  * Initialize the music player
  * @param {Client} client - Discord client instance
  */
-function setupMusicPlayer(client) {
+async function setupMusicPlayer(client) {
     player = new Player(client, {
-        ytdlOptions: {
-            quality: 'highestaudio',
-            highWaterMark: 1 << 25
-        }
+        skipFFmpeg: false
     });
 
-    // Load default extractors
-    player.extractors.loadDefault();
+    // Register the YouTubei extractor for stable YouTube support
+    await player.extractors.register(YoutubeiExtractor, {});
+
+    // Load default extractors for other sources (Spotify, SoundCloud, etc.)
+    await player.extractors.loadDefault((ext) => ext !== 'YouTubeExtractor');
 
     // Event: Track starts playing
     player.events.on('playerStart', (queue, track) => {
@@ -26,52 +27,78 @@ function setupMusicPlayer(client) {
             .setTitle('🎵 正在播放')
             .setDescription(`**${track.title}**`)
             .addFields(
-                { name: '作者', value: track.author, inline: true },
-                { name: '時長', value: track.duration, inline: true }
+                { name: '作者', value: track.author || '未知', inline: true },
+                { name: '時長', value: track.duration || '未知', inline: true }
             )
             .setThumbnail(track.thumbnail)
-            .setFooter({ text: `由 ${track.requestedBy.username} 點播` });
+            .setFooter({ text: `由 ${track.requestedBy?.username || '未知'} 點播` });
 
-        queue.metadata.channel.send({ embeds: [embed] });
+        queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
     });
 
-    // Event: Track ends
+    // Event: Track added to queue (only show if queue already has tracks)
     player.events.on('audioTrackAdd', (queue, track) => {
-        const embed = new EmbedBuilder()
-            .setColor('#00ff00')
-            .setTitle('✅ 已加入播放列表')
-            .setDescription(`**${track.title}**`)
-            .addFields(
-                { name: '作者', value: track.author, inline: true },
-                { name: '時長', value: track.duration, inline: true }
-            )
-            .setThumbnail(track.thumbnail);
+        // Only show message if this is not the first track (first track triggers playerStart)
+        if (queue.tracks.size > 0 || queue.isPlaying()) {
+            const embed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('✅ 已加入播放列表')
+                .setDescription(`**${track.title}**`)
+                .addFields(
+                    { name: '作者', value: track.author || '未知', inline: true },
+                    { name: '時長', value: track.duration || '未知', inline: true }
+                )
+                .setThumbnail(track.thumbnail);
 
-        queue.metadata.channel.send({ embeds: [embed] });
+            queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
+        }
     });
 
     // Event: Queue ends
     player.events.on('emptyQueue', (queue) => {
         const embed = new EmbedBuilder()
-            .setColor('#ff0000')
+            .setColor('#ff9900')
             .setTitle('👋 播放列表已清空')
-            .setDescription('所有歌曲已播放完畢，我將離開語音頻道。');
+            .setDescription('所有歌曲已播放完畢。');
 
-        queue.metadata.channel.send({ embeds: [embed] });
+        queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
     });
 
-    // Event: Error handling
+    // Event: Player error
     player.events.on('playerError', (queue, error) => {
-        console.error(`播放錯誤: ${error.message}`);
+        console.error(`播放器錯誤: ${error.message}`);
+        console.error(error);
         const embed = new EmbedBuilder()
             .setColor('#ff0000')
             .setTitle('❌ 播放錯誤')
-            .setDescription('播放時發生錯誤，已跳過此歌曲。');
+            .setDescription(`播放時發生錯誤：${error.message}\n已嘗試跳過此歌曲。`);
 
-        queue.metadata.channel.send({ embeds: [embed] });
+        queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
     });
 
-    console.log('🎵 音樂播放器已初始化');
+    // Event: General error
+    player.events.on('error', (queue, error) => {
+        console.error(`一般錯誤: ${error.message}`);
+        console.error(error);
+        const embed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle('❌ 錯誤')
+            .setDescription(`發生錯誤：${error.message}`);
+
+        queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
+    });
+
+    // Event: Connection error
+    player.events.on('playerSkip', (queue, track, reason) => {
+        console.log(`跳過歌曲: ${track.title}, 原因: ${reason}`);
+    });
+
+    // Event: Debug messages (optional, for troubleshooting)
+    player.events.on('debug', (queue, message) => {
+        console.log(`[Player Debug] ${message}`);
+    });
+
+    console.log('🎵 音樂播放器已初始化 (使用 discord-player-youtubei)');
 }
 
 /**
@@ -129,7 +156,7 @@ function createSuccessEmbed(title, description) {
  * @returns {boolean} True if in voice channel
  */
 function isInVoiceChannel(member) {
-    return member.voice.channel !== null;
+    return member.voice && member.voice.channel !== null;
 }
 
 /**
@@ -139,9 +166,9 @@ function isInVoiceChannel(member) {
  * @returns {boolean} True if in same channel
  */
 function isInSameVoiceChannel(member, guild) {
-    const botVoiceChannel = guild.members.me.voice.channel;
+    const botVoiceChannel = guild.members.me?.voice?.channel;
     if (!botVoiceChannel) return false;
-    return member.voice.channel.id === botVoiceChannel.id;
+    return member.voice.channel?.id === botVoiceChannel.id;
 }
 
 module.exports = {
