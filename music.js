@@ -6,27 +6,6 @@ const { EmbedBuilder } = require('discord.js');
 const ffmpegPath = require('ffmpeg-static');
 process.env.FFMPEG_PATH = ffmpegPath;
 
-// Pre-load encryption libraries
-try {
-    // Try to load sodium-native first (best performance)
-    require('sodium-native');
-    console.log('✅ 已載入 sodium-native 加密庫');
-} catch {
-    try {
-        // Fallback to libsodium-wrappers
-        require('libsodium-wrappers');
-        console.log('✅ 已載入 libsodium-wrappers 加密庫');
-    } catch {
-        try {
-            // Fallback to tweetnacl
-            require('tweetnacl');
-            console.log('✅ 已載入 tweetnacl 加密庫');
-        } catch (e) {
-            console.warn('⚠️ 未找到加密庫，語音功能可能無法正常運作');
-        }
-    }
-}
-
 // Music player instance (will be initialized in setupMusicPlayer)
 let player = null;
 
@@ -65,9 +44,8 @@ async function setupMusicPlayer(client) {
         queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
     });
 
-    // Event: Track added to queue (only show if queue already has tracks)
+    // Event: Track added to queue
     player.events.on('audioTrackAdd', (queue, track) => {
-        // Only show message if this is not the first track (first track triggers playerStart)
         if (queue.tracks.size > 0 || queue.isPlaying()) {
             const embed = new EmbedBuilder()
                 .setColor('#00ff00')
@@ -96,11 +74,10 @@ async function setupMusicPlayer(client) {
     // Event: Player error
     player.events.on('playerError', (queue, error) => {
         console.error(`播放器錯誤: ${error.message}`);
-        console.error(error);
         const embed = new EmbedBuilder()
             .setColor('#ff0000')
             .setTitle('❌ 播放錯誤')
-            .setDescription(`播放時發生錯誤：${error.message}\n已嘗試跳過此歌曲。`);
+            .setDescription(`播放時發生錯誤：${error.message}`);
 
         queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
     });
@@ -108,23 +85,12 @@ async function setupMusicPlayer(client) {
     // Event: General error
     player.events.on('error', (queue, error) => {
         console.error(`一般錯誤: ${error.message}`);
-        console.error(error);
         const embed = new EmbedBuilder()
             .setColor('#ff0000')
             .setTitle('❌ 錯誤')
             .setDescription(`發生錯誤：${error.message}`);
 
         queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
-    });
-
-    // Event: Connection error
-    player.events.on('playerSkip', (queue, track, reason) => {
-        console.log(`跳過歌曲: ${track.title}, 原因: ${reason}`);
-    });
-
-    // Event: Debug messages (optional, for troubleshooting)
-    player.events.on('debug', (queue, message) => {
-        console.log(`[Player Debug] ${message}`);
     });
 
     console.log('🎵 音樂播放器已初始化 (使用 discord-player-youtubei)');
@@ -137,22 +103,6 @@ async function setupMusicPlayer(client) {
  */
 function getPlayer() {
     return player;
-}
-
-/**
- * Format duration from milliseconds to MM:SS or HH:MM:SS
- * @param {number} ms - Duration in milliseconds
- * @returns {string} Formatted duration
- */
-function formatDuration(ms) {
-    const seconds = Math.floor((ms / 1000) % 60);
-    const minutes = Math.floor((ms / (1000 * 60)) % 60);
-    const hours = Math.floor(ms / (1000 * 60 * 60));
-
-    if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 /**
@@ -204,7 +154,6 @@ function isInSameVoiceChannel(member, guild) {
 module.exports = {
     setupMusicPlayer,
     getPlayer,
-    formatDuration,
     createErrorEmbed,
     createSuccessEmbed,
     isInVoiceChannel,
