@@ -40,6 +40,7 @@
         "@distube/spotify": "^2.0.2",
         "@distube/soundcloud": "^2.0.3",
         "@distube/youtube": "^1.0.4",
+        "@distube/ytdl-core": "^4.15.3",
         "@discordjs/voice": "^0.18.0",
         "@discordjs/opus": "^0.10.0",
         "libsodium-wrappers": "^0.7.15",
