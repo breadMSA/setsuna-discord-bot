@@ -61,26 +61,41 @@ const loopModeNames = {
 };
 
 // Free Lavalink nodes (multiple regions for redundancy)
+// From: https://github.com/botxlab/lavalink-list
 const lavalinkNodes = [
     {
-        name: 'Singapore',
-        host: 'lava1.horizxon.studio',
+        name: 'AjieDev-v4',
+        host: 'lava-v4.ajieblogs.eu.org',
         port: 80,
-        password: 'horizxon.studio',
+        password: 'https://dsc.gg/ajidevserver',
         secure: false
     },
     {
-        name: 'US-California',
-        host: 'lava2.horizxon.studio',
-        port: 80,
-        password: 'horizxon.studio',
+        name: 'DivaHost',
+        host: 'lavalink.divahost.net',
+        port: 60002,
+        password: 'divahostv4',
         secure: false
     },
     {
-        name: 'Germany',
-        host: 'lava3.horizxon.studio',
-        port: 80,
-        password: 'horizxon.studio',
+        name: 'RudraCloud',
+        host: 'lavalink.rudracloud.com',
+        port: 2333,
+        password: 'RudraCloud.com',
+        secure: false
+    },
+    {
+        name: 'US-Node',
+        host: 'node.itzrandom.cloud',
+        port: 9000,
+        password: 'lavalink@itzrandomcloud',
+        secure: false
+    },
+    {
+        name: 'INZEWORLD',
+        host: 'lava.inzeworld.com',
+        port: 3128,
+        password: 'saher.inzeworld.com',
         secure: false
     }
 ];
