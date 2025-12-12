@@ -9,6 +9,10 @@ const { SoundCloudPlugin } = require('@distube/soundcloud');
 const { YouTubePlugin } = require('@distube/youtube');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
+// Set ffmpeg path from ffmpeg-static
+const ffmpegPath = require('ffmpeg-static');
+process.env.FFMPEG_PATH = ffmpegPath;
+
 // Format time from seconds to MM:SS or HH:MM:SS
 function formatTime(seconds) {
     if (!seconds || isNaN(seconds)) return '00:00';
