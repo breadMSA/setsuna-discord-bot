@@ -4,7 +4,11 @@ const fetch = require('node-fetch');
 const OpenCC = require('opencc-js');
 const path = require('path');
 const { exec } = require('child_process');
-const musicModule = require('./music.js');
+
+// Music System
+const { MusicPlayer, parseTime } = require('./music/MusicPlayer');
+const { musicCommand } = require('./commands/musicCommands');
+let musicPlayer = null; // Will be initialized after client is ready
 
 // 初始化繁簡轉換器
 const converter = OpenCC.Converter({ from: 'cn', to: 'tw' });
@@ -823,95 +827,24 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
   new SlashCommandBuilder()
-    .setName('music')
-    .setDescription('Music playback controls')
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('play')
-        .setDescription('Play a song or add it to the queue')
-        .addStringOption(option =>
-          option
-            .setName('query')
-            .setDescription('Song name or URL (YouTube, Spotify, SoundCloud, etc.)')
-            .setRequired(true)
-        )
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('pause')
-        .setDescription('Pause the current song')
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('resume')
-        .setDescription('Resume playback')
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('skip')
-        .setDescription('Skip the current song')
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('stop')
-        .setDescription('Stop playback and clear the queue')
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('queue')
-        .setDescription('Show the current queue')
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('nowplaying')
-        .setDescription('Show the currently playing song')
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('volume')
-        .setDescription('Set the playback volume')
-        .addIntegerOption(option =>
-          option
-            .setName('level')
-            .setDescription('Volume level (0-100)')
-            .setRequired(true)
-            .setMinValue(0)
-            .setMaxValue(100)
-        )
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('loop')
-        .setDescription('Set loop mode')
-        .addStringOption(option =>
-          option
-            .setName('mode')
-            .setDescription('Loop mode')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Off', value: 'off' },
-              { name: 'Track', value: 'track' },
-              { name: 'Queue', value: 'queue' }
-            )
-        )
-    )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('shuffle')
-        .setDescription('Shuffle the queue')
-    ),
-
-  new SlashCommandBuilder()
     .setName('contact')
     .setDescription('Get information on how to contact the bot developer'),
+
+  // Music command
+  musicCommand,
 ];
 
 // Register slash commands when the bot starts
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
-  // Initialize music player (Lavalink)
-  musicModule.setupMusicPlayer(client);
+  // Initialize Music Player
+  try {
+    musicPlayer = new MusicPlayer(client);
+    console.log('Music player initialized successfully!');
+  } catch (error) {
+    console.error('Error initializing music player:', error);
+  }
 
   // Load active channels
   await loadActiveChannels();
@@ -943,32 +876,6 @@ client.once('ready', async () => {
   console.log('Bot is ready to respond to messages!');
 });
 
-// Handle slash command interactions
-const musicCommands = require('./musicCommands.js');
-
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  const { commandName } = interaction;
-
-  try {
-    if (commandName === 'music') {
-      await musicCommands.handleMusicCommand(interaction);
-    }
-    // Other command handlers can be added here
-  } catch (error) {
-    console.error('Error handling interaction:', error);
-
-    const errorMessage = { content: '執行指令時發生錯誤！', ephemeral: true };
-
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply(errorMessage);
-    } else {
-      await interaction.reply(errorMessage);
-    }
-  }
-});
-
 // Handle slash commands
 // 將BOT_OWNER_ID解析為陣列，支持多個ID（逗號分隔）
 const BOT_OWNER_IDS = process.env.BOT_OWNER_ID ? process.env.BOT_OWNER_ID.split(',') : [];
@@ -990,7 +897,208 @@ if (!process.env.YOUTUBE_API_KEY) {
 }
 
 client.on('interactionCreate', async interaction => {
+  // Handle music button interactions
+  if (interaction.isButton() && interaction.customId.startsWith('music_')) {
+    if (!musicPlayer) {
+      await interaction.reply({ content: '❌ 音樂系統尚未準備就緒！', ephemeral: true });
+      return;
+    }
+    await musicPlayer.handleButton(interaction);
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
+
+  // Handle music commands
+  if (interaction.commandName === 'music') {
+    if (!interaction.inGuild()) {
+      await interaction.reply({ content: '❌ 音樂指令只能在伺服器中使用！', ephemeral: true });
+      return;
+    }
+
+    if (!musicPlayer) {
+      await interaction.reply({ content: '❌ 音樂系統尚未準備就緒！', ephemeral: true });
+      return;
+    }
+
+    const subcommand = interaction.options.getSubcommand();
+    const member = interaction.member;
+    const voiceChannel = member?.voice?.channel;
+    const textChannel = interaction.channel;
+    const guildId = interaction.guildId;
+
+    // Commands that require being in a voice channel
+    const requiresVoice = ['play', 'pause', 'resume', 'skip', 'stop', 'shuffle', 'loop', 'volume', 'seek', 'remove', 'move', 'clear', 'filter', 'replay', 'forward', 'rewind'];
+
+    if (requiresVoice.includes(subcommand) && !voiceChannel) {
+      await interaction.reply({ content: '❌ 你需要先加入語音頻道！', ephemeral: true });
+      return;
+    }
+
+    try {
+      switch (subcommand) {
+        case 'play': {
+          const query = interaction.options.getString('query');
+          await interaction.deferReply();
+          const result = await musicPlayer.play(voiceChannel, textChannel, query, member);
+          if (!result.success) {
+            await interaction.editReply(`❌ ${result.error}`);
+          } else {
+            await interaction.editReply('🎵 正在搜尋並播放...');
+          }
+          break;
+        }
+
+        case 'pause': {
+          const result = musicPlayer.pause(guildId);
+          await interaction.reply(result.success ? '⏸️ 已暫停播放' : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'resume': {
+          const result = musicPlayer.resume(guildId);
+          await interaction.reply(result.success ? '▶️ 已繼續播放' : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'skip': {
+          const to = interaction.options.getInteger('to');
+          let result;
+          if (to) {
+            result = await musicPlayer.skipTo(guildId, to);
+            await interaction.reply(result.success ? `⏭️ 已跳到第 ${to} 首` : `❌ ${result.error}`);
+          } else {
+            result = await musicPlayer.skip(guildId);
+            await interaction.reply(result.success ? (result.message || '⏭️ 已跳過') : `❌ ${result.error}`);
+          }
+          break;
+        }
+
+        case 'stop': {
+          const result = await musicPlayer.stop(guildId);
+          await interaction.reply(result.success ? '⏹️ 已停止播放並離開頻道' : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'queue': {
+          const queue = musicPlayer.getQueue(guildId);
+          if (!queue || !queue.songs.length) {
+            await interaction.reply({ content: '❌ 目前沒有播放隊列', ephemeral: true });
+            return;
+          }
+          const page = interaction.options.getInteger('page') || 1;
+          const embed = musicPlayer.createQueueEmbed(queue, page);
+          await interaction.reply({ embeds: [embed] });
+          break;
+        }
+
+        case 'nowplaying': {
+          const queue = musicPlayer.getQueue(guildId);
+          if (!queue || !queue.songs.length) {
+            await interaction.reply({ content: '❌ 目前沒有正在播放的歌曲', ephemeral: true });
+            return;
+          }
+          const embed = musicPlayer.createNowPlayingEmbed(queue.songs[0], queue);
+          const buttons = musicPlayer.createControlButtons(queue);
+          await interaction.reply({ embeds: [embed], components: [buttons] });
+          break;
+        }
+
+        case 'shuffle': {
+          const result = musicPlayer.shuffle(guildId);
+          await interaction.reply(result.success ? '🔀 已隨機打亂隊列順序' : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'loop': {
+          const mode = interaction.options.getString('mode');
+          const modeMap = { 'off': 0, 'song': 1, 'queue': 2 };
+          const result = musicPlayer.setLoop(guildId, modeMap[mode] ?? 0);
+          await interaction.reply(result.success ? `🔁 循環模式已設為: ${result.mode}` : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'volume': {
+          const level = interaction.options.getInteger('level');
+          const result = musicPlayer.setVolume(guildId, level);
+          await interaction.reply(result.success ? `🔊 音量已設為 ${result.volume}%` : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'seek': {
+          const timeStr = interaction.options.getString('time');
+          const seconds = parseTime(timeStr);
+          if (seconds === 0 && timeStr !== '0' && timeStr !== '0:00') {
+            await interaction.reply({ content: '❌ 無效的時間格式，請使用 1:30 或 90 的格式', ephemeral: true });
+            return;
+          }
+          const result = musicPlayer.seek(guildId, seconds);
+          await interaction.reply(result.success ? `⏩ 已跳轉到 ${timeStr}` : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'remove': {
+          const position = interaction.options.getInteger('position');
+          const result = musicPlayer.remove(guildId, position);
+          await interaction.reply(result.success ? `🗑️ 已移除: ${result.song?.name || '歌曲'}` : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'move': {
+          const from = interaction.options.getInteger('from');
+          const to = interaction.options.getInteger('to');
+          const result = musicPlayer.move(guildId, from, to);
+          await interaction.reply(result.success ? `📍 已將 ${result.song?.name || '歌曲'} 移動到位置 ${to}` : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'clear': {
+          const result = musicPlayer.clear(guildId);
+          await interaction.reply(result.success ? '🗑️ 已清空播放隊列' : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'filter': {
+          const filterName = interaction.options.getString('name');
+          const result = await musicPlayer.setFilter(guildId, filterName);
+          await interaction.reply(result.success ? `🎛️ ${result.message}` : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'replay': {
+          const result = musicPlayer.replay(guildId);
+          await interaction.reply(result.success ? '🔄 已重新開始播放' : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'forward': {
+          const seconds = interaction.options.getInteger('seconds') || 10;
+          const result = musicPlayer.forward(guildId, seconds);
+          await interaction.reply(result.success ? `⏩ 已快進 ${seconds} 秒` : `❌ ${result.error}`);
+          break;
+        }
+
+        case 'rewind': {
+          const seconds = interaction.options.getInteger('seconds') || 10;
+          const result = musicPlayer.rewind(guildId, seconds);
+          await interaction.reply(result.success ? `⏪ 已倒退 ${seconds} 秒` : `❌ ${result.error}`);
+          break;
+        }
+
+        default:
+          await interaction.reply({ content: '❌ 未知的音樂指令', ephemeral: true });
+      }
+    } catch (error) {
+      console.error('[Music Command Error]', error);
+      const errorMessage = `❌ 執行指令時發生錯誤: ${error.message}`;
+      if (interaction.deferred) {
+        await interaction.editReply(errorMessage);
+      } else if (!interaction.replied) {
+        await interaction.reply({ content: errorMessage, ephemeral: true });
+      }
+    }
+    return;
+  }
 
   // Check if server-only commands are used in DMs
   if (interaction.commandName === 'reset' && !interaction.inGuild()) {

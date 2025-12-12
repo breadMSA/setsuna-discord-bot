@@ -35,16 +35,6 @@
 - 可根據影片內容進行問答
 - 支援 YouTube 影片搜尋功能
 
-### 🎵 音樂播放
-- 支援 YouTube、Spotify、SoundCloud 等多個音樂平台
-- 完整的播放控制（播放、暫停、繼續、跳過、停止）
-- 播放列表管理和佇列顯示
-- 音量控制（0-100%）
-- 循環播放模式（單曲循環、列表循環）
-- 隨機播放功能
-- 自動離開空閒語音頻道
-- 精美的播放資訊顯示
-
 ### ⚙️ 進階功能
 - 支援簡單的頻道啟用／停用指令
 - 可自訂義機器人人設
@@ -197,36 +187,6 @@
 - 如果你傳送 YouTube 影片的網址，Setsuna 會顯示影片的預覽資訊。
 - 如果你請 Setsuna 幫忙找 YouTube 影片 (例如：「幫我找貓咪的影片」)，Setsuna 會嘗試搜尋並提供相關的影片連結。
 
-### 🎵 音樂播放
-
-Setsuna 支援完整的音樂播放功能，可以在語音頻道中播放來自 YouTube、Spotify、SoundCloud 等平台的音樂。
-
-#### 基本播放指令
-- `/music play <歌曲名稱或URL>` - 播放歌曲或加入播放佇列
-  - 支援 YouTube URL、Spotify URL、SoundCloud URL
-  - 支援直接搜尋歌曲名稱（例如：`/music play 周杰倫 晴天`）
-  - 支援播放列表（會自動加入所有歌曲）
-- `/music pause` - 暫停當前播放
-- `/music resume` - 繼續播放
-- `/music skip` - 跳過當前歌曲
-- `/music stop` - 停止播放並清空佇列
-
-#### 進階功能
-- `/music queue` - 顯示播放佇列（最多顯示 10 首）
-- `/music nowplaying` - 顯示當前播放的歌曲資訊和進度
-- `/music volume <0-100>` - 調整音量（預設 50%）
-- `/music loop <off/track/queue>` - 設定循環模式
-  - `off`: 關閉循環
-  - `track`: 單曲循環
-  - `queue`: 佇列循環
-- `/music shuffle` - 隨機播放佇列
-
-#### 使用提示
-- 使用音樂指令前，請先加入語音頻道
-- 機器人會自動加入你所在的語音頻道
-- 播放列表為空時，機器人會在 5 分鐘後自動離開語音頻道
-- 播放時會顯示精美的歌曲資訊，包含縮圖、作者、時長等
-
 ### Character.AI 整合
 
 ## Character.AI Integration
@@ -290,16 +250,6 @@ A Discord AI bot that connects to LLM API and chats with users in specific chann
 - Generates images based on text descriptions using Gemini
 - Can modify existing images based on user requests
 - Detects image generation and modification requests automatically
-
-### 🎵 Music Playback
-- Supports YouTube, Spotify, SoundCloud, and other music platforms
-- Complete playback controls (play, pause, resume, skip, stop)
-- Queue management and display
-- Volume control (0-100%)
-- Loop modes (track loop, queue loop)
-- Shuffle functionality
-- Auto-leave empty voice channels
-- Beautiful playback information display
 
 ### 🔧 Easy Administration
 - Simple slash commands for bot management
@@ -377,36 +327,6 @@ GEMINI_API_KEY_2=your_second_gemini_api_key
 - You can reply to Setsuna's or other users' messages, and Setsuna will understand the reply context.
 - If you send a YouTube video URL, Setsuna will display preview information for the video.
 - If you ask Setsuna to find YouTube videos (e.g., "Find me cat videos"), Setsuna will attempt to search and provide relevant video links.
-
-### 🎵 Music Playback
-
-Setsuna supports full music playback functionality, allowing you to play music from YouTube, Spotify, SoundCloud, and other platforms in voice channels.
-
-#### Basic Playback Commands
-- `/music play <song name or URL>` - Play a song or add it to the queue
-  - Supports YouTube URLs, Spotify URLs, SoundCloud URLs
-  - Supports direct song name search (e.g., `/music play Never Gonna Give You Up`)
-  - Supports playlists (automatically adds all songs)
-- `/music pause` - Pause current playback
-- `/music resume` - Resume playback
-- `/music skip` - Skip current song
-- `/music stop` - Stop playback and clear queue
-
-#### Advanced Features
-- `/music queue` - Display the queue (shows up to 10 songs)
-- `/music nowplaying` - Show current song information and progress
-- `/music volume <0-100>` - Adjust volume (default 50%)
-- `/music loop <off/track/queue>` - Set loop mode
-  - `off`: Disable looping
-  - `track`: Loop current track
-  - `queue`: Loop entire queue
-- `/music shuffle` - Shuffle the queue
-
-#### Usage Tips
-- Join a voice channel before using music commands
-- The bot will automatically join your voice channel
-- The bot will automatically leave after 5 minutes when the queue is empty
-- Playback displays beautiful song information including thumbnail, author, and duration
 
 ## Character.AI Integration
 
