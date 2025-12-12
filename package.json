@@ -19,15 +19,18 @@
   "license": "MIT",
   "dependencies": {
     "@cerebras/cerebras_cloud_sdk": "^1.35.0",
+    "@discord-player/extractor": "^4.5.1",
     "@google/genai": "^1.0.1",
     "@google/generative-ai": "^0.2.1",
     "@octokit/rest": "^21.1.1",
     "axios": "^1.10.0",
+    "discord-player": "^6.7.0",
     "discord.js": "^14.14.1",
     "dotenv": "^16.3.1",
     "genai": "^0.0.18",
     "googleapis": "^128.0.0",
     "groq-sdk": "^0.2.0",
+    "mediaplex": "^0.0.9",
     "node-fetch": "^2.7.0",
     "openai": "^4.28.0",
     "opencc-js": "^1.0.5",
@@ -35,7 +38,8 @@
     "tesseract.js": "^5.0.5",
     "together-ai": "^0.16.0",
     "uuid": "^11.1.0",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "youtube-ext": "^1.1.18"
   },
   "devDependencies": {
     "jest": "^30.0.3",

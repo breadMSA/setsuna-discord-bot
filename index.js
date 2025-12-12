@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const OpenCC = require('opencc-js');
 const path = require('path');
 const { exec } = require('child_process');
+const musicModule = require('./music.js');
 
 // 初始化繁簡轉換器
 const converter = OpenCC.Converter({ from: 'cn', to: 'tw' });
@@ -16,14 +17,14 @@ function isTraditionalChinese(text) {
     '體', '關', '當', '務', '產', '發', '會', '無', '與', '內',
     '萬', '開', '問', '們', '對', '業', '電', '這', '還', '經'
   ]);
-  
+
   // 檢查文本中是否包含繁體中文特有字符
   for (const char of text) {
     if (traditionalOnlyChars.has(char)) {
       return true;
     }
   }
-  
+
   return false;
 }
 
@@ -297,31 +298,31 @@ async function setupGitHub() {
       octokit = new Octokit({
         auth: process.env.GITHUB_TOKEN
       });
-      
+
       // Extract owner, repo and path from the repo string (format: owner/repo or owner/repo/path)
-let owner, repo, subPath = '';
-const parts = process.env.GITHUB_REPO.split('/');
+      let owner, repo, subPath = '';
+      const parts = process.env.GITHUB_REPO.split('/');
 
-if (parts.length >= 2) {
-  owner = parts[0];
-  repo = parts[1];
-  
-  // 如果有子目錄路徑
-  if (parts.length > 2) {
-    subPath = parts.slice(2).join('/');
-    if (!subPath.endsWith('/')) {
-      subPath += '/';
-    }
-  }
-}
+      if (parts.length >= 2) {
+        owner = parts[0];
+        repo = parts[1];
 
-console.log(`GitHub setup: owner=${owner}, repo=${repo}, subPath=${subPath || 'none'}`);
-      
+        // 如果有子目錄路徑
+        if (parts.length > 2) {
+          subPath = parts.slice(2).join('/');
+          if (!subPath.endsWith('/')) {
+            subPath += '/';
+          }
+        }
+      }
+
+      console.log(`GitHub setup: owner=${owner}, repo=${repo}, subPath=${subPath || 'none'}`);
+
       // Store the extracted values as global variables
       global.githubOwner = owner;
       global.githubRepo = repo;
       global.githubSubPath = subPath;
-      
+
       console.log('GitHub API initialized successfully');
       return octokit;
     } catch (error) {
@@ -354,9 +355,9 @@ async function loadActiveChannels() {
     const owner = global.githubOwner;
     const repoName = global.githubRepo;
     const filePath = `${global.githubSubPath}active_channels_backup.json`;
-    
+
     console.log(`Attempting to load file from GitHub: ${owner}/${repoName}/${filePath}`);
-    
+
     try {
       // Try to get the file
       const { data: fileData } = await githubClient.repos.getContent({
@@ -364,66 +365,66 @@ async function loadActiveChannels() {
         repo: repoName,
         path: filePath
       });
-      
+
       // Decode content
       const content = Buffer.from(fileData.content, 'base64').toString('utf8');
       const data = JSON.parse(content);
-      
+
       // Load model preferences from GitHub
       for (const [channelId, config] of Object.entries(data)) {
         // Initialize the channel
         initializeChannel(channelId);
-        
+
         // Set model preference if available
         if (config.model) {
           channelModelPreferences.set(channelId, config.model);
           activeChannels.get(channelId).model = config.model;
         }
-        
+
         // Set Groq model preference if available
         if (config.groqModel) {
           channelGroqModelPreferences.set(channelId, config.groqModel);
           activeChannels.get(channelId).groqModel = config.groqModel;
         }
-        
+
         // Set Cerebras model preference if available
         if (config.cerebrasModel) {
           channelCerebrasModelPreferences.set(channelId, config.cerebrasModel);
           activeChannels.get(channelId).cerebrasModel = config.cerebrasModel;
         }
-        
+
         // Set custom instructions if available
         if (config.customInstructions) {
           activeChannels.get(channelId).customInstructions = config.customInstructions;
         }
-        
+
         // Set custom role if available
         if (config.customRole) {
           activeChannels.get(channelId).customRole = config.customRole;
         }
-        
+
         // Set custom speaking style if available
         if (config.customSpeakingStyle) {
           activeChannels.get(channelId).customSpeakingStyle = config.customSpeakingStyle;
         }
-        
+
         // Set custom text structure if available
         if (config.customTextStructure) {
           activeChannels.get(channelId).customTextStructure = config.customTextStructure;
         }
-        
+
         // Set useAIToDetectImageRequest if available
         if (config.useAIToDetectImageRequest) {
           activeChannels.get(channelId).useAIToDetectImageRequest = config.useAIToDetectImageRequest;
         }
-        
+
         // Set Character.AI chat ID if available
         if (config.caiChatId) {
           activeChannels.get(channelId).caiChatId = config.caiChatId;
           console.log(`Loaded Character.AI chat ID ${config.caiChatId} for channel ${channelId}`);
         }
       }
-      
+
       console.log(`Loaded ${Object.keys(data).length} channel configurations from GitHub`);
     } catch (error) {
       if (error.status === 404) {
@@ -442,7 +443,7 @@ async function saveActiveChannels() {
   try {
     // Create a simplified version of activeChannels with only the necessary data
     const simplifiedActiveChannels = {};
-    
+
     for (const [channelId, channelData] of activeChannels.entries()) {
       // Only store model preferences and not message history
       simplifiedActiveChannels[channelId] = {
@@ -474,65 +475,65 @@ async function saveActiveChannels() {
     const owner = global.githubOwner;
     const repoName = global.githubRepo;
     const filePath = `${global.githubSubPath}active_channels_backup.json`;
-    
+
     console.log(`Attempting to save file to GitHub: ${owner}/${repoName}/${filePath}`);
     console.log(`GitHub token length: ${process.env.GITHUB_TOKEN ? process.env.GITHUB_TOKEN.length : 0}`);
     console.log(`GitHub repo: ${process.env.GITHUB_REPO}`);
-    
+
     try {
       // Try to get the current file to get its SHA
       const { data: fileData } = await githubClient.repos.getContent({
-    owner,
+        owner,
         repo: repoName,
         path: filePath
-  });
-      
+      });
+
       console.log('Found existing file, updating with SHA:', fileData.sha);
-          
+
       // Update the file
       const updateResponse = await githubClient.repos.createOrUpdateFileContents({
-            owner,
+        owner,
         repo: repoName,
         path: filePath,
         message: 'Update active channels',
         content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64'),
         sha: fileData.sha
-          });
-          
+      });
+
       console.log('GitHub API update response:', JSON.stringify(updateResponse.data, null, 2));
       console.log('Successfully updated active channels in GitHub');
-        } catch (error) {
-          if (error.status === 404) {
+    } catch (error) {
+      if (error.status === 404) {
         // File doesn't exist, create it
         console.log('File not found, creating new file');
-        
+
         const createResponse = await githubClient.repos.createOrUpdateFileContents({
-              owner,
+          owner,
           repo: repoName,
           path: filePath,
           message: 'Create active channels file',
           content: Buffer.from(JSON.stringify(simplifiedActiveChannels, null, 2)).toString('base64')
-            });
-            
+        });
+
         console.log('GitHub API create response:', JSON.stringify(createResponse.data, null, 2));
         console.log('Successfully created active channels file in GitHub');
-          } else {
+      } else {
         console.error('GitHub API error:', error.message);
         console.error('Error details:', error.response ? error.response.data : 'No response data');
-            throw error;
-          }
-        }
-    
+        throw error;
+      }
+    }
+
     // Also save locally as a backup
     try {
       fs.writeFileSync(CHANNELS_FILE, JSON.stringify(simplifiedActiveChannels, null, 2));
       console.log('Successfully saved active channels locally');
     } catch (localError) {
       console.error('Error saving active channels locally:', localError);
-        }
-      } catch (error) {
+    }
+  } catch (error) {
     console.error('Error saving active channels to GitHub:', error);
-    
+
     // Try to save locally as a fallback
     try {
       const simplifiedActiveChannels = {};
@@ -618,14 +619,14 @@ const commands = [
             .setDescription('The AI model to use (optional)')
             .setRequired(false)
             .addChoices(
-                  { name: 'Groq', value: 'groq' },
-                  { name: 'Gemini (Fast)', value: 'gemini' },
-                  { name: 'ChatGPT', value: 'chatgpt' },
-                  { name: 'Together AI (Llama-3.3-70B-Instruct-Turbo)', value: 'together' },
-                  { name: 'DeepSeek (Slow)', value: 'deepseek' },
-                  { name: 'Cerebras', value: 'cerebras' },
-                  { name: 'Character.AI', value: 'characterai' }
-                )
+              { name: 'Groq', value: 'groq' },
+              { name: 'Gemini (Fast)', value: 'gemini' },
+              { name: 'ChatGPT', value: 'chatgpt' },
+              { name: 'Together AI (Llama-3.3-70B-Instruct-Turbo)', value: 'together' },
+              { name: 'DeepSeek (Slow)', value: 'deepseek' },
+              { name: 'Cerebras', value: 'cerebras' },
+              { name: 'Character.AI', value: 'characterai' }
+            )
         )
         .addStringOption(option =>
           option
@@ -785,7 +786,7 @@ const commands = [
             .setRequired(false)
         )
     )
-    
+
     .addSubcommand(subcommand =>
       subcommand
         .setName('checkmodel')
@@ -799,7 +800,7 @@ const commands = [
         )
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
-    
+
   new SlashCommandBuilder()
     .setName('help')
     .setDescription('Learn how to set up and use Setsuna'),
@@ -821,6 +822,85 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
   new SlashCommandBuilder()
+    .setName('music')
+    .setDescription('Music playback controls')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('play')
+        .setDescription('Play a song or add it to the queue')
+        .addStringOption(option =>
+          option
+            .setName('query')
+            .setDescription('Song name or URL (YouTube, Spotify, SoundCloud, etc.)')
+            .setRequired(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('pause')
+        .setDescription('Pause the current song')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('resume')
+        .setDescription('Resume playback')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('skip')
+        .setDescription('Skip the current song')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('stop')
+        .setDescription('Stop playback and clear the queue')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('queue')
+        .setDescription('Show the current queue')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('nowplaying')
+        .setDescription('Show the currently playing song')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('volume')
+        .setDescription('Set the playback volume')
+        .addIntegerOption(option =>
+          option
+            .setName('level')
+            .setDescription('Volume level (0-100)')
+            .setRequired(true)
+            .setMinValue(0)
+            .setMaxValue(100)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('loop')
+        .setDescription('Set loop mode')
+        .addStringOption(option =>
+          option
+            .setName('mode')
+            .setDescription('Loop mode')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Off', value: 'off' },
+              { name: 'Track', value: 'track' },
+              { name: 'Queue', value: 'queue' }
+            )
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('shuffle')
+        .setDescription('Shuffle the queue')
+    ),
+
+  new SlashCommandBuilder()
     .setName('contact')
     .setDescription('Get information on how to contact the bot developer'),
 ];
@@ -828,35 +908,64 @@ const commands = [
 // Register slash commands when the bot starts
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  
+
+  // Initialize music player
+  musicModule.setupMusicPlayer(client);
+
   // Load active channels
   await loadActiveChannels();
-  
+
   try {
     console.log('Started refreshing application (/) commands.');
-    
+
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-    
+
     await rest.put(
       Routes.applicationCommands(client.user.id),
       { body: commands },
     );
-    
+
     console.log('Successfully reloaded application (/) commands.');
-    
+
     // Load saved active channels
     //await loadActiveChannels();
-    
+
     // Set initial random status
     setRandomStatus();
-    
+
     // Start status rotation
     setInterval(setRandomStatus, 120000); // 2 minutes
   } catch (error) {
     console.error('Error refreshing application commands:', error);
   }
-  
+
   console.log('Bot is ready to respond to messages!');
+});
+
+// Handle slash command interactions
+const musicCommands = require('./musicCommands.js');
+
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const { commandName } = interaction;
+
+  try {
+    if (commandName === 'music') {
+      await musicCommands.handleMusicCommand(interaction);
+    }
+    // Other command handlers can be added here
+  } catch (error) {
+    console.error('Error handling interaction:', error);
+
+    const errorMessage = { content: '執行指令時發生錯誤！', ephemeral: true };
+
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(errorMessage);
+    } else {
+      await interaction.reply(errorMessage);
+    }
+  }
 });
 
 // Handle slash commands
@@ -887,7 +996,7 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply({ content: '這個指令只能在伺服器頻道中使用喔！', ephemeral: true });
     return;
   }
-  
+
   // For setsuna command, only block server administration subcommands in DMs
   if (interaction.commandName === 'setsuna' && !interaction.inGuild()) {
     const subcommand = interaction.options.getSubcommand();
@@ -935,10 +1044,10 @@ client.on('interactionCreate', async interaction => {
         text: '有任何問題都可以用 /contact 聯絡我的開發者喔！\n如果成功找到 bug 並回報，可以到我們的官方伺服器領取「捕蟲者」的特殊身分喔！'
       }
     };
-    
+
     return interaction.reply({ embeds: [helpEmbed] });
   }
-  
+
   if (interaction.commandName === 'contact') {
     const contactEmbed = {
       color: 0x7289DA,
@@ -958,7 +1067,7 @@ client.on('interactionCreate', async interaction => {
         text: '有任何問題或需求都可以找我們哦，我們會盡快回覆的！'
       }
     };
-    
+
     return interaction.reply({ embeds: [contactEmbed] });
   }
 
@@ -1005,18 +1114,18 @@ client.on('interactionCreate', async interaction => {
     }
     return; // Important to return after handling the command
   }
-  
+
   if (interaction.commandName === 'setsuna') {
     // Check if user has admin permissions (only for guild commands)
     if (interaction.inGuild() && !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
       await interaction.reply({ content: 'You don\'t have permission to use this command! Admin privileges required.', flags: 64 });
       return;
     }
-    
+
     const subcommand = interaction.options.getSubcommand();
     const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
     const isDM = !interaction.inGuild();
-    
+
     // For DMs, only allow certain subcommands
     if (isDM) {
       const allowedDMSubcommands = ['setmodel', 'checkmodel', 'setpersonality', 'checkpersonality', 'aidetect'];
@@ -1024,7 +1133,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ content: '這個子指令只能在伺服器頻道中使用喔！', ephemeral: true });
         return;
       }
-      
+
       // Auto-activate DM channel if not already active
       if (!activeChannels.has(targetChannel.id)) {
         console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
@@ -1038,12 +1147,12 @@ client.on('interactionCreate', async interaction => {
         await saveActiveChannels();
       }
     }
-    
+
     if (subcommand === 'activate') {
       // Get optional model parameters
       const model = interaction.options.getString('model') || defaultModel;
       const cerebrasModel = interaction.options.getString('cerebras_model') || defaultCerebrasModel;
-      
+
       // Check if the selected model has API keys
       let hasKeys = false;
       switch (model) {
@@ -1069,7 +1178,7 @@ client.on('interactionCreate', async interaction => {
           hasKeys = TOGETHER_API_KEYS.length > 0;
           break;
       }
-      
+
       if (!hasKeys) {
         await interaction.reply({
           content: `The ${model.toUpperCase()} API key is not configured! Please contact the administrator about the ${model.toUpperCase()}_API_KEY.`,
@@ -1077,23 +1186,23 @@ client.on('interactionCreate', async interaction => {
         });
         return;
       }
-      
+
       // Set the channel as active
       activeChannels.set(targetChannel.id, {
         messageHistory: []
       });
-      
+
       // Set the model preference for this channel
       channelModelPreferences.set(targetChannel.id, model);
-      
+
       // If Cerebras is selected, save the specific model preference
       if (model === 'cerebras') {
         channelCerebrasModelPreferences.set(targetChannel.id, cerebrasModel);
       }
-      
+
       // Save to file
       saveActiveChannels();
-      
+
       // Get model name for display
       const modelNames = {
         'deepseek': 'DeepSeek',
@@ -1104,7 +1213,7 @@ client.on('interactionCreate', async interaction => {
         'cerebras': 'Cerebras',
         'characterai': 'Character.AI'
       };
-      
+
       await interaction.reply(`Alright nerds, I'm here to party! Ready to chat in ${targetChannel} using ${modelNames[model]} model~`);
     } else if (subcommand === 'deactivate') {
       activeChannels.delete(targetChannel.id);
@@ -1115,7 +1224,7 @@ client.on('interactionCreate', async interaction => {
       const model = interaction.options.getString('model');
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
       const isDM = !interaction.inGuild();
-      
+
       // For DMs, automatically activate the channel if not already active
       if (isDM && !activeChannels.has(targetChannel.id)) {
         console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
@@ -1136,7 +1245,7 @@ client.on('interactionCreate', async interaction => {
         });
         return;
       }
-      
+
       // Check if the selected model has API keys
       let hasKeys = false;
       switch (model) {
@@ -1162,7 +1271,7 @@ client.on('interactionCreate', async interaction => {
           hasKeys = TOGETHER_API_KEYS.length > 0;
           break;
       }
-      
+
       if (!hasKeys) {
         await interaction.reply({
           content: `啊...${model.toUpperCase()} API key 沒設定好啦！去找管理員問問 ${model.toUpperCase()}_API_KEY 的事情吧。`,
@@ -1170,10 +1279,10 @@ client.on('interactionCreate', async interaction => {
         });
         return;
       }
-      
+
       // Set the model preference for this channel
       channelModelPreferences.set(targetChannel.id, model);
-      
+
       // If Groq is selected and a specific Groq model is provided, save it
       if (model === 'groq') {
         const groqModel = interaction.options.getString('groq_model');
@@ -1188,7 +1297,7 @@ client.on('interactionCreate', async interaction => {
           channelGroqModelPreferences.set(targetChannel.id, defaultGroqModel);
         }
       }
-      
+
       // If Cerebras is selected and a specific Cerebras model is provided, save it
       if (model === 'cerebras') {
         const cerebrasModel = interaction.options.getString('cerebras_model');
@@ -1203,16 +1312,16 @@ client.on('interactionCreate', async interaction => {
           channelCerebrasModelPreferences.set(targetChannel.id, defaultCerebrasModel);
         }
       }
-      
+
       // Make sure the model is saved in the activeChannels map
       if (activeChannels.has(targetChannel.id)) {
         activeChannels.get(targetChannel.id).model = model;
         console.log(`Saving model preference for channel ${targetChannel.id}: ${model}`);
       }
-      
+
       // 立即保存頻道配置到 JSON 文件
       saveActiveChannels();
-      
+
       // Reply with confirmation
       const modelNames = {
         'deepseek': 'DeepSeek',
@@ -1223,12 +1332,12 @@ client.on('interactionCreate', async interaction => {
         'cerebras': 'Cerebras',
         'characterai': 'Character.AI'
       };
-      
-      await interaction.reply(`Alright, I will be using ${modelNames[model]} model in ${targetChannel}!`);  
+
+      await interaction.reply(`Alright, I will be using ${modelNames[model]} model in ${targetChannel}!`);
     } else if (subcommand === 'checkmodel') {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
       const isDM = !interaction.inGuild();
-      
+
       // For DMs, automatically activate the channel if not already active
       if (isDM && !activeChannels.has(targetChannel.id)) {
         console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
@@ -1249,11 +1358,11 @@ client.on('interactionCreate', async interaction => {
         });
         return;
       }
-      
+
       // Get the current model for the channel
       const currentModel = channelModelPreferences.get(targetChannel.id) || defaultModel;
       let modelInfo = '';
-      
+
       // Get model-specific information
       switch (currentModel) {
         case 'groq':
@@ -1282,7 +1391,7 @@ client.on('interactionCreate', async interaction => {
         default:
           modelInfo = currentModel;
       }
-      
+
       await interaction.reply({
         content: `Current AI model for ${targetChannel}: **${modelInfo}**`,
         flags: 64
@@ -1344,10 +1453,10 @@ client.on('interactionCreate', async interaction => {
         channelPersonalityPreferences.set(targetChannel.id, personality);
         replyContent = `My personality has been updated in ${targetChannel}! I'll use this personality for future conversations.`;
       }
-      
+
       // Save to file
       saveActiveChannels();
-      
+
       // Reply with confirmation
       await interaction.reply({
         content: replyContent,
@@ -1357,7 +1466,7 @@ client.on('interactionCreate', async interaction => {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
       const enableAIDetect = interaction.options.getBoolean('enable');
       const isDM = !interaction.inGuild();
-      
+
       // For DMs, automatically activate the channel if not already active
       if (isDM && !activeChannels.has(targetChannel.id)) {
         console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
@@ -1378,17 +1487,17 @@ client.on('interactionCreate', async interaction => {
         });
         return;
       }
-      
+
       // Get the current channel configuration or create a new one
       const channelConfig = activeChannels.get(targetChannel.id) || {};
-      
+
       // Update the AI detection setting for this channel
       channelConfig.useAIToDetectImageRequest = enableAIDetect;
       activeChannels.set(targetChannel.id, channelConfig);
-      
+
       // Save to file
       saveActiveChannels();
-      
+
       // Reply with confirmation
       await interaction.reply({
         content: `AI detection for image generation requests has been ${enableAIDetect ? 'enabled' : 'disabled'} in ${targetChannel}.`,
@@ -1397,7 +1506,7 @@ client.on('interactionCreate', async interaction => {
     } else if (subcommand === 'checkpersonality') {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
       const isDM = !interaction.inGuild();
-      
+
       // For DMs, automatically activate the channel if not already active
       if (isDM && !activeChannels.has(targetChannel.id)) {
         console.log(`Auto-activating DM channel for ${interaction.user.username}: ${targetChannel.id}`);
@@ -1418,17 +1527,17 @@ client.on('interactionCreate', async interaction => {
         });
         return;
       }
-      
+
       // Get the personality preference for this channel
       const personality = channelPersonalityPreferences.get(targetChannel.id);
-      
+
       if (personality) {
         // Reply with the current personality (truncated if too long)
         const maxLength = 1900; // Discord message limit is 2000, leave some room for the rest of the message
-        const displayPersonality = personality.length > maxLength 
-          ? personality.substring(0, maxLength) + '... (truncated)' 
+        const displayPersonality = personality.length > maxLength
+          ? personality.substring(0, maxLength) + '... (truncated)'
           : personality;
-        
+
         await interaction.reply({
           content: `My current personality in ${targetChannel} is:\n\n\`\`\`\n${displayPersonality}\n\`\`\``,
           ephemeral: true
@@ -1442,49 +1551,50 @@ client.on('interactionCreate', async interaction => {
     }
   } else if (interaction.commandName === 'reset') {
     const subcommand = interaction.options.getSubcommand();
-    
-    if (subcommand === 'chat') {
-    // 檢查權限
-    if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
-      await interaction.reply({ content: 'You do not have the permission to do this!', flags: 64 });
-      return;
-    }
-    
-    const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
-    
-    // 檢查頻道是否已啟動
-    if (!activeChannels.has(targetChannel.id)) {
-      await interaction.reply({ content: `I haven't been activated in ${targetChannel} !`, flags: 64 });
-      return;
-    }
-    
-    // 保存當前頻道的模型偏好設置
-    const currentModel = channelModelPreferences.get(targetChannel.id);
-    const currentGroqModel = channelGroqModelPreferences.get(targetChannel.id);
-    
-    // 完全重置聊天狀態，創建一個全新的配置對象而不是修改現有對象
-    activeChannels.set(targetChannel.id, { 
-      messageHistory: []
-      // 不保留任何自定義設置，確保徹底重置
-    });
-    
-    // 只保留模型偏好設置，其他所有設置都重置
-    if (currentModel) {
-      channelModelPreferences.set(targetChannel.id, currentModel);
-    }
-    
-    if (currentGroqModel) {
-      channelGroqModelPreferences.set(targetChannel.id, currentGroqModel);
-    }
-    
-    // 保存更改
-    saveActiveChannels();
-    
-    await interaction.reply(`Chat state in ${targetChannel} has been completely reset! I'm now a brand new Setsuna with default settings.`);
-    console.log(`Channel ${targetChannel.id} has been completely reset.`);
 
+    if (subcommand === 'chat') {
+      // 檢查權限
+      if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
+        await interaction.reply({ content: 'You do not have the permission to do this!', flags: 64 });
+        return;
+      }
+
+      const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
+
+      // 檢查頻道是否已啟動
+      if (!activeChannels.has(targetChannel.id)) {
+        await interaction.reply({ content: `I haven't been activated in ${targetChannel} !`, flags: 64 });
+        return;
+      }
+
+      // 保存當前頻道的模型偏好設置
+      const currentModel = channelModelPreferences.get(targetChannel.id);
+      const currentGroqModel = channelGroqModelPreferences.get(targetChannel.id);
+
+      // 完全重置聊天狀態，創建一個全新的配置對象而不是修改現有對象
+      activeChannels.set(targetChannel.id, {
+        messageHistory: []
+        // 不保留任何自定義設置，確保徹底重置
+      });
+
+      // 只保留模型偏好設置，其他所有設置都重置
+      if (currentModel) {
+        channelModelPreferences.set(targetChannel.id, currentModel);
+      }
+
+      if (currentGroqModel) {
+        channelGroqModelPreferences.set(targetChannel.id, currentGroqModel);
+      }
+
+      // 保存更改
+      saveActiveChannels();
+
+      await interaction.reply(`Chat state in ${targetChannel} has been completely reset! I'm now a brand new Setsuna with default settings.`);
+      console.log(`Channel ${targetChannel.id} has been completely reset.`);
+
+    }
   }
-}});
+});
 
 // Personality prompt for Setsuna
 const setsunaPersonality = `
@@ -1660,28 +1770,28 @@ async function callGroqAPI(messages, channelId) {
   let lastError = null;
   const initialKeyIndex = currentGroqKeyIndex;
   let keysTriedCount = 0;
-  
+
   // Get the preferred Groq model for this channel or use default
   const preferredGroqModel = channelGroqModelPreferences.get(channelId) || defaultGroqModel;
-  
+
   // Import Groq SDK directly
   const Groq = (await import('groq-sdk')).default;
-  
+
   while (keysTriedCount < GROQ_API_KEYS.length) {
     try {
       // Initialize Groq client with dangerouslyAllowBrowser option
-      const groq = new Groq({ 
+      const groq = new Groq({
         apiKey: getCurrentGroqKey(),
         dangerouslyAllowBrowser: true // Add this option to bypass safety check
       });
-      
+
       // Call Groq API with the preferred model
       const completion = await groq.chat.completions.create({
         messages: messages,
         model: preferredGroqModel,
         max_tokens: 500 // Reduced from 1000 to make responses shorter
       });
-      
+
       // Check for empty response
       if (!completion || !completion.choices || !completion.choices[0] || !completion.choices[0].message) {
         // Try next key
@@ -1691,13 +1801,13 @@ async function callGroqAPI(messages, channelId) {
         console.log(`Groq API key ${currentGroqKeyIndex + 1}/${GROQ_API_KEYS.length} returned empty response`);
         continue;
       }
-      
+
       // Log which Groq model was used
       console.log(`Used Groq model: ${preferredGroqModel}`);
-      
+
       // Success! Return the response
       return completion.choices[0].message.content;
-      
+
     } catch (error) {
       // Try next key
       lastError = error;
@@ -1706,7 +1816,7 @@ async function callGroqAPI(messages, channelId) {
       console.log(`Groq API key ${currentGroqKeyIndex + 1}/${GROQ_API_KEYS.length} error: ${error.message}`);
     }
   }
-  
+
   // If we get here, all keys failed
   throw lastError || new Error('All Groq API keys failed');
 }
@@ -1716,10 +1826,10 @@ async function callCerebrasAPI(messages, channelId) {
   let lastError = null;
   const initialKeyIndex = currentCerebrasKeyIndex;
   let keysTriedCount = 0;
-  
+
   // Get the preferred Cerebras model for this channel or use default
   const preferredCerebrasModel = channelCerebrasModelPreferences.get(channelId) || defaultCerebrasModel;
-  
+
   // Import Cerebras SDK
   const Cerebras = require('@cerebras/cerebras_cloud_sdk');
 
@@ -1729,7 +1839,7 @@ async function callCerebrasAPI(messages, channelId) {
       const cerebras = new Cerebras({
         apiKey: getCurrentCerebrasKey()
       });
-      
+
       // Call Cerebras API with the preferred model
       const completion = await cerebras.chat.completions.create({
         messages: [
@@ -1742,7 +1852,7 @@ async function callCerebrasAPI(messages, channelId) {
         model: preferredCerebrasModel,
         max_tokens: 500 // Reduced from 1000 to make responses shorter
       });
-      
+
       // Check for empty response
       if (!completion || !completion.choices || !completion.choices[0] || !completion.choices[0].message) {
         // Try next key
@@ -1752,13 +1862,13 @@ async function callCerebrasAPI(messages, channelId) {
         console.log(`Cerebras API key ${currentCerebrasKeyIndex + 1}/${CEREBRAS_API_KEYS.length} returned empty response`);
         continue;
       }
-      
+
       // Log which Cerebras model was used
       console.log(`Used Cerebras model: ${preferredCerebrasModel}`);
-      
+
       // Success! Return the response
       return completion.choices[0].message.content;
-      
+
     } catch (error) {
       // Try next key
       lastError = error;
@@ -1767,7 +1877,7 @@ async function callCerebrasAPI(messages, channelId) {
       console.log(`Cerebras API key ${currentCerebrasKeyIndex + 1}/${CEREBRAS_API_KEYS.length} error: ${error.message}`);
     }
   }
-  
+
   // If we get here, all keys failed
   throw lastError || new Error('All Cerebras API keys failed');
 }
@@ -1777,7 +1887,7 @@ async function callDeepseekAPI(messages) {
   let lastError = null;
   const initialKeyIndex = currentDeepseekKeyIndex;
   let keysTriedCount = 0;
-  
+
   while (keysTriedCount < DEEPSEEK_API_KEYS.length) {
     try {
       // Call DeepSeek API via OpenRouter
@@ -1793,9 +1903,9 @@ async function callDeepseekAPI(messages) {
           max_tokens: 1000
         })
       });
-      
+
       const data = await deepseekResponse.json();
-      
+
       // Check if response contains error
       if (data.error) {
         // Try next key
@@ -1805,7 +1915,7 @@ async function callDeepseekAPI(messages) {
         console.log(`DeepSeek API key ${currentDeepseekKeyIndex + 1}/${DEEPSEEK_API_KEYS.length} error: ${data.error.message || 'Unknown error'}`);
         continue;
       }
-      
+
       // Extract response content
       let responseContent = null;
       if (data.choices && data.choices[0] && data.choices[0].message) {
@@ -1815,7 +1925,7 @@ async function callDeepseekAPI(messages) {
         // Alternative response format
         responseContent = data.response;
       }
-      
+
       // Check for empty response
       if (!responseContent) {
         // Try next key
@@ -1825,10 +1935,10 @@ async function callDeepseekAPI(messages) {
         console.log(`DeepSeek API key ${currentDeepseekKeyIndex + 1}/${DEEPSEEK_API_KEYS.length} returned empty response`);
         continue;
       }
-      
+
       // Success! Return the response
       return responseContent;
-      
+
     } catch (error) {
       // Try next key
       lastError = error;
@@ -1837,7 +1947,7 @@ async function callDeepseekAPI(messages) {
       console.log(`DeepSeek API key ${currentDeepseekKeyIndex + 1}/${DEEPSEEK_API_KEYS.length} error: ${error.message}`);
     }
   }
-  
+
   // If we get here, all keys failed
   throw lastError || new Error('All DeepSeek API keys failed');
 }
@@ -1847,10 +1957,10 @@ async function callGeminiAPI(messages) {
   let lastError = null;
   const initialKeyIndex = currentGeminiKeyIndex;
   let keysTriedCount = 0;
-  
+
   // Convert messages to Gemini format
   const geminiContents = [];
-  
+
   // Add system message as a user message with [system] prefix
   const systemMessage = messages.find(msg => msg.role === 'system');
   if (systemMessage && systemMessage.content?.trim()) {
@@ -1859,7 +1969,7 @@ async function callGeminiAPI(messages) {
       parts: [{ text: `[system] ${systemMessage.content}` }]
     });
   }
-  
+
   // Add the rest of the messages
   for (const msg of messages) {
     if (msg.role !== 'system' && msg.content?.trim()) {
@@ -1869,21 +1979,21 @@ async function callGeminiAPI(messages) {
       });
     }
   }
-  
+
   // Check if we have any valid messages
   if (geminiContents.length === 0) {
     throw new Error('No valid messages with content to send to Gemini API');
   }
-  
+
   while (keysTriedCount < GEMINI_API_KEYS.length) {
     try {
       // Import Gemini API dynamically
       const { GoogleGenerativeAI } = await import('@google/generative-ai');
-      
+
       // Initialize Gemini API
       const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
       const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      
+
       // Create chat session
       const chat = model.startChat({
         history: geminiContents.slice(0, -1), // All messages except the last one
@@ -1891,12 +2001,12 @@ async function callGeminiAPI(messages) {
           maxOutputTokens: 1000,
         },
       });
-      
+
       // Send the last message to get a response
       const lastMessage = geminiContents[geminiContents.length - 1];
       const result = await chat.sendMessage(lastMessage.parts[0].text);
       const response = result.response;
-      
+
       // Check for empty response
       if (!response || !response.text()) {
         // Try next key
@@ -1906,10 +2016,10 @@ async function callGeminiAPI(messages) {
         console.log(`Gemini API key ${currentGeminiKeyIndex + 1}/${GEMINI_API_KEYS.length} returned empty response`);
         continue;
       }
-      
+
       // Success! Return the response
       return response.text();
-      
+
     } catch (error) {
       // Try next key
       lastError = error;
@@ -1918,7 +2028,7 @@ async function callGeminiAPI(messages) {
       console.log(`Gemini API key ${currentGeminiKeyIndex + 1}/${GEMINI_API_KEYS.length} error: ${error.message}`);
     }
   }
-  
+
   // If we get here, all keys failed
   throw lastError || new Error('All Gemini API keys failed');
 }
@@ -1927,40 +2037,40 @@ async function callGeminiAPI(messages) {
 async function detectImageGenerationWithAI(content, messageHistory = []) {
   try {
     // 檢查是否是黑白轉換請求，如果是，則不視為圖片生成請求
-    const isBlackAndWhiteRequest = content.match(/(黑白|灰階|灰度)/i) || 
-      content.match(/改成黑白/i) || 
-      content.match(/變成黑白/i) || 
-      content.match(/換成黑白/i) || 
+    const isBlackAndWhiteRequest = content.match(/(黑白|灰階|灰度)/i) ||
+      content.match(/改成黑白/i) ||
+      content.match(/變成黑白/i) ||
+      content.match(/換成黑白/i) ||
       content.match(/轉成黑白/i);
-    
+
     // 檢查最近的消息歷史，看是否有圖片附件
     let hasRecentImageAttachment = false;
     if (messageHistory.length > 0) {
       const lastMessage = messageHistory[messageHistory.length - 1];
       hasRecentImageAttachment = lastMessage && lastMessage.attachments && lastMessage.attachments.size > 0;
     }
-    
+
     // 如果是黑白轉換請求，且最近有圖片附件，則不視為圖片生成請求
     if (isBlackAndWhiteRequest && hasRecentImageAttachment) {
       console.log('detectImageGenerationWithAI: 檢測到黑白轉換請求，且有圖片附件，不視為圖片生成請求');
       return false;
     }
-    
+
     // 檢查是否是修改請求（如「改成血月」），如果是，則不視為圖片生成請求
     const isModificationRequest = content.match(/改成|變成|換成|轉成|修改成|調整成/i);
     if (isModificationRequest && !content.match(/畫|生成|繪製|做|創造|創建/i)) {
       console.log('detectImageGenerationWithAI: 檢測到修改請求，但不包含生成關鍵詞，不視為圖片生成請求');
       return false;
     }
-    
+
     // 使用AI模型判斷用戶是否想要生成圖片
     // 動態導入 Google GenAI
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    
+
     // 初始化Gemini API
     const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    
+
     // 構建提示詞
     const prompt = `請判斷以下用戶消息是否是在請求生成圖片或畫圖。只回答「是」或「否」。
 
@@ -1973,16 +2083,16 @@ async function detectImageGenerationWithAI(content, messageHistory = []) {
 4. 用戶是否在請求修改或調整一個不存在的圖片（而非已有的圖片）
 
 請只回答「是」或「否」，不要解釋原因。`;
-    
+
     // 發送請求
     const result = await model.generateContent(prompt);
     const response = result.response;
     const text = response.text().trim().toLowerCase();
-    
+
     // 解析回應
     const isImageRequest = text.includes('是');
     console.log(`AI判定用戶是否想要生成圖片: ${isImageRequest ? '是' : '否'}, 原始回應: ${text}`);
-    
+
     return isImageRequest;
   } catch (error) {
     console.error('使用AI判定生成圖片請求時出錯:', error);
@@ -1999,7 +2109,7 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
     let hasRecentImageAttachment = false;
     let isLastMessageImageGeneration = false;
     let isReplyToAIGeneratedImage = false;
-    
+
     // 優先檢查當前消息是否是回覆 AI 生成的圖片
     const currentMessage = messageHistory[messageHistory.length - 1];
     if (currentMessage && currentMessage.reference && currentMessage.reference.messageId) {
@@ -2011,15 +2121,15 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
           hasRecentImageAttachment = true;
           console.log('檢查被回覆的消息是否包含圖片附件:', hasRecentImageAttachment);
         }
-        
+
         // 檢查被回覆的消息是否是 AI 生成的圖片
         // 條件1：消息來自機器人且包含圖片附件
-        const isFromBotWithAttachment = repliedMsg && 
-                                      repliedMsg.author && 
-                                      repliedMsg.author.bot && 
-                                      repliedMsg.attachments && 
-                                      repliedMsg.attachments.size > 0;
-        
+        const isFromBotWithAttachment = repliedMsg &&
+          repliedMsg.author &&
+          repliedMsg.author.bot &&
+          repliedMsg.attachments &&
+          repliedMsg.attachments.size > 0;
+
         // 條件2：消息內容包含圖片生成或修改相關文字
         const hasImageGenerationText = repliedMsg && repliedMsg.content && (
           repliedMsg.content.includes('[IMAGE_GENERATED]') ||
@@ -2032,7 +2142,7 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
           repliedMsg.content.includes('這是根據你的要求修改後的圖片：') ||
           repliedMsg.content.includes('修改後的圖片')
         );
-        
+
         // 如果是機器人發送的圖片附件，或者消息內容包含圖片生成相關文字，則視為 AI 生成的圖片
         isReplyToAIGeneratedImage = isFromBotWithAttachment || hasImageGenerationText;
         console.log('檢查是否回覆 AI 生成的圖片:', isReplyToAIGeneratedImage);
@@ -2040,64 +2150,64 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
         console.error('獲取被回覆消息時出錯:', error);
       }
     }
-    
+
     // 如果沒有檢測到被回覆的消息有圖片，再檢查上一條消息
     if (!hasRecentImageAttachment && !isReplyToAIGeneratedImage && messageHistory.length > 1) {
       // 獲取上一條消息（不是當前消息，而是倒數第二條）
       const lastMessage = messageHistory[messageHistory.length - 2];
-      
+
       // 檢查上一條消息是否包含圖片附件
-      hasRecentImageAttachment = lastMessage && 
-                               lastMessage.attachments && 
-                               lastMessage.attachments.size > 0;
-      
+      hasRecentImageAttachment = lastMessage &&
+        lastMessage.attachments &&
+        lastMessage.attachments.size > 0;
+
       // 檢查上一條消息是否是機器人發送的圖片生成消息
-      isLastMessageImageGeneration = lastMessage && 
-                                   lastMessage.author && 
-                                   lastMessage.author.bot && (
-        // 優先檢查特殊標記
-        (lastMessage.content && lastMessage.content.includes('[IMAGE_GENERATED]')) ||
-        // 檢查消息內容是否包含圖片生成相關文字
-        (lastMessage.content && (
-          lastMessage.content.includes('這是根據你的描述生成的圖片') ||
-          lastMessage.content.includes('生成的圖片') ||
-          lastMessage.content.includes('根據你的描述') ||
-          lastMessage.content.includes('這是轉換成彩色的圖片') ||
-          lastMessage.content.includes('這是根據你的要求生成的圖片') ||
-          lastMessage.content.includes('這是根據你的要求修改後的圖片') ||
-          lastMessage.content.includes('這是根據你的要求修改後的圖片：')
-        )) ||
-        // 檢查機器人的消息是否包含圖片附件，且不是回覆用戶的圖片修改請求
-        (lastMessage.attachments && lastMessage.attachments.size > 0 && 
-         lastMessage.content && !lastMessage.content.includes('這是修改後的圖片') &&
-         !lastMessage.content.includes('這是修改後的圖片：') &&
-         !lastMessage.content.includes('我將轉換成黑白版本'))
-      );
-      
+      isLastMessageImageGeneration = lastMessage &&
+        lastMessage.author &&
+        lastMessage.author.bot && (
+          // 優先檢查特殊標記
+          (lastMessage.content && lastMessage.content.includes('[IMAGE_GENERATED]')) ||
+          // 檢查消息內容是否包含圖片生成相關文字
+          (lastMessage.content && (
+            lastMessage.content.includes('這是根據你的描述生成的圖片') ||
+            lastMessage.content.includes('生成的圖片') ||
+            lastMessage.content.includes('根據你的描述') ||
+            lastMessage.content.includes('這是轉換成彩色的圖片') ||
+            lastMessage.content.includes('這是根據你的要求生成的圖片') ||
+            lastMessage.content.includes('這是根據你的要求修改後的圖片') ||
+            lastMessage.content.includes('這是根據你的要求修改後的圖片：')
+          )) ||
+          // 檢查機器人的消息是否包含圖片附件，且不是回覆用戶的圖片修改請求
+          (lastMessage.attachments && lastMessage.attachments.size > 0 &&
+            lastMessage.content && !lastMessage.content.includes('這是修改後的圖片') &&
+            !lastMessage.content.includes('這是修改後的圖片：') &&
+            !lastMessage.content.includes('我將轉換成黑白版本'))
+        );
+
       console.log('檢查上一條消息是否包含圖片附件:', hasRecentImageAttachment);
       console.log('檢查上一條消息是否是圖片生成消息:', isLastMessageImageGeneration);
     }
-    
+
     // 如果沒有最近的圖片附件、圖片生成消息或回覆 AI 生成的圖片，則不視為圖片修改請求
     if (!hasRecentImageAttachment && !isLastMessageImageGeneration && !isReplyToAIGeneratedImage) {
       console.log('detectImageModificationWithAI: 沒有最近的圖片附件、圖片生成消息或回覆 AI 生成的圖片，不視為圖片修改請求');
       return false;
     }
-    
+
     // 如果是回覆 AI 生成的圖片，直接視為圖片修改請求
     if (isReplyToAIGeneratedImage) {
       console.log('detectImageModificationWithAI: 檢測到回覆 AI 生成的圖片，直接視為圖片修改請求');
       return true;
     }
-    
+
     // 使用AI模型判斷用戶是否想要修改圖片
     // 動態導入 Google GenAI
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    
+
     // 初始化Gemini API
     const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    
+
     // 構建提示詞
     const prompt = `請判斷以下用戶消息是否是在請求修改或調整一張已存在的圖片。只回答「是」或「否」。
 
@@ -2110,16 +2220,16 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
 4. 用戶是否使用「改成」、「變成」、「換成」、「轉成」等詞彙來描述對現有圖片的修改
 
 請只回答「是」或「否」，不要解釋原因。`;
-    
+
     // 發送請求
     const result = await model.generateContent(prompt);
     const response = result.response;
     const text = response.text().trim().toLowerCase();
-    
+
     // 解析回應
     const isModificationRequest = text.includes('是');
     console.log(`AI判定用戶是否想要修改圖片: ${isModificationRequest ? '是' : '否'}, 原始回應: ${text}`);
-    
+
     return isModificationRequest;
   } catch (error) {
     console.error('使用AI判定修改圖片請求時出錯:', error);
@@ -2134,25 +2244,25 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
 // 關鍵詞檢測用戶是否想要生成圖片的函數
 async function detectImageGenerationRequest(content, messageHistory = []) {
   // 檢查是否是黑白轉換請求，如果是，則不視為圖片生成請求
-  const isBlackAndWhiteRequest = content.match(/(黑白|灰階|灰度)/i) || 
-    content.match(/改成黑白/i) || 
-    content.match(/變成黑白/i) || 
-    content.match(/換成黑白/i) || 
+  const isBlackAndWhiteRequest = content.match(/(黑白|灰階|灰度)/i) ||
+    content.match(/改成黑白/i) ||
+    content.match(/變成黑白/i) ||
+    content.match(/換成黑白/i) ||
     content.match(/轉成黑白/i);
-  
+
   // 檢查最近的消息歷史，看是否有圖片附件
   let hasRecentImageAttachment = false;
   if (messageHistory.length > 0) {
     const lastMessage = messageHistory[messageHistory.length - 1];
     hasRecentImageAttachment = lastMessage && lastMessage.attachments && lastMessage.attachments.size > 0;
   }
-  
+
   // 如果是黑白轉換請求，且最近有圖片附件，則不視為圖片生成請求
   if (isBlackAndWhiteRequest && hasRecentImageAttachment) {
     console.log('detectImageGenerationRequest: 檢測到黑白轉換請求，且有圖片附件，不視為圖片生成請求');
     return false;
   }
-  
+
   // 定義可能表示用戶想要生成圖片的關鍵詞
   const imageGenerationKeywords = [
     '畫圖', '生成圖片', '畫一張', '幫我畫', '幫我生成圖片', '幫我生成一張圖片',
@@ -2165,23 +2275,23 @@ async function detectImageGenerationRequest(content, messageHistory = []) {
     '隨便畫一張', '隨便畫', '隨便生成', '隨便給我一張', '隨便做一張', '生張圖', '生個圖',
     '生圖', '幫我生圖', '幫我隨便生一張圖', '幫我隨便畫一張', '幫我隨便生成一張'
   ];
-  
+
   // 定義可能會導致誤判的詞彙（這些詞彙雖然與圖片相關，但在普通對話中也常見）
   const ambiguousKeywords = [
     '生成', '繪製', '繪圖', '做圖', '做個圖', '畫張', '畫個圖', '圖片', '圖像',
     '帥哥圖', '美女圖', '動漫圖', '風景圖', '照片', '圖'
   ];
-  
+
   // 檢查內容是否包含明確的關鍵詞
-  const containsKeyword = imageGenerationKeywords.some(keyword => 
+  const containsKeyword = imageGenerationKeywords.some(keyword =>
     content.toLowerCase().includes(keyword.toLowerCase())
   );
-  
+
   // 檢查內容是否包含可能導致誤判的詞彙
-  const containsAmbiguousKeyword = ambiguousKeywords.some(keyword => 
+  const containsAmbiguousKeyword = ambiguousKeywords.some(keyword =>
     content.toLowerCase().includes(keyword.toLowerCase())
   );
-  
+
   // 檢查是否包含圖片相關詞彙和描述性語言
   const hasImageDescription = (
     // 檢查是否包含顏色詞彙
@@ -2193,29 +2303,29 @@ async function detectImageGenerationRequest(content, messageHistory = []) {
     // 檢查是否包含特定圖片類型
     /動漫|漫畫|插圖|素描|水彩|油畫|照片|anime|manga|illustration|sketch|watercolor|painting|photo/i.test(content)
   );
-  
+
   // 檢查是否包含尺寸、大小相關詞彙
   const hasSizeDescription = (
     /大|小|巨大|微小|高|矮|寬|窄|長|短|超大|迷你|giant|huge|large|small|tiny|big|tall|short|wide|narrow/i.test(content)
   );
-  
+
   // 檢查是否包含特定物體或場景
   const hasSpecificObjects = (
     /籃球|足球|棒球|網球|排球|球場|球框|籃框|球門|運動場|籃板|球員|比賽|basketball|football|soccer|baseball|tennis|volleyball|court|field|player|game|match/i.test(content)
   );
-  
+
   // 檢查是否包含位置或方向詞彙
   const hasPositionDescription = (
     /上面|下面|左邊|右邊|中間|旁邊|前面|後面|裡面|外面|遠處|近處|top|bottom|left|right|middle|center|side|front|back|inside|outside|far|near/i.test(content)
   );
-  
+
   // 檢查是否是對之前回應的跟進請求
   const isFollowUpRequest = (
     /我要|我想要|我需要|給我|幫我|可以給我|可以幫我|能給我|能幫我|I want|I need|give me|can you give|can you make/i.test(content) ||
     // 檢查是否包含修改或調整的請求
     /改成|變成|調整|修改|不要|不用|去掉|加上|增加|減少|change|modify|adjust|remove|add|increase|decrease|without|with/i.test(content)
   );
-  
+
   // 檢查是否包含具體的圖像描述
   const hasDetailedDescription = (
     // 檢查是否包含具體的形容詞
@@ -2225,30 +2335,30 @@ async function detectImageGenerationRequest(content, messageHistory = []) {
     // 檢查是否包含具體的物體描述
     /圓形|方形|正方形|長方形|三角形|橢圓形|round|square|rectangular|triangular|oval|circle|rectangle|triangle/i.test(content)
   );
-  
+
   // 檢查是否是對圖像生成的直接請求
   const isDirectImageRequest = (
     /幫我|請|麻煩|拜託|可以|能不能|能否|是否可以|please|could you|can you|would you|help me/i.test(content)
   );
-  
+
   // 檢查對話上下文，判斷是否在討論圖片生成相關話題
   let isInImageGenerationContext = false;
   let previousImageGenerationRequest = false;
-  
+
   // 檢查最近的對話歷史（最多檢查最近的5條消息）
   const recentMessages = messageHistory.slice(-5);
-  
+
   // 檢查是否有之前的圖片生成請求或回應
   for (const msg of recentMessages) {
     // 檢查用戶之前的消息是否包含圖片生成關鍵詞
-    if (msg.role === 'user' && imageGenerationKeywords.some(keyword => 
+    if (msg.role === 'user' && imageGenerationKeywords.some(keyword =>
       msg.content.toLowerCase().includes(keyword.toLowerCase())
     )) {
       previousImageGenerationRequest = true;
       isInImageGenerationContext = true;
       break;
     }
-    
+
     // 檢查機器人之前的回應是否提到了圖片生成
     if (msg.role === 'assistant' && (
       msg.content.includes('生成圖片') ||
@@ -2262,38 +2372,38 @@ async function detectImageGenerationRequest(content, messageHistory = []) {
       break;
     }
   }
-  
+
   // 綜合判斷：
   // 1. 如果包含明確的關鍵詞，則判定為生成圖片請求
   // 2. 如果在圖片生成的上下文中，且包含跟進請求，則判定為生成圖片請求
   // 3. 如果同時包含圖片描述和跟進請求，則判定為生成圖片請求
   // 4. 如果同時包含詳細描述和直接請求，則判定為生成圖片請求
   // 5. 如果包含特定物體描述和尺寸詞彙，且在圖片生成上下文中，則判定為生成圖片請求
-  
+
   // 首先檢查是否包含明確的關鍵詞，這是最優先的判斷條件
   if (containsKeyword) {
     console.log('明確的圖片生成關鍵詞被檢測到:', content);
     return true;
   }
-  
+
   // 檢查是否包含「隨便」和「圖」的組合，這也是明確的生成圖片請求
   if (/隨便.*圖|圖.*隨便/i.test(content)) {
     console.log('檢測到「隨便」和「圖」的組合:', content);
     return true;
   }
-  
+
   // 對於可能導致誤判的詞彙，需要更嚴格的條件
   if (containsAmbiguousKeyword && !isInImageGenerationContext) {
     // 如果只包含可能導致誤判的詞彙，但不在圖片生成上下文中，需要更多的條件才能判定為圖片生成請求
-    return (hasImageDescription && isFollowUpRequest && hasDetailedDescription) || 
-           (hasImageDescription && isDirectImageRequest && hasDetailedDescription);
+    return (hasImageDescription && isFollowUpRequest && hasDetailedDescription) ||
+      (hasImageDescription && isDirectImageRequest && hasDetailedDescription);
   }
-  
+
   // 其他綜合判斷條件
-  return (isInImageGenerationContext && isFollowUpRequest) || 
-         (hasImageDescription && isFollowUpRequest && (hasDetailedDescription || hasSizeDescription || hasSpecificObjects)) || 
-         (hasDetailedDescription && isDirectImageRequest && (hasImageDescription || hasSizeDescription || hasSpecificObjects)) ||
-         (previousImageGenerationRequest && (hasSizeDescription || hasPositionDescription || hasSpecificObjects));
+  return (isInImageGenerationContext && isFollowUpRequest) ||
+    (hasImageDescription && isFollowUpRequest && (hasDetailedDescription || hasSizeDescription || hasSpecificObjects)) ||
+    (hasDetailedDescription && isDirectImageRequest && (hasImageDescription || hasSizeDescription || hasSpecificObjects)) ||
+    (previousImageGenerationRequest && (hasSizeDescription || hasPositionDescription || hasSpecificObjects));
 }
 
 // 使用 genimg.mjs 生成圖片的函數
@@ -2303,25 +2413,25 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const execPromise = promisify(exec);
-    
+
     // 獲取 Gemini API 密鑰
     // 首先嘗試從環境變數獲取
     let apiKey = process.env.GEMINI_API_KEY;
-    
+
     // 如果環境變數中沒有，則嘗試從 GEMINI_API_KEYS 數組中獲取
     if (!apiKey && GEMINI_API_KEYS && GEMINI_API_KEYS.length > 0) {
       apiKey = GEMINI_API_KEYS[currentGeminiKeyIndex];
     }
-    
+
     // 構建命令，將 prompt 和 API 密鑰作為參數傳遞給 genimg.mjs
     // 使用雙引號包裹 prompt，以處理包含空格和特殊字符的情況
     let command = `node "${__dirname}/genimg.mjs"`;
-    
+
     // 如果有 API 密鑰，則添加到命令中
     if (apiKey) {
       command += ` --api-key=${apiKey}`;
     }
-    
+
     // 如果提供了圖片 URL，添加到命令中
     if (imageUrl) {
       // 對 URL 進行編碼，確保特殊字符被正確處理
@@ -2329,28 +2439,28 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       command += ` --image-url="${encodedUrl.replace(/"/g, '\"')}"`;
       console.log(`添加圖片 URL 參數: ${encodedUrl}`);
     }
-    
+
     // 添加 prompt 參數
     command += ` "${prompt.replace(/"/g, '\"')}"`;
-    
+
     console.log(`Executing command: ${command.replace(/--api-key=[^\s]+/, '--api-key=****').replace(/--image-url=[^\s]+/, '--image-url=****')}`);
-    
+
     // 執行命令並獲取輸出，設置較大的 maxBuffer 值以處理大型輸出
     // 默認值為 1MB (1024 * 1024)，這裡設置為 50MB
     const maxBufferSize = 50 * 1024 * 1024; // 50MB
     const { stdout, stderr } = await execPromise(command, { maxBuffer: maxBufferSize });
-    
+
     if (stderr) {
       console.error(`genimg.mjs stderr: ${stderr}`);
     }
-    
+
     // 處理分塊輸出的 JSON 數據
     let jsonData = '';
     let result;
-    
+
     // 記錄 stdout 的大小，用於調試
     console.log(`Received stdout with length: ${stdout.length} characters`);
-    
+
     // 首先嘗試直接解析整個輸出
     try {
       // 檢查 stdout 是否以 '{' 開頭並以 '}' 結尾，這是有效的 JSON 格式
@@ -2371,11 +2481,11 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       console.log(`Could not parse entire stdout as JSON: ${directParseError.message}`);
       console.log('Trying to extract JSON data from stdout');
     }
-    
+
     // 使用正則表達式查找標記之間的內容，這樣可以處理多行標記
     const markerRegex = /###JSON_START###([\s\S]*?)###JSON_END###/;
     const markerMatch = stdout.match(markerRegex);
-    
+
     if (markerMatch && markerMatch[1]) {
       // 提取標記之間的內容
       jsonData = markerMatch[1].trim();
@@ -2390,16 +2500,16 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       } else {
         // 如果沒有找到任何標記，嘗試查找 JSON 對象
         console.log('No JSON markers found, trying to extract JSON object');
-        
+
         // 嘗試查找最大的 JSON 對象
         // 使用更複雜的正則表達式來查找可能的 JSON 對象
         const jsonRegex = /{[\s\S]*?}/g;
         const matches = stdout.match(jsonRegex);
-        
+
         if (matches && matches.length > 0) {
           // 按大小排序匹配的 JSON 對象
           const sortedMatches = [...matches].sort((a, b) => b.length - a.length);
-          
+
           // 嘗試每個匹配的 JSON 對象，從最大的開始
           for (const match of sortedMatches) {
             try {
@@ -2417,7 +2527,7 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
             }
           }
         }
-        
+
         // 如果仍然沒有找到有效的 JSON 數據，使用整個 stdout
         if (!jsonData) {
           console.log('No valid JSON object found, using entire stdout');
@@ -2425,35 +2535,35 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
         }
       }
     }
-    
+
     // 嘗試解析 JSON 數據
     try {
       // 解析 JSON 輸出
       console.log(`JSON data length: ${jsonData.length} characters`);
       console.log(`JSON data starts with: ${jsonData.substring(0, 50)}...`);
       console.log(`JSON data ends with: ...${jsonData.substring(jsonData.length - 50)}`);
-      
+
       // 檢查 JSON 數據是否完整
       // 嘗試找到最後一個右大括號，確保 JSON 數據完整
       const firstBraceIndex = jsonData.indexOf('{');
       const lastBraceIndex = jsonData.lastIndexOf('}');
-      
+
       if (firstBraceIndex === -1 || lastBraceIndex === -1) {
         throw new Error('JSON data does not contain valid object braces');
       }
-      
+
       // 如果 JSON 數據不是以 '{' 開頭，可能有前綴內容
       if (firstBraceIndex > 0) {
         console.log(`JSON data has prefix content, trimming ${firstBraceIndex} characters`);
         jsonData = jsonData.substring(firstBraceIndex);
       }
-      
+
       // 如果最後一個右大括號不是最後一個字符，可能 JSON 數據不完整或有後綴內容
       if (lastBraceIndex < jsonData.length - 1) {
         console.log('JSON data has suffix content, truncating to last closing brace');
         jsonData = jsonData.substring(0, lastBraceIndex + 1);
       }
-      
+
       // 嘗試解析處理後的 JSON 數據
       console.log(`Attempting to parse processed JSON data (length: ${jsonData.length})`);
       result = JSON.parse(jsonData);
@@ -2461,28 +2571,28 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
     } catch (parseError) {
       console.error(`Error parsing JSON: ${parseError.message}`);
       console.log('Attempting alternative parsing methods...');
-      
+
       // 嘗試查找完整的 JSON 對象
       const jsonRegex = /{[\s\S]*?}/g;
       const matches = jsonData.match(jsonRegex);
-      
+
       if (matches && matches.length > 0) {
         console.log(`Found ${matches.length} potential JSON objects in the data`);
-        
+
         // 按大小排序匹配的 JSON 對象
         const sortedMatches = [...matches].sort((a, b) => b.length - a.length);
-        
+
         // 嘗試解析找到的最大 JSON 對象
         const maxMatch = sortedMatches[0];
         console.log(`Largest JSON object length: ${maxMatch.length}`);
-        
+
         try {
           console.log(`Attempting to parse largest JSON object`);
           result = JSON.parse(maxMatch);
           console.log('Successfully parsed largest JSON object');
         } catch (innerError) {
           console.error(`Error parsing largest JSON object: ${innerError.message}`);
-          
+
           // 如果最大對象解析失敗，嘗試所有其他對象
           let parsed = false;
           for (let i = 1; i < sortedMatches.length; i++) {
@@ -2497,7 +2607,7 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
               console.log(`Failed to parse alternative JSON object #${i}: ${e.message}`);
             }
           }
-          
+
           // 如果所有嘗試都失敗，拋出原始錯誤
           if (!parsed) {
             console.error('All parsing attempts failed');
@@ -2507,15 +2617,15 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       } else {
         // 如果沒有找到任何 JSON 對象，嘗試最後的修復方法
         console.error('No JSON objects found in the output');
-        
+
         // 嘗試修復常見的 JSON 格式問題
         console.log('Attempting to fix common JSON format issues...');
-        
+
         // 確保 JSON 數據以 '{' 開頭並以 '}' 結尾
         let fixedJson = jsonData.trim();
         if (!fixedJson.startsWith('{')) fixedJson = '{' + fixedJson;
         if (!fixedJson.endsWith('}')) fixedJson = fixedJson + '}';
-        
+
         try {
           console.log('Attempting to parse fixed JSON data');
           result = JSON.parse(fixedJson);
@@ -2526,16 +2636,16 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
         }
       }
     }
-    
+
     // 檢查結果是否有效
     if (!result) {
       throw new Error('Failed to parse JSON data from genimg.mjs output');
     }
-    
+
     // 檢查是否成功
     if (!result.success || !result.imageData) {
       console.log('圖片生成失敗，準備重試...');
-      
+
       // 嘗試使用不同的提示詞格式和 API 密鑰
       const alternativePrompts = [
         // 原始提示詞
@@ -2547,34 +2657,34 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
         // 英文提示詞可能效果更好
         `Generate a detailed, high-quality color image of: ${prompt}`
       ];
-      
+
       // 最多重試 4 次，每次使用不同的提示詞格式
       for (let i = 0; i < alternativePrompts.length; i++) {
         const currentPrompt = alternativePrompts[i];
         console.log(`重試第 ${i + 1} 次，使用提示詞：${currentPrompt.substring(0, 30)}${currentPrompt.length > 30 ? '...' : ''}`);
-        
+
         try {
           // 每次重試使用不同的 API 密鑰
           getNextGeminiKey();
           const currentKey = getCurrentGeminiKey();
           console.log(`使用 API 密鑰：${currentKey.substring(0, 4)}...${currentKey.substring(currentKey.length - 4)}`);
-          
+
           // 執行 genimg.mjs 腳本，增加超時時間和緩衝區大小
           const { stdout } = await exec(
             `node "${path.join(__dirname, 'genimg.mjs')}" --api-key=${currentKey} "${currentPrompt.replace(/"/g, '\"')}"`,
-            { 
+            {
               maxBuffer: 20 * 1024 * 1024, // 增加緩衝區大小到 20MB
               timeout: 60000 // 設置 60 秒超時
             }
           );
-          
+
           // 嘗試解析輸出
           try {
             result = JSON.parse(stdout);
           } catch (parseError) {
             console.error(`解析 JSON 失敗：${parseError.message}`);
             console.log('嘗試從輸出中提取 JSON 對象...');
-            
+
             // 嘗試從輸出中提取 JSON 對象
             const jsonMatch = stdout.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
@@ -2589,7 +2699,7 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
               throw parseError; // 拋出原始錯誤
             }
           }
-          
+
           // 如果成功生成圖片，跳出重試循環
           if (result.success && result.imageData) {
             console.log('重試成功！');
@@ -2604,25 +2714,25 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
             throw new Error(result?.error || retryError.message || 'Failed to generate image after all retries');
           }
         }
-        
+
         // 等待 3 秒後再重試，給 API 更多冷卻時間
         console.log(`等待 3 秒後進行下一次重試...`);
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
-      
+
       // 如果所有重試都失敗
       if (!result.success || !result.imageData) {
         throw new Error(result?.error || 'Failed to generate image after all retries');
       }
     }
-    
+
     // 返回圖片數據和響應文本
-    return { 
+    return {
       imageData: result.imageData,
       mimeType: result.mimeType || 'image/png',
       responseText: '這是根據你的描述生成的圖片：' + (result.text ? `\n${result.text}` : '')
     };
-    
+
   } catch (error) {
     console.error('Error in generateImageWithGemini:', error);
     throw error;
@@ -2634,26 +2744,26 @@ async function callChatGPTAPI(messages) {
   let lastError = null;
   const initialKeyIndex = currentChatGPTKeyIndex;
   let keysTriedCount = 0;
-  
+
   while (keysTriedCount < CHATGPT_API_KEYS.length) {
     try {
       // Import OpenAI API directly - using new SDK version
       const OpenAI = (await import('openai')).default;
-      
+
       // Initialize OpenAI API with new SDK format
-      const openai = new OpenAI({ 
+      const openai = new OpenAI({
         apiKey: getCurrentChatGPTKey(),
         baseURL: 'https://free.v36.cm/v1',
         dangerouslyAllowBrowser: true // Add this option to bypass safety check
       });
-      
+
       // Call ChatGPT API with new SDK format
       const completion = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo-0125',
         messages: messages,
         max_tokens: 500 // Reduced from 1000 to make responses shorter
       });
-      
+
       // Check for empty response
       if (!completion || !completion.choices || !completion.choices[0] || !completion.choices[0].message) {
         // Try next key
@@ -2663,10 +2773,10 @@ async function callChatGPTAPI(messages) {
         console.log(`ChatGPT API key ${currentChatGPTKeyIndex + 1}/${CHATGPT_API_KEYS.length} returned empty response`);
         continue;
       }
-      
+
       // Success! Return the response
       return completion.choices[0].message.content;
-      
+
     } catch (error) {
       // Try next key
       lastError = error;
@@ -2675,7 +2785,7 @@ async function callChatGPTAPI(messages) {
       console.log(`ChatGPT API key ${currentChatGPTKeyIndex + 1}/${CHATGPT_API_KEYS.length} error: ${error.message}`);
     }
   }
-  
+
   // If we get here, all keys failed
   throw lastError || new Error('All ChatGPT API keys failed');
 }
@@ -2685,22 +2795,22 @@ async function callCharacterAIAPI(messages, characterId) {
   let lastError = null;
   const initialKeyIndex = currentCharacterAIKeyIndex;
   let keysTriedCount = 0;
-  
+
   // Import the Character.AI client
   const CharacterAI = require('./characterai');
-  
+
   // Use the character ID from environment variable if none provided
   const targetCharacterId = characterId || CHARACTERAI_CHARACTER_ID;
   console.log(`Using Character.AI character ID: ${targetCharacterId}`);
-  
+
   if (!targetCharacterId) {
     throw new Error('No Character.AI character ID provided. Set CHARACTERAI_CHARACTER_ID in your environment variables.');
   }
-  
+
   // Get channel ID from the messages
   let channelId = null;
   let isDM = false;
-  
+
   for (const msg of messages) {
     if (msg.channelId) {
       channelId = msg.channelId;
@@ -2711,13 +2821,13 @@ async function callCharacterAIAPI(messages, characterId) {
       break;
     }
   }
-  
+
   if (!channelId) {
     throw new Error('No channel ID found in messages');
   }
-  
+
   console.log(`Using channel ID: ${channelId} for Character.AI chat${isDM ? ' (DM channel)' : ''}`);
-  
+
   // Check if any message contains a Character.AI URL with a hist parameter
   // This could be used to connect to an existing chat
   let histIdFromUrl = null;
@@ -2731,7 +2841,7 @@ async function callCharacterAIAPI(messages, characterId) {
       }
     }
   }
-  
+
   while (keysTriedCount < CHARACTERAI_TOKENS.length) {
     try {
       // Initialize Character.AI client
@@ -2739,7 +2849,7 @@ async function callCharacterAIAPI(messages, characterId) {
       const currentToken = getCurrentCharacterAIToken();
       console.log(`Using Character.AI token: ${currentToken ? currentToken.substring(0, 5) + '...' : 'undefined'}`);
       characterAI.setToken(currentToken);
-      
+
       // Extract user messages for context
       // Filter to just user and assistant messages (no system messages with personality)
       // and take only the recent ones for context
@@ -2754,72 +2864,72 @@ async function callCharacterAIAPI(messages, characterId) {
             content
           };
         });
-      
+
       // Get the very last user message - this is what we'll actually send
       const lastUserMessage = messages.filter(msg => msg.role === 'user').pop();
       if (!lastUserMessage) {
         throw new Error('No user message found in the conversation');
       }
-      
+
       // Remove Discord username format from the last message too
       const lastMessageContent = lastUserMessage.content.replace(/^\[.*?\]:\s*/, '');
-      
+
       // Prepare the message with context
       let messageWithContext = '';
-      
+
       // Add a reminder to stay in character
       messageWithContext += "[Remember to stay in character and follow your character settings. Do not act as a generic assistant.]\n\n";
-      
+
       // Add context from previous messages if there are more than 1 message
       if (userMessages.length > 1) {
         // Skip the very last message (we'll send that separately)
         const contextMessages = userMessages.slice(0, -1);
-        
+
         // Check if we should add context
         if (contextMessages.length > 0) {
           messageWithContext += "[Previous conversation]\n";
-          
+
           for (const msg of contextMessages) {
             // Add role labels with usernames to help Character.AI understand who is speaking
             if (msg.role === 'user') {
               // Get username from the message if available, or from activeChannels
-              const username = msg.username || 
-                (activeChannels.has(channelId) && activeChannels.get(channelId).username) || 
+              const username = msg.username ||
+                (activeChannels.has(channelId) && activeChannels.get(channelId).username) ||
                 'User';
               messageWithContext += `${username}: ${msg.content}\n`;
             } else if (msg.role === 'assistant') {
               messageWithContext += `Setsuna: ${msg.content}\n`;
             }
           }
-          
+
           messageWithContext += "[End of previous conversation]\n\n";
         }
       }
-      
+
       // Add the actual message the user sent with username
-      const username = lastUserMessage.username || 
-        (activeChannels.has(channelId) && activeChannels.get(channelId).username) || 
+      const username = lastUserMessage.username ||
+        (activeChannels.has(channelId) && activeChannels.get(channelId).username) ||
         'User';
       messageWithContext += `${username}: ${lastMessageContent}`;
-      
+
       // Check if we have an active chat for this channel
       let chatData = null;
       let chatId = null;
-      
+
       // If we found a hist ID in a URL, use that first
       if (histIdFromUrl) {
         try {
           // Get the actual chat ID from the hist ID
           chatId = await characterAI.getChatIdFromHistId(histIdFromUrl);
           console.log(`Using Character.AI chat ID from URL: ${chatId}`);
-          
+
           // Store it in activeChannels for persistence
           if (activeChannels.has(channelId)) {
             activeChannels.get(channelId).caiChatId = chatId;
             await saveActiveChannels();
             console.log(`Saved chat ID from URL to activeChannels`);
           }
-          
+
           // Also store it in CharacterAI client
           characterAI.activeChats.set(channelId, {
             chatId: chatId,
@@ -2842,32 +2952,32 @@ async function callCharacterAIAPI(messages, characterId) {
         const storedChat = characterAI.activeChats.get(channelId);
         chatId = storedChat.chatId;
         console.log(`Using existing Character.AI chat ${chatId} for channel ${channelId} from CharacterAI client`);
-        
+
         // Also store it in activeChannels for persistence
         if (activeChannels.has(channelId)) {
           activeChannels.get(channelId).caiChatId = chatId;
           await saveActiveChannels();
         }
-      } 
+      }
       // Create a new chat if we don't have one
       else {
         console.log(`Creating new Character.AI chat for channel ${channelId}`);
         try {
           // Create a new chat
           const result = await characterAI.createChat(targetCharacterId);
-          
+
           if (!result || !result.chat) {
             throw new Error('Failed to create chat - empty response');
           }
-          
+
           chatData = result.chat;
-          
+
           // Get chat ID - there are multiple possible formats:
           // 1. chat_id property (WebSocket API format)
           // 2. external_id property (HTTP API format)
           // 3. history_external_id property (sometimes used)
           // 4. In URLs, it's in the "hist" parameter
-          
+
           // Try to extract chat ID from various properties
           if (chatData.chat_id) {
             chatId = chatData.chat_id;
@@ -2878,7 +2988,7 @@ async function callCharacterAIAPI(messages, characterId) {
           } else if (chatData.id) {
             chatId = chatData.id;
           }
-          
+
           // If we have a URL with a hist parameter, extract that
           if (chatData.url && chatData.url.includes('hist=')) {
             const match = chatData.url.match(/hist=([^&]+)/);
@@ -2886,26 +2996,26 @@ async function callCharacterAIAPI(messages, characterId) {
               chatId = match[1];
             }
           }
-          
+
           if (!chatId) {
             console.error('Chat data:', JSON.stringify(chatData, null, 2));
             throw new Error('Failed to get chat ID from Character.AI API response');
           }
-          
+
           console.log(`Created new chat with ID: ${chatId}`);
-          
+
           // Store the chat info in CharacterAI client for this session
           characterAI.activeChats.set(channelId, {
             chatId: chatId,
             characterId: targetCharacterId
           });
-          
+
           // Also store it in activeChannels for persistence
           if (activeChannels.has(channelId)) {
             activeChannels.get(channelId).caiChatId = chatId;
             await saveActiveChannels();
           }
-          
+
           console.log(`Created new chat with ID: ${chatId} and saved to activeChannels`);
         } catch (createError) {
           console.error('Error creating chat:', createError.message);
@@ -2917,17 +3027,17 @@ async function callCharacterAIAPI(messages, characterId) {
           continue;
         }
       }
-      
+
       // Send the message to Character.AI
       try {
         console.log('Sending message with context to Character.AI');
-        
+
         const response = await characterAI.sendMessage(
           targetCharacterId,
           chatId,
           messageWithContext
         );
-        
+
         // Check for empty response
         if (!response || !response.text) {
           // Try next token
@@ -2937,25 +3047,25 @@ async function callCharacterAIAPI(messages, characterId) {
           console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} returned empty response`);
           continue;
         }
-        
+
         // Success! Return the response
         return response.text;
       } catch (sendError) {
         console.error('Error sending message:', sendError.message);
-        
+
         // If the error might be due to an invalid chat ID, try creating a new chat
         console.log('Chat might be invalid. Creating a new chat...');
-        
+
         try {
           // Create a new chat
           const result = await characterAI.createChat(targetCharacterId);
-          
+
           if (!result || !result.chat) {
             throw new Error('Failed to create chat - empty response');
           }
-          
+
           chatData = result.chat;
-          
+
           // Get chat ID from various possible properties
           if (chatData.chat_id) {
             chatId = chatData.chat_id;
@@ -2966,7 +3076,7 @@ async function callCharacterAIAPI(messages, characterId) {
           } else if (chatData.id) {
             chatId = chatData.id;
           }
-          
+
           // If we have a URL with a hist parameter, extract that
           if (chatData.url && chatData.url.includes('hist=')) {
             const match = chatData.url.match(/hist=([^&]+)/);
@@ -2974,33 +3084,33 @@ async function callCharacterAIAPI(messages, characterId) {
               chatId = match[1];
             }
           }
-          
+
           if (!chatId) {
             console.error('Chat data:', JSON.stringify(chatData, null, 2));
             throw new Error('Failed to get chat ID from Character.AI API response');
           }
-          
+
           // Store the chat info in CharacterAI client
           characterAI.activeChats.set(channelId, {
             chatId: chatId,
             characterId: targetCharacterId
           });
-          
+
           // Also store it in activeChannels for persistence
           if (activeChannels.has(channelId)) {
             activeChannels.get(channelId).caiChatId = chatId;
             await saveActiveChannels();
           }
-          
+
           console.log(`Created new chat with ID: ${chatId} after error`);
-          
+
           // Try sending the message again with the new chat
           const response = await characterAI.sendMessage(
             targetCharacterId,
             chatId,
             messageWithContext
           );
-          
+
           // Check for empty response
           if (!response || !response.text) {
             // Try next token
@@ -3009,7 +3119,7 @@ async function callCharacterAIAPI(messages, characterId) {
             keysTriedCount++;
             continue;
           }
-          
+
           // Success! Return the response
           return response.text;
         } catch (retryError) {
@@ -3030,7 +3140,7 @@ async function callCharacterAIAPI(messages, characterId) {
       console.log(`Character.AI token ${currentCharacterAIKeyIndex + 1}/${CHARACTERAI_TOKENS.length} error: ${error.message}`);
     }
   }
-  
+
   // If we get here, all tokens failed
   throw lastError || new Error('All Character.AI tokens failed');
 }
@@ -3065,7 +3175,7 @@ client.on('messageCreate', async (message) => {
 
   // Show typing indicator immediately
   await message.channel.sendTyping();
-  
+
   // 獲取頻道的消息歷史用於上下文判斷
   // 從 Discord 獲取最近的消息 (50條，與README一致)
   const recentMessages = await message.channel.messages.fetch({ limit: 50 });
@@ -3077,29 +3187,29 @@ client.on('messageCreate', async (message) => {
       author: msg.author,
       attachments: msg.attachments
     }));
-  
+
   // 記錄消息歷史
   console.log(`獲取到 ${channelHistory.length} 條消息歷史記錄`);
-  
+
   // 檢查是否是圖片修改請求
   // 獲取上一條消息（不是當前消息）
   const previousMessage = channelHistory.length > 1 ? channelHistory[channelHistory.length - 2] : null;
-  
+
   // 檢查是否是回覆消息，並且回覆的是包含圖片的消息
   let repliedMessage = null;
   let isReplyToImageMessage = false;
-  
+
   if (message.reference && message.reference.messageId) {
     try {
       // 獲取被回覆的消息
       repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
-      
+
       // 檢查被回覆的消息是否包含圖片附件或是機器人發送的圖片生成/修改消息
       isReplyToImageMessage = repliedMessage && (
         // 檢查是否包含圖片附件
-        (repliedMessage.attachments.size > 0 && 
-         Array.from(repliedMessage.attachments.values()).some(attachment => 
-           attachment.contentType && attachment.contentType.startsWith('image/'))) ||
+        (repliedMessage.attachments.size > 0 &&
+          Array.from(repliedMessage.attachments.values()).some(attachment =>
+            attachment.contentType && attachment.contentType.startsWith('image/'))) ||
         // 檢查是否是機器人發送的圖片生成/修改消息
         (repliedMessage.author.id === client.user.id && (
           repliedMessage.content.includes('生成的圖片') ||
@@ -3110,42 +3220,42 @@ client.on('messageCreate', async (message) => {
           repliedMessage.content.includes('轉換成新風格的圖片')
         ))
       );
-      
+
       console.log(`檢查回覆的消息是否包含圖片: ${isReplyToImageMessage}`);
     } catch (error) {
       console.error('獲取回覆消息時出錯:', error);
     }
   }
-  
+
   // 檢查上一條消息是否包含圖片附件
-  const hasImageAttachment = previousMessage && 
-                           previousMessage.attachments && 
-                           previousMessage.attachments.size > 0 && 
-                           Array.from(previousMessage.attachments.values()).some(attachment => 
-                             attachment.contentType && attachment.contentType.startsWith('image/'));
-  
+  const hasImageAttachment = previousMessage &&
+    previousMessage.attachments &&
+    previousMessage.attachments.size > 0 &&
+    Array.from(previousMessage.attachments.values()).some(attachment =>
+      attachment.contentType && attachment.contentType.startsWith('image/'));
+
   // 檢查上一條消息是否是機器人發送的圖片生成消息
-  const isLastMessageImageGeneration = previousMessage && 
-                                     previousMessage.author && 
-                                     previousMessage.author.bot && (
-    // 優先檢查特殊標記
-    (previousMessage.content && previousMessage.content.includes('[IMAGE_GENERATED]')) ||
-    // 檢查消息內容是否包含圖片生成相關文字
-    (previousMessage.content && (
-      previousMessage.content.includes('這是根據你的描述生成的圖片') ||
-      previousMessage.content.includes('生成的圖片') ||
-      previousMessage.content.includes('根據你的描述') ||
-      previousMessage.content.includes('這是轉換成彩色的圖片') ||
-      previousMessage.content.includes('這是根據你的要求生成的圖片') ||
-      previousMessage.content.includes('這是根據你的要求修改後的圖片') ||
-      previousMessage.content.includes('這是根據你的要求修改後的圖片：')
-    )) ||
-    // 檢查機器人的消息是否包含圖片附件，且不是回覆用戶的圖片修改請求
-    (previousMessage.attachments && previousMessage.attachments.size > 0 && 
-     previousMessage.content && !previousMessage.content.includes('這是修改後的圖片') &&
-     !previousMessage.content.includes('我將轉換成黑白版本'))
-  );
-  
+  const isLastMessageImageGeneration = previousMessage &&
+    previousMessage.author &&
+    previousMessage.author.bot && (
+      // 優先檢查特殊標記
+      (previousMessage.content && previousMessage.content.includes('[IMAGE_GENERATED]')) ||
+      // 檢查消息內容是否包含圖片生成相關文字
+      (previousMessage.content && (
+        previousMessage.content.includes('這是根據你的描述生成的圖片') ||
+        previousMessage.content.includes('生成的圖片') ||
+        previousMessage.content.includes('根據你的描述') ||
+        previousMessage.content.includes('這是轉換成彩色的圖片') ||
+        previousMessage.content.includes('這是根據你的要求生成的圖片') ||
+        previousMessage.content.includes('這是根據你的要求修改後的圖片') ||
+        previousMessage.content.includes('這是根據你的要求修改後的圖片：')
+      )) ||
+      // 檢查機器人的消息是否包含圖片附件，且不是回覆用戶的圖片修改請求
+      (previousMessage.attachments && previousMessage.attachments.size > 0 &&
+        previousMessage.content && !previousMessage.content.includes('這是修改後的圖片') &&
+        !previousMessage.content.includes('我將轉換成黑白版本'))
+    );
+
   /* 記錄上一條消息的信息，幫助診斷問題
   console.log('上一條消息來自:', previousMessage ? (previousMessage.author && previousMessage.author.bot ? '機器人' : '用戶') : '無');
   if (previousMessage && previousMessage.content) {
@@ -3160,9 +3270,9 @@ client.on('messageCreate', async (message) => {
     }
   }
   */
-  
+
   // 更全面的圖片修改請求檢測
-  const isImageModificationRequest = 
+  const isImageModificationRequest =
     // 完整的問句形式 - 黑白相關
     message.content.match(/可以(幫我)?(改|換|轉|變|多|加)成(黑白|彩色|其他顏色)([的嗎])?/i) ||
     message.content.match(/可以(改|換|轉|變)成黑白的嗎/i) ||
@@ -3191,12 +3301,12 @@ client.on('messageCreate', async (message) => {
     message.content.match(/^(改|換|轉|變)成黑白/i) ||
     message.content.match(/^(改|換|轉|變)成灰階/i) ||
     message.content.match(/^(改|換|轉|變)成灰度/i) ||
-    
+
     // 風格相關的修改請求
     message.content.match(/可以(幫我)?(改|換|轉|變|多|加|把)成(動漫|寫實|卡通|素描|油畫|水彩|像素|復古|現代|未來|科幻|奇幻|可愛|恐怖|溫馨|冷酷|溫暖|冷色|暖色|明亮|暗沉|高對比|低對比|高飽和|低飽和|黑白|彩色|單色|多色|藝術|寫意|寫實|抽象|具象|印象派|表現派|立體派|超現實|極簡|繁複|浮世繪|國畫|西洋畫|插畫|漫畫|素描|速寫|版畫|蝕刻|水墨|彩墨|粉彩|炭筆|鉛筆|鋼筆|毛筆|噴槍|數位|傳統|混合|其他)(風格|風|樣子|樣式|感覺|效果|的)([的嗎])?/i) ||
     message.content.match(/(改|換|轉|變)成(動漫|寫實|卡通|素描|油畫|水彩|像素|復古|現代|未來|科幻|奇幻|可愛|恐怖|溫馨|冷酷|溫暖|冷色|暖色|明亮|暗沉|高對比|低對比|高飽和|低飽和|黑白|彩色|單色|多色|藝術|寫意|寫實|抽象|具象|印象派|表現派|立體派|超現實|極簡|繁複|浮世繪|國畫|西洋畫|插畫|漫畫|素描|速寫|版畫|蝕刻|水墨|彩墨|粉彩|炭筆|鉛筆|鋼筆|毛筆|噴槍|數位|傳統|混合|其他)(風格|風|樣子|樣式|感覺|效果|的)?/i) ||
     message.content.match(/(動漫|寫實|卡通|素描|油畫|水彩|像素|復古|現代|未來|科幻|奇幻|可愛|恐怖|溫馨|冷酷|溫暖|冷色|暖色|明亮|暗沉|高對比|低對比|高飽和|低飽和|黑白|彩色|單色|多色|藝術|寫意|寫實|抽象|具象|印象派|表現派|立體派|超現實|極簡|繁複|浮世繪|國畫|西洋畫|插畫|漫畫|素描|速寫|版畫|蝕刻|水墨|彩墨|粉彩|炭筆|鉛筆|鋼筆|毛筆|噴槍|數位|傳統|混合|其他)(風格|風|樣子|樣式|感覺|效果)/i) ||
-    
+
     // 添加更多通用修改請求的表達方式
     message.content.match(/(修改|調整|微調)(一下|圖片|這張圖)/i) ||
     message.content.match(/(改一下|調一下|換一下)/i) ||
@@ -3208,10 +3318,10 @@ client.on('messageCreate', async (message) => {
     message.content.match(/希望(改|換|轉|變)/i) ||
     message.content.match(/請(改|換|轉|變)/i) ||
     message.content.match(/幫我(改|換|轉|變)/i);
-  
+
   // 根據頻道配置決定是否使用 AI 判定圖片修改請求
   let isModificationRequest = false;
-  
+
   if (channelConfig.useAIToDetectImageRequest) {
     console.log('使用 AI 判定圖片修改請求');
     isModificationRequest = await detectImageModificationWithAI(message.content, channelHistory);
@@ -3219,7 +3329,7 @@ client.on('messageCreate', async (message) => {
     console.log('使用關鍵詞判定圖片修改請求');
     isModificationRequest = isImageModificationRequest;
   }
-  
+
   // 如果上一條消息是圖片生成或包含圖片附件，或者是回覆包含圖片的消息，且當前消息是修改請求，則視為圖片修改請求
   // 特別處理回覆 AI 生成圖片的情況
   let isReplyToAIGeneratedImage = false;
@@ -3227,13 +3337,13 @@ client.on('messageCreate', async (message) => {
     try {
       // 獲取被回覆的消息
       const repliedMsg = await message.channel.messages.fetch(message.reference.messageId);
-      
+
       // 檢查被回覆的消息是否包含圖片附件
       const hasAttachments = repliedMsg && repliedMsg.attachments && repliedMsg.attachments.size > 0;
-      
+
       // 檢查被回覆的消息是否是機器人發送的
       const isFromBot = repliedMsg && repliedMsg.author && repliedMsg.author.bot;
-      
+
       // 檢查被回覆的消息內容是否包含圖片生成或修改相關文字
       const hasImageGenerationText = repliedMsg && repliedMsg.content && (
         repliedMsg.content.includes('[IMAGE_GENERATED]') ||
@@ -3246,10 +3356,10 @@ client.on('messageCreate', async (message) => {
         repliedMsg.content.includes('這是根據你的要求修改後的圖片：') ||
         repliedMsg.content.includes('修改後的圖片')
       );
-      
+
       // 如果是機器人發送的且包含圖片附件，或者消息內容包含圖片生成相關文字，則視為 AI 生成的圖片
       isReplyToAIGeneratedImage = (isFromBot && hasAttachments) || hasImageGenerationText;
-      
+
       console.log('檢查被回覆的消息是否包含圖片附件:', hasAttachments);
       console.log('檢查被回覆的消息是否是機器人發送的:', isFromBot);
       console.log('檢查被回覆的消息內容是否包含圖片生成相關文字:', hasImageGenerationText);
@@ -3258,10 +3368,10 @@ client.on('messageCreate', async (message) => {
       console.error('獲取被回覆消息時出錯:', error);
     }
   }
-  
+
   // 如果是回覆 AI 生成的圖片，直接視為圖片修改請求，不需要 AI 判定
   const shouldProcessImageModification = isReplyToAIGeneratedImage || ((hasImageAttachment || isLastMessageImageGeneration || isReplyToImageMessage) && isModificationRequest);
-  
+
   // 記錄檢測結果
   if (shouldProcessImageModification) {
     console.log('檢測到圖片修改請求:', message.content);
@@ -3295,18 +3405,18 @@ client.on('messageCreate', async (message) => {
 
       // 獲取需要修改的圖片（優先使用被回覆消息中的圖片，其次是上一條消息中的圖片）
       let targetAttachment = null;
-      
+
       // 如果是回覆消息，優先使用被回覆消息中的圖片
       if ((isReplyToImageMessage || isReplyToAIGeneratedImage) && repliedMessage) {
         targetAttachment = repliedMessage.attachments.first();
         console.log('使用被回覆消息中的圖片');
-      } 
+      }
       // 否則使用上一條消息中的圖片
       else if (previousMessage) {
         targetAttachment = previousMessage.attachments.first();
         console.log('使用上一條消息中的圖片');
       }
-      
+
       if (!targetAttachment) {
         await statusMessage.delete().catch(console.error);
         await message.channel.send('抱歉，找不到需要修改的圖片。');
@@ -3321,209 +3431,209 @@ client.on('messageCreate', async (message) => {
       const imageBuffer = Buffer.from(arrayBuffer);
 
       // 根據請求類型處理圖片
-       let processedImage;
-       // 檢測具體的修改類型
-       const isBlackAndWhiteRequest = message.content.match(/(黑白|灰階|灰度)/i) || 
-         message.content.match(/改成黑白/i) || 
-         message.content.match(/變成黑白/i) || 
-         message.content.match(/換成黑白/i) || 
-         message.content.match(/轉成黑白/i);
-       const isColorRequest = message.content.match(/(彩色|全彩)/i);
-       
-       // 檢測風格修改請求
-       const styleMatch = message.content.match(/(改|換|轉|變)成(動漫|寫實|卡通|素描|油畫|水彩|像素|復古|現代|未來|科幻|奇幻|可愛|恐怖|溫馨|冷酷|溫暖|冷色|暖色|明亮|暗沉|高對比|低對比|高飽和|低飽和|黑白|彩色|單色|多色|藝術|寫意|寫實|抽象|具象|印象派|表現派|立體派|超現實|極簡|繁複|浮世繪|國畫|西洋畫|插畫|漫畫|素描|速寫|版畫|蝕刻|水墨|彩墨|粉彩|炭筆|鉛筆|鋼筆|毛筆|噴槍|數位|傳統|混合|其他)(風格|風|樣子|樣式|感覺|效果|的)?/i);
-       const isStyleRequest = styleMatch !== null;
-       const requestedStyle = isStyleRequest ? styleMatch[2] : null; // 獲取請求的風格
-       
-       // 檢測一般修改請求
-       const isGeneralModificationRequest = message.content.match(/(修改|調整|微調|改一下|調一下|換一下)/i) || 
-         message.content.match(/能不能(改|換|轉|變)/i) || 
-         message.content.match(/可以(改|換|轉|變)/i) || 
-         message.content.match(/想要(改|換|轉|變)/i) || 
-         message.content.match(/希望(改|換|轉|變)/i) || 
-         message.content.match(/請(改|換|轉|變)/i) || 
-         message.content.match(/幫我(改|換|轉|變)/i);
-       
-       // 如果是AI判定的修改請求但沒有匹配到具體類型，則視為一般修改請求
-       const isAIDetectedModification = channelConfig.useAIToDetectImageRequest && isModificationRequest && 
-         !isBlackAndWhiteRequest && !isColorRequest && !isStyleRequest && !isGeneralModificationRequest;
-       
-       if (isBlackAndWhiteRequest) {
-         console.log('檢測到黑白轉換請求，開始處理圖片');
-         try {
-            console.log(`開始處理圖片，原始大小: ${imageBuffer.length} 字節`);
-            // 使用 sharp 進行黑白轉換，添加更多選項以確保穩定性
+      let processedImage;
+      // 檢測具體的修改類型
+      const isBlackAndWhiteRequest = message.content.match(/(黑白|灰階|灰度)/i) ||
+        message.content.match(/改成黑白/i) ||
+        message.content.match(/變成黑白/i) ||
+        message.content.match(/換成黑白/i) ||
+        message.content.match(/轉成黑白/i);
+      const isColorRequest = message.content.match(/(彩色|全彩)/i);
+
+      // 檢測風格修改請求
+      const styleMatch = message.content.match(/(改|換|轉|變)成(動漫|寫實|卡通|素描|油畫|水彩|像素|復古|現代|未來|科幻|奇幻|可愛|恐怖|溫馨|冷酷|溫暖|冷色|暖色|明亮|暗沉|高對比|低對比|高飽和|低飽和|黑白|彩色|單色|多色|藝術|寫意|寫實|抽象|具象|印象派|表現派|立體派|超現實|極簡|繁複|浮世繪|國畫|西洋畫|插畫|漫畫|素描|速寫|版畫|蝕刻|水墨|彩墨|粉彩|炭筆|鉛筆|鋼筆|毛筆|噴槍|數位|傳統|混合|其他)(風格|風|樣子|樣式|感覺|效果|的)?/i);
+      const isStyleRequest = styleMatch !== null;
+      const requestedStyle = isStyleRequest ? styleMatch[2] : null; // 獲取請求的風格
+
+      // 檢測一般修改請求
+      const isGeneralModificationRequest = message.content.match(/(修改|調整|微調|改一下|調一下|換一下)/i) ||
+        message.content.match(/能不能(改|換|轉|變)/i) ||
+        message.content.match(/可以(改|換|轉|變)/i) ||
+        message.content.match(/想要(改|換|轉|變)/i) ||
+        message.content.match(/希望(改|換|轉|變)/i) ||
+        message.content.match(/請(改|換|轉|變)/i) ||
+        message.content.match(/幫我(改|換|轉|變)/i);
+
+      // 如果是AI判定的修改請求但沒有匹配到具體類型，則視為一般修改請求
+      const isAIDetectedModification = channelConfig.useAIToDetectImageRequest && isModificationRequest &&
+        !isBlackAndWhiteRequest && !isColorRequest && !isStyleRequest && !isGeneralModificationRequest;
+
+      if (isBlackAndWhiteRequest) {
+        console.log('檢測到黑白轉換請求，開始處理圖片');
+        try {
+          console.log(`開始處理圖片，原始大小: ${imageBuffer.length} 字節`);
+          // 使用 sharp 進行黑白轉換，添加更多選項以確保穩定性
+          processedImage = await sharp(imageBuffer, { failOnError: false })
+            .grayscale() // 轉換為灰階
+            .normalize() // 標準化對比度
+            .gamma(1.2) // 調整對比度
+            .jpeg({ quality: 90, progressive: true }) // 指定輸出格式和品質，使用漸進式 JPEG
+            .toBuffer();
+          console.log(`黑白轉換完成，處理後圖片大小: ${processedImage.length} 字節`);
+        } catch (sharpError) {
+          console.error('使用 sharp 處理圖片時出錯:', sharpError);
+          // 嘗試使用備用方法處理圖片
+          try {
+            console.log('嘗試使用備用方法處理圖片');
+            // 使用更簡單的處理方式
             processedImage = await sharp(imageBuffer, { failOnError: false })
-              .grayscale() // 轉換為灰階
-              .normalize() // 標準化對比度
-              .gamma(1.2) // 調整對比度
-              .jpeg({ quality: 90, progressive: true }) // 指定輸出格式和品質，使用漸進式 JPEG
+              .grayscale() // 使用正確的方法名
+              .toFormat('jpeg', { quality: 90 }) // 明確指定輸出格式和品質
               .toBuffer();
-            console.log(`黑白轉換完成，處理後圖片大小: ${processedImage.length} 字節`);
-          } catch (sharpError) {
-            console.error('使用 sharp 處理圖片時出錯:', sharpError);
-            // 嘗試使用備用方法處理圖片
+            console.log(`備用方法處理完成，圖片大小: ${processedImage.length} 字節`);
+          } catch (backupError) {
+            console.error('備用方法處理圖片也失敗:', backupError);
+            // 嘗試最後的備用方法
             try {
-              console.log('嘗試使用備用方法處理圖片');
-              // 使用更簡單的處理方式
-              processedImage = await sharp(imageBuffer, { failOnError: false })
-                .grayscale() // 使用正確的方法名
-                .toFormat('jpeg', { quality: 90 }) // 明確指定輸出格式和品質
+              console.log('嘗試使用最後的備用方法處理圖片');
+              // 使用最簡單的處理方式
+              processedImage = await sharp(imageBuffer)
+                .grayscale()
                 .toBuffer();
-              console.log(`備用方法處理完成，圖片大小: ${processedImage.length} 字節`);
-            } catch (backupError) {
-              console.error('備用方法處理圖片也失敗:', backupError);
-              // 嘗試最後的備用方法
-              try {
-                console.log('嘗試使用最後的備用方法處理圖片');
-                // 使用最簡單的處理方式
-                processedImage = await sharp(imageBuffer)
-                  .grayscale()
-                  .toBuffer();
-                console.log(`最後備用方法處理完成，圖片大小: ${processedImage.length} 字節`);
-              } catch (finalError) {
-                console.error('所有處理方法都失敗:', finalError);
-                throw new Error(`圖片處理失敗: ${sharpError.message}, 所有備用方法也失敗`);
-              }
+              console.log(`最後備用方法處理完成，圖片大小: ${processedImage.length} 字節`);
+            } catch (finalError) {
+              console.error('所有處理方法都失敗:', finalError);
+              throw new Error(`圖片處理失敗: ${sharpError.message}, 所有備用方法也失敗`);
             }
           }
-       } else if (isColorRequest) {
-         // 如果是轉換為彩色，我們需要重新生成圖片
-         
-         // 使用已經獲取的目標圖片附件
-         if (!targetAttachment) {
-           console.log('找不到需要修改的圖片附件');
-           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
-           return;
-         }
-         
-         console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
-         
-         // 構建彩色轉換提示詞
-         const colorPrompt = '請將這張圖片轉換成彩色，保持原圖的主要內容和構圖';
-         
-         // 使用 Gemini 生成彩色圖片
-         const { imageData, mimeType } = await generateImageWithGemini(colorPrompt, targetAttachment.url);
-         
-         return await message.channel.send({
-           content: '這是轉換成彩色的圖片：',
-           files: [{
-             attachment: Buffer.from(imageData, 'base64'),
-             name: `color-${targetAttachment.name}`
-           }]
-         });
-       } else if (isStyleRequest) {
-         // 如果是風格修改請求，使用 Gemini 重新生成圖片
-         console.log(`檢測到風格修改請求，請求風格: ${requestedStyle}`);
-         
-         // 使用已經獲取的目標圖片附件
-         if (!targetAttachment) {
-           console.log('找不到需要修改的圖片附件');
-           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
-           return;
-         }
-         
-         console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
-         
-         // 構建提示詞，告訴 Gemini 要生成什麼風格的圖片
-         let stylePrompt = message.content;
-         if (requestedStyle) {
-           // 如果用戶明確指定了風格，使用該風格
-           stylePrompt = `請將上一張圖片轉換成${requestedStyle}風格，保持原圖的主要內容和構圖`;
-         }
-         
-         try {
-           // 使用 Gemini 生成新風格的圖片
-           const { imageData, mimeType } = await generateImageWithGemini(stylePrompt, targetAttachment.url);
-           
-           // 發送生成的圖片
-           return await message.channel.send({
-             content: `這是轉換成${requestedStyle || '新'}風格的圖片：`,
-             files: [{
-               attachment: Buffer.from(imageData, 'base64'),
-               name: `style-${targetAttachment.name}`
-             }]
-           });
-         } catch (error) {
-           console.error('使用 Gemini 生成風格圖片時出錯:', error);
-           await message.channel.send(`抱歉，我無法將圖片轉換為${requestedStyle || '新'}風格。錯誤信息: ${error.message}`);
-           return;
-         }
-       } else if (isGeneralModificationRequest || isAIDetectedModification || message.content.includes('去掉') || message.content.includes('移除') || message.content.includes('刪除') || 
-                 message.content.includes('紅潤') || message.content.includes('紅暈') || message.content.includes('改成') || message.content.includes('變成') || 
-                 message.content.includes('換成') || message.content.includes('轉成') || message.content.includes('修改') || 
-                 message.content.includes('調整') || message.content.includes('增加') || message.content.includes('減少') || 
-                 message.content.includes('添加') || message.content.includes('更改') || message.content.includes('變更') || 
-                 message.content.includes('加深') || message.content.includes('減淡') || message.content.includes('加強') || 
-                 message.content.includes('減弱') || message.content.includes('加重') || message.content.includes('減輕')) {
-         // 如果是一般修改請求或包含各種修改關鍵詞，使用 Gemini 根據用戶的具體要求進行修改
-         console.log('檢測到一般修改請求，使用 Gemini 進行圖片修改');
-         
-         // 使用已經獲取的目標圖片附件
-         if (!targetAttachment) {
-           console.log('找不到需要修改的圖片附件');
-           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
-           return;
-         }
-         
-         console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
-         
-         try {
-           // 使用用戶的原始請求作為提示詞
-           const modificationPrompt = `請根據以下要求修改圖片：${message.content}，保持原圖的主要內容和構圖`;
-           console.log(`使用提示詞進行圖片修改: ${modificationPrompt}`);
-           
-           // 使用 Gemini 生成修改後的圖片
-           const { imageData, mimeType } = await generateImageWithGemini(modificationPrompt, targetAttachment.url);
-           
-           // 發送生成的圖片
-           return await message.channel.send({
-             content: `這是根據你的要求修改後的圖片：`,
-             files: [{
-               attachment: Buffer.from(imageData, 'base64'),
-               name: `modified-${targetAttachment.name}`
-             }]
-           });
-         } catch (error) {
-           console.error('使用 Gemini 修改圖片時出錯:', error);
-           await message.channel.send(`抱歉，我無法按照你的要求修改圖片。錯誤信息: ${error.message}`);
-           return;
-         }
-       } else {
-         // 如果沒有匹配到任何修改類型，但AI判定為修改請求，則使用Gemini進行處理
-         console.log('未匹配到具體轉換類型，但AI判定為修改請求，使用Gemini進行圖片修改');
-         
-         // 使用已經獲取的目標圖片附件
-         if (!targetAttachment) {
-           console.log('找不到需要修改的圖片附件');
-           await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
-           return;
-         }
-         
-         console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
-         
-         try {
-           // 使用用戶的原始請求作為提示詞
-           const modificationPrompt = `請根據以下要求修改圖片：${message.content}，保持原圖的主要內容和構圖`;
-           console.log(`使用提示詞進行圖片修改: ${modificationPrompt}`);
-           
-           // 使用 Gemini 生成修改後的圖片
-           const { imageData, mimeType } = await generateImageWithGemini(modificationPrompt, targetAttachment.url);
-           
-           // 發送生成的圖片
-           return await message.channel.send({
-             content: `這是根據你的要求修改後的圖片：`,
-             files: [{
-               attachment: Buffer.from(imageData, 'base64'),
-               name: `modified-${targetAttachment.name}`
-             }]
-           });
-         } catch (error) {
-           console.error('使用 Gemini 修改圖片時出錯:', error);
-           await message.channel.send(`抱歉，我無法按照你的要求修改圖片。錯誤信息: ${error.message}`);
-           return;
-         }
-       }
+        }
+      } else if (isColorRequest) {
+        // 如果是轉換為彩色，我們需要重新生成圖片
+
+        // 使用已經獲取的目標圖片附件
+        if (!targetAttachment) {
+          console.log('找不到需要修改的圖片附件');
+          await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
+          return;
+        }
+
+        console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
+
+        // 構建彩色轉換提示詞
+        const colorPrompt = '請將這張圖片轉換成彩色，保持原圖的主要內容和構圖';
+
+        // 使用 Gemini 生成彩色圖片
+        const { imageData, mimeType } = await generateImageWithGemini(colorPrompt, targetAttachment.url);
+
+        return await message.channel.send({
+          content: '這是轉換成彩色的圖片：',
+          files: [{
+            attachment: Buffer.from(imageData, 'base64'),
+            name: `color-${targetAttachment.name}`
+          }]
+        });
+      } else if (isStyleRequest) {
+        // 如果是風格修改請求，使用 Gemini 重新生成圖片
+        console.log(`檢測到風格修改請求，請求風格: ${requestedStyle}`);
+
+        // 使用已經獲取的目標圖片附件
+        if (!targetAttachment) {
+          console.log('找不到需要修改的圖片附件');
+          await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
+          return;
+        }
+
+        console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
+
+        // 構建提示詞，告訴 Gemini 要生成什麼風格的圖片
+        let stylePrompt = message.content;
+        if (requestedStyle) {
+          // 如果用戶明確指定了風格，使用該風格
+          stylePrompt = `請將上一張圖片轉換成${requestedStyle}風格，保持原圖的主要內容和構圖`;
+        }
+
+        try {
+          // 使用 Gemini 生成新風格的圖片
+          const { imageData, mimeType } = await generateImageWithGemini(stylePrompt, targetAttachment.url);
+
+          // 發送生成的圖片
+          return await message.channel.send({
+            content: `這是轉換成${requestedStyle || '新'}風格的圖片：`,
+            files: [{
+              attachment: Buffer.from(imageData, 'base64'),
+              name: `style-${targetAttachment.name}`
+            }]
+          });
+        } catch (error) {
+          console.error('使用 Gemini 生成風格圖片時出錯:', error);
+          await message.channel.send(`抱歉，我無法將圖片轉換為${requestedStyle || '新'}風格。錯誤信息: ${error.message}`);
+          return;
+        }
+      } else if (isGeneralModificationRequest || isAIDetectedModification || message.content.includes('去掉') || message.content.includes('移除') || message.content.includes('刪除') ||
+        message.content.includes('紅潤') || message.content.includes('紅暈') || message.content.includes('改成') || message.content.includes('變成') ||
+        message.content.includes('換成') || message.content.includes('轉成') || message.content.includes('修改') ||
+        message.content.includes('調整') || message.content.includes('增加') || message.content.includes('減少') ||
+        message.content.includes('添加') || message.content.includes('更改') || message.content.includes('變更') ||
+        message.content.includes('加深') || message.content.includes('減淡') || message.content.includes('加強') ||
+        message.content.includes('減弱') || message.content.includes('加重') || message.content.includes('減輕')) {
+        // 如果是一般修改請求或包含各種修改關鍵詞，使用 Gemini 根據用戶的具體要求進行修改
+        console.log('檢測到一般修改請求，使用 Gemini 進行圖片修改');
+
+        // 使用已經獲取的目標圖片附件
+        if (!targetAttachment) {
+          console.log('找不到需要修改的圖片附件');
+          await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
+          return;
+        }
+
+        console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
+
+        try {
+          // 使用用戶的原始請求作為提示詞
+          const modificationPrompt = `請根據以下要求修改圖片：${message.content}，保持原圖的主要內容和構圖`;
+          console.log(`使用提示詞進行圖片修改: ${modificationPrompt}`);
+
+          // 使用 Gemini 生成修改後的圖片
+          const { imageData, mimeType } = await generateImageWithGemini(modificationPrompt, targetAttachment.url);
+
+          // 發送生成的圖片
+          return await message.channel.send({
+            content: `這是根據你的要求修改後的圖片：`,
+            files: [{
+              attachment: Buffer.from(imageData, 'base64'),
+              name: `modified-${targetAttachment.name}`
+            }]
+          });
+        } catch (error) {
+          console.error('使用 Gemini 修改圖片時出錯:', error);
+          await message.channel.send(`抱歉，我無法按照你的要求修改圖片。錯誤信息: ${error.message}`);
+          return;
+        }
+      } else {
+        // 如果沒有匹配到任何修改類型，但AI判定為修改請求，則使用Gemini進行處理
+        console.log('未匹配到具體轉換類型，但AI判定為修改請求，使用Gemini進行圖片修改');
+
+        // 使用已經獲取的目標圖片附件
+        if (!targetAttachment) {
+          console.log('找不到需要修改的圖片附件');
+          await message.channel.send('抱歉，我找不到需要修改的圖片。請確保消息中包含圖片。');
+          return;
+        }
+
+        console.log(`找到需要修改的圖片附件: ${targetAttachment.url}`);
+
+        try {
+          // 使用用戶的原始請求作為提示詞
+          const modificationPrompt = `請根據以下要求修改圖片：${message.content}，保持原圖的主要內容和構圖`;
+          console.log(`使用提示詞進行圖片修改: ${modificationPrompt}`);
+
+          // 使用 Gemini 生成修改後的圖片
+          const { imageData, mimeType } = await generateImageWithGemini(modificationPrompt, targetAttachment.url);
+
+          // 發送生成的圖片
+          return await message.channel.send({
+            content: `這是根據你的要求修改後的圖片：`,
+            files: [{
+              attachment: Buffer.from(imageData, 'base64'),
+              name: `modified-${targetAttachment.name}`
+            }]
+          });
+        } catch (error) {
+          console.error('使用 Gemini 修改圖片時出錯:', error);
+          await message.channel.send(`抱歉，我無法按照你的要求修改圖片。錯誤信息: ${error.message}`);
+          return;
+        }
+      }
 
       // 發送處理後的圖片
       console.log(`準備發送處理後的圖片，大小: ${processedImage.length} 字節`);
@@ -3539,7 +3649,7 @@ client.on('messageCreate', async (message) => {
           // 如果有擴展名，替換為 .jpg
           fileName = fileName.replace(/\.[^.]+$/, '.jpg');
         }
-        
+
         console.log(`發送圖片，文件名: ${fileName}`);
         await message.channel.send({
           content: '這是修改後的圖片：',
@@ -3569,12 +3679,12 @@ client.on('messageCreate', async (message) => {
   // 如果已經識別為圖片修改請求，則不再檢測圖片生成請求
   if (!shouldProcessImageModification) {
     // 檢查是否是黑白轉換請求，如果是，則不檢測圖片生成請求
-    const isBlackAndWhiteRequest = message.content.match(/(黑白|灰階|灰度)/i) || 
-      message.content.match(/改成黑白/i) || 
-      message.content.match(/變成黑白/i) || 
-      message.content.match(/換成黑白/i) || 
+    const isBlackAndWhiteRequest = message.content.match(/(黑白|灰階|灰度)/i) ||
+      message.content.match(/改成黑白/i) ||
+      message.content.match(/變成黑白/i) ||
+      message.content.match(/換成黑白/i) ||
       message.content.match(/轉成黑白/i);
-    
+
     if (isBlackAndWhiteRequest && previousMessage && previousMessage.attachments && previousMessage.attachments.size > 0) {
       console.log('檢測到黑白轉換請求，但已有圖片附件，不檢測圖片生成請求');
       // 這是圖片修改請求，不是圖片生成請求
@@ -3668,7 +3778,7 @@ client.on('messageCreate', async (message) => {
             // 如果有擴展名，替換為 .jpg
             fileName = fileName.replace(/\.[^.]+$/, '.jpg');
           }
-          
+
           console.log(`發送圖片，文件名: ${fileName}`);
           await message.channel.send({
             content: '這是修改後的圖片：',
@@ -3693,10 +3803,10 @@ client.on('messageCreate', async (message) => {
         return;
       }
     }
-    
+
     // 根據頻道配置決定是否使用 AI 判定畫圖請求
     let isImageGenerationRequest = false;
-    
+
     if (channelConfig.useAIToDetectImageRequest) {
       console.log('使用 AI 判定畫圖請求');
       isImageGenerationRequest = await detectImageGenerationWithAI(message.content, channelHistory);
@@ -3704,46 +3814,46 @@ client.on('messageCreate', async (message) => {
       console.log('使用關鍵詞判定畫圖請求');
       isImageGenerationRequest = await detectImageGenerationRequest(message.content, channelHistory);
     }
-    
+
     if (isImageGenerationRequest) {
-    try {
-      // 顯示正在生成圖片的提示
-      const statusMessage = await message.channel.send('正在生成圖片，請稍候...');
-      
-      // 使用 genimg.mjs 生成圖片
-      const { imageData, mimeType, responseText } = await generateImageWithGemini(message.content);
-      
-      // 將 Base64 編碼的圖片數據轉換為 Buffer
-      const buffer = Buffer.from(imageData, 'base64');
-      
-      // 從 MIME 類型確定文件擴展名
-      const fileExtension = mimeType.split('/')[1] || 'png';
-      
-      // 創建臨時文件名
-      const fileName = `gemini-image-${Date.now()}.${fileExtension}`;
-      
-      // 發送圖片和響應文本，添加特殊標記以便識別圖片生成消息
-      await message.channel.send({
-        content: (responseText || '這是根據你的描述生成的圖片：') + ' [IMAGE_GENERATED]',
-        files: [{
-          attachment: buffer,
-          name: fileName
-        }]
-      });
-      
-      // 刪除狀態消息
-      await statusMessage.delete().catch(console.error);
-      
-      console.log(`Generated image for ${message.author.username} with prompt: ${message.content}`);
-      return; // 圖片生成請求已處理，不需要進一步處理
-    } catch (error) {
-       console.error('Error generating image:', error);
-       await message.channel.send('抱歉，生成圖片時出現錯誤，請稍後再試。');
-       // 繼續處理消息，讓 AI 回應
+      try {
+        // 顯示正在生成圖片的提示
+        const statusMessage = await message.channel.send('正在生成圖片，請稍候...');
+
+        // 使用 genimg.mjs 生成圖片
+        const { imageData, mimeType, responseText } = await generateImageWithGemini(message.content);
+
+        // 將 Base64 編碼的圖片數據轉換為 Buffer
+        const buffer = Buffer.from(imageData, 'base64');
+
+        // 從 MIME 類型確定文件擴展名
+        const fileExtension = mimeType.split('/')[1] || 'png';
+
+        // 創建臨時文件名
+        const fileName = `gemini-image-${Date.now()}.${fileExtension}`;
+
+        // 發送圖片和響應文本，添加特殊標記以便識別圖片生成消息
+        await message.channel.send({
+          content: (responseText || '這是根據你的描述生成的圖片：') + ' [IMAGE_GENERATED]',
+          files: [{
+            attachment: buffer,
+            name: fileName
+          }]
+        });
+
+        // 刪除狀態消息
+        await statusMessage.delete().catch(console.error);
+
+        console.log(`Generated image for ${message.author.username} with prompt: ${message.content}`);
+        return; // 圖片生成請求已處理，不需要進一步處理
+      } catch (error) {
+        console.error('Error generating image:', error);
+        await message.channel.send('抱歉，生成圖片時出現錯誤，請稍後再試。');
+        // 繼續處理消息，讓 AI 回應
+      }
     }
-   }
   }
-  
+
   // 檢查消息是否包含圖片附件
   let imageAttachmentInfo = "";
   if (message.attachments.size > 0) {
@@ -3751,144 +3861,144 @@ client.on('messageCreate', async (message) => {
       const fileExtension = attachment.name.split('.').pop().toLowerCase();
       return ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(fileExtension);
     });
-    
+
     if (imageAttachments.size > 0) {
       // 將圖片信息添加到消息內容中
-      imageAttachmentInfo = "\n\n[IMAGE SHARED BY " + message.author.username + ": " + 
+      imageAttachmentInfo = "\n\n[IMAGE SHARED BY " + message.author.username + ": " +
         imageAttachments.map(attachment => `${attachment.url}`).join(", ") + "]\n\n";
-      
+
       console.log(`Detected image attachment from ${message.author.username}: \n${imageAttachmentInfo}`);
-      
+
       // 自動處理所有圖片附件進行圖像理解，不需要關鍵詞觸發
-        // 顯示正在處理圖像的提示
-        const statusMessage = await message.channel.send('正在分析圖片內容，請稍候...');
-        
-        try {
-          // 導入 Google GenAI
-          const { GoogleGenAI } = await import('@google/genai');
-          
-          // 獲取 Gemini API 密鑰
-          let apiKey = process.env.GEMINI_API_KEY;
-          if (!apiKey && GEMINI_API_KEYS && GEMINI_API_KEYS.length > 0) {
-            apiKey = GEMINI_API_KEYS[currentGeminiKeyIndex];
-          }
-          
-          if (!apiKey) {
-            throw new Error('No Gemini API key available');
-          }
-          
-          // 初始化 Google GenAI
-          const ai = new GoogleGenAI({ apiKey });
-          
-          // 處理每個圖片附件
-          const imageAnalysisResults = [];
-          for (const attachment of imageAttachments.values()) {
-            console.log(`Processing image analysis for: ${attachment.url}`);
-            
-            try {
-              // 獲取圖片數據
-              const response = await fetch(attachment.url);
-              if (!response.ok) {
-                throw new Error(`無法獲取圖片: ${response.statusText}`);
-              }
-              
-              const imageArrayBuffer = await response.arrayBuffer();
-              const base64ImageData = Buffer.from(imageArrayBuffer).toString('base64');
-              const mimeType = response.headers.get('content-type') || 'image/jpeg';
-              
-              // 使用 Gemini 2.0 Flash 模型進行圖像理解
-              const result = await ai.models.generateContent({
-                model: "gemini-2.0-flash",
-                contents: [
-                  {
-                    inlineData: {
-                      mimeType: mimeType,
-                      data: base64ImageData,
-                    },
+      // 顯示正在處理圖像的提示
+      const statusMessage = await message.channel.send('正在分析圖片內容，請稍候...');
+
+      try {
+        // 導入 Google GenAI
+        const { GoogleGenAI } = await import('@google/genai');
+
+        // 獲取 Gemini API 密鑰
+        let apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey && GEMINI_API_KEYS && GEMINI_API_KEYS.length > 0) {
+          apiKey = GEMINI_API_KEYS[currentGeminiKeyIndex];
+        }
+
+        if (!apiKey) {
+          throw new Error('No Gemini API key available');
+        }
+
+        // 初始化 Google GenAI
+        const ai = new GoogleGenAI({ apiKey });
+
+        // 處理每個圖片附件
+        const imageAnalysisResults = [];
+        for (const attachment of imageAttachments.values()) {
+          console.log(`Processing image analysis for: ${attachment.url}`);
+
+          try {
+            // 獲取圖片數據
+            const response = await fetch(attachment.url);
+            if (!response.ok) {
+              throw new Error(`無法獲取圖片: ${response.statusText}`);
+            }
+
+            const imageArrayBuffer = await response.arrayBuffer();
+            const base64ImageData = Buffer.from(imageArrayBuffer).toString('base64');
+            const mimeType = response.headers.get('content-type') || 'image/jpeg';
+
+            // 使用 Gemini 2.0 Flash 模型進行圖像理解
+            const result = await ai.models.generateContent({
+              model: "gemini-2.0-flash",
+              contents: [
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: base64ImageData,
                   },
-                  { 
-                    text: "請詳細描述這張圖片的內容，包括：1. 圖片中的主要物體或人物 2. 場景和背景 3. 顏色和風格 4. 如果有文字，請識別並提取出來 5. 整體氛圍和感覺。請用繁體中文回答。" 
-                  }
-                ],
-              });
-              
-              if (result && result.text) {
-                imageAnalysisResults.push({
-                  url: attachment.url,
-                  analysis: result.text
-                });
-                console.log(`Image analysis completed for: ${attachment.url}`);
-              } else {
-                imageAnalysisResults.push({
-                  url: attachment.url,
-                  error: '無法分析圖片內容'
-                });
-              }
-            } catch (imageError) {
-              console.error(`Error analyzing image ${attachment.url}:`, imageError);
+                },
+                {
+                  text: "請詳細描述這張圖片的內容，包括：1. 圖片中的主要物體或人物 2. 場景和背景 3. 顏色和風格 4. 如果有文字，請識別並提取出來 5. 整體氛圍和感覺。請用繁體中文回答。"
+                }
+              ],
+            });
+
+            if (result && result.text) {
               imageAnalysisResults.push({
                 url: attachment.url,
-                error: imageError.message || '圖片分析失敗'
+                analysis: result.text
+              });
+              console.log(`Image analysis completed for: ${attachment.url}`);
+            } else {
+              imageAnalysisResults.push({
+                url: attachment.url,
+                error: '無法分析圖片內容'
               });
             }
+          } catch (imageError) {
+            console.error(`Error analyzing image ${attachment.url}:`, imageError);
+            imageAnalysisResults.push({
+              url: attachment.url,
+              error: imageError.message || '圖片分析失敗'
+            });
           }
-          
-          // 刪除狀態消息
-          await statusMessage.delete().catch(console.error);
-          
-          // 處理圖像分析結果
-          if (imageAnalysisResults.length > 0) {
-            const successResults = imageAnalysisResults.filter(r => r.analysis);
-            
-            if (successResults.length > 0) {
-              // 將分析結果添加到消息內容中
-              const analysisText = successResults.map(r => r.analysis).join('\n\n');
-              const analysisInfo = `\n\n[圖片內容分析:\n${analysisText}]\n\n`;
-              
-              // 更新消息內容 - 確保 AI 能看到圖片分析結果
-              message.content = `${message.content}${analysisInfo}`;
-              
-              // 保存分析結果，稍後添加到消息歷史中
-              message._imageAnalysisInfo = analysisInfo;
-              
-              // 立即將分析結果添加到消息歷史記錄中
-              if (channelConfig && channelConfig.messageHistory) {
-                let foundUserMessage = false;
-                for (let i = 0; i < channelConfig.messageHistory.length; i++) {
-                  if (
-                    channelConfig.messageHistory[i].role === 'user' &&
-                    channelConfig.messageHistory[i].author === message.author.username
-                  ) {
-                    channelConfig.messageHistory[i].content = channelConfig.messageHistory[i].content + analysisInfo;
-                    console.log(`Immediately updated message history with image analysis for ${message.author.username}`);
-                    foundUserMessage = true;
-                    break;
-                  }
-                }
-                
-                // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
-                if (!foundUserMessage) {
-                  channelConfig.messageHistory.push({
-                    role: 'user',
-                    author: message.author.username,
-                    content: `[IMAGE SHARED BY ${message.author.username}]${analysisInfo}`
-                  });
-                  console.log(`Added new message history entry with image analysis for ${message.author.username}`);
+        }
+
+        // 刪除狀態消息
+        await statusMessage.delete().catch(console.error);
+
+        // 處理圖像分析結果
+        if (imageAnalysisResults.length > 0) {
+          const successResults = imageAnalysisResults.filter(r => r.analysis);
+
+          if (successResults.length > 0) {
+            // 將分析結果添加到消息內容中
+            const analysisText = successResults.map(r => r.analysis).join('\n\n');
+            const analysisInfo = `\n\n[圖片內容分析:\n${analysisText}]\n\n`;
+
+            // 更新消息內容 - 確保 AI 能看到圖片分析結果
+            message.content = `${message.content}${analysisInfo}`;
+
+            // 保存分析結果，稍後添加到消息歷史中
+            message._imageAnalysisInfo = analysisInfo;
+
+            // 立即將分析結果添加到消息歷史記錄中
+            if (channelConfig && channelConfig.messageHistory) {
+              let foundUserMessage = false;
+              for (let i = 0; i < channelConfig.messageHistory.length; i++) {
+                if (
+                  channelConfig.messageHistory[i].role === 'user' &&
+                  channelConfig.messageHistory[i].author === message.author.username
+                ) {
+                  channelConfig.messageHistory[i].content = channelConfig.messageHistory[i].content + analysisInfo;
+                  console.log(`Immediately updated message history with image analysis for ${message.author.username}`);
+                  foundUserMessage = true;
+                  break;
                 }
               }
-              
-              console.log(`Added image analysis results to message content: ${analysisText.substring(0, 100)}...`);
-            } else {
-              console.log('No images could be analyzed');
+
+              // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
+              if (!foundUserMessage) {
+                channelConfig.messageHistory.push({
+                  role: 'user',
+                  author: message.author.username,
+                  content: `[IMAGE SHARED BY ${message.author.username}]${analysisInfo}`
+                });
+                console.log(`Added new message history entry with image analysis for ${message.author.username}`);
+              }
             }
+
+            console.log(`Added image analysis results to message content: ${analysisText.substring(0, 100)}...`);
           } else {
-            console.log('No image analysis results were processed');
+            console.log('No images could be analyzed');
           }
-        } catch (error) {
-          console.error('Error processing image analysis:', error);
-          // 刪除狀態消息
-          await statusMessage.delete().catch(console.error);
+        } else {
+          console.log('No image analysis results were processed');
         }
+      } catch (error) {
+        console.error('Error processing image analysis:', error);
+        // 刪除狀態消息
+        await statusMessage.delete().catch(console.error);
+      }
     }
   }
 
@@ -3927,7 +4037,7 @@ client.on('messageCreate', async (message) => {
           footer: { text: 'YouTube' }
         };
         await message.channel.send({ embeds: [embed] });
-        
+
         // 修改：不要直接返回，而是將影片信息添加到消息中，讓AI處理
         const videoInfo = {
           title: video.snippet.title,
@@ -3938,16 +4048,16 @@ client.on('messageCreate', async (message) => {
           likes: video.statistics.likeCount ? parseInt(video.statistics.likeCount).toLocaleString() : 'N/A',
           publishDate: new Date(video.snippet.publishedAt).toLocaleDateString()
         };
-        
+
         // 創建 YouTube 影片資訊文本
         const youtubeInfo = `\n\n[YOUTUBE VIDEO SHARED BY ${message.author.username}:\nTitle: "${videoInfo.title}"\nChannel: "${videoInfo.channel}"\nDescription: "${videoInfo.description.substring(0, 300)}${videoInfo.description.length > 300 ? '...' : ''}"\nViews: ${videoInfo.views}\nLikes: ${videoInfo.likes}\nPublished: ${videoInfo.publishDate}]\n\n[Message sent by: ${message.author.username}]`;
-        
+
         // 將影片資訊添加到消息內容中
         message.content = `${message.content}${youtubeInfo}`;
-        
+
         // 保存 YouTube 信息，稍後添加到消息歷史中
         message._youtubeInfo = youtubeInfo;
-        
+
         // 繼續處理消息，不要返回
       }
     } catch (error) {
@@ -3993,21 +4103,21 @@ client.on('messageCreate', async (message) => {
             thumbnail: { url: 'https://www.youtube.com/s/desktop/28b0985e/img/favicon_144x144.png' }
           };
           await message.channel.send({ embeds: [embed] });
-          
+
           // 修改：不要直接返回，而是將搜索結果添加到消息中，讓AI處理
-          const videoInfoText = videos.map((video, index) => 
+          const videoInfoText = videos.map((video, index) =>
             `Video ${index + 1}: "${video.title}" by ${video.channelTitle}`
           ).join('\n');
-          
+
           // 創建 YouTube 搜索結果文本
           const youtubeSearchInfo = `\n\n[YouTube Search Results for "${searchQuery}":\n${videoInfoText}]\n\n[Message sent by: ${message.author.username}]`;
-          
+
           // 將搜索結果添加到消息內容中
           message.content = `${message.content}${youtubeSearchInfo}`;
-          
+
           // 保存 YouTube 搜索信息，稍後添加到消息歷史中
           message._youtubeSearchInfo = youtubeSearchInfo;
-          
+
           // 繼續處理消息，不要返回
         }
       } catch (error) {
@@ -4016,58 +4126,58 @@ client.on('messageCreate', async (message) => {
       }
     }
   }
-  
-// Check if the message is a reply to another message
 
-let replyContext = "";
-let isReply = false;
+  // Check if the message is a reply to another message
 
-if (message.reference && message.reference.messageId) {
-  try {
-    // 取得被回覆的訊息
-    const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
+  let replyContext = "";
+  let isReply = false;
 
-    if (repliedMessage) {
-      isReply = true;
-      const repliedAuthor = repliedMessage.author.bot ? "Setsuna" : repliedMessage.author.username;
-      // 使用實際的用戶名，以便機器人能正確識別消息發送者
-      replyContext = `[${message.author.username}回覆 ${repliedAuthor === client.user.username ? '我' : repliedAuthor} 的訊息: "${repliedMessage.content.substring(0, 50)}${repliedMessage.content.length > 50 ? '...' : ''}"] `;
+  if (message.reference && message.reference.messageId) {
+    try {
+      // 取得被回覆的訊息
+      const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
 
-      console.log(`Detected reply to message: ${repliedMessage.content}`);
+      if (repliedMessage) {
+        isReply = true;
+        const repliedAuthor = repliedMessage.author.bot ? "Setsuna" : repliedMessage.author.username;
+        // 使用實際的用戶名，以便機器人能正確識別消息發送者
+        replyContext = `[${message.author.username}回覆 ${repliedAuthor === client.user.username ? '我' : repliedAuthor} 的訊息: "${repliedMessage.content.substring(0, 50)}${repliedMessage.content.length > 50 ? '...' : ''}"] `;
+
+        console.log(`Detected reply to message: ${repliedMessage.content}`);
+      }
+
+    } catch (error) {
+      console.error('Error fetching replied message:', error);
     }
-
-  } catch (error) {
-    console.error('Error fetching replied message:', error);
   }
-}
 
-// 抓取最近的 50 則訊息作為對話歷史
-const messages = await message.channel.messages.fetch({ limit: 50 });
-const messageHistory = Array.from(messages.values())
-  .reverse()
-  .map(msg => ({
-    role: msg.author.bot ? 'assistant' : 'user',
-    content: msg.author.bot ? msg.content : `[${msg.author.username}]: ${msg.content}`,
-    author: msg.author.username
-  }));
+  // 抓取最近的 50 則訊息作為對話歷史
+  const messages = await message.channel.messages.fetch({ limit: 50 });
+  const messageHistory = Array.from(messages.values())
+    .reverse()
+    .map(msg => ({
+      role: msg.author.bot ? 'assistant' : 'user',
+      content: msg.author.bot ? msg.content : `[${msg.author.username}]: ${msg.content}`,
+      author: msg.author.username
+    }));
 
-// 如果是回覆，將原訊息內容加上上下文說明
-if (isReply) {
-  // 直接添加一個新的消息，確保回覆上下文被正確處理
-  messageHistory.push({
-    role: 'user',
-    author: message.author.username,
-    content: replyContext + message.content
-  });
-  console.log(`Added new message history entry with reply context for ${message.author.username}`);
-  console.log(`Reply context: ${replyContext}`);
-  console.log(`Full message: ${replyContext + message.content}`);
-}
-  
+  // 如果是回覆，將原訊息內容加上上下文說明
+  if (isReply) {
+    // 直接添加一個新的消息，確保回覆上下文被正確處理
+    messageHistory.push({
+      role: 'user',
+      author: message.author.username,
+      content: replyContext + message.content
+    });
+    console.log(`Added new message history entry with reply context for ${message.author.username}`);
+    console.log(`Reply context: ${replyContext}`);
+    console.log(`Full message: ${replyContext + message.content}`);
+  }
+
   // 如果有圖片附件，將圖片信息添加到消息內容中
   if (imageAttachmentInfo) {
     message.content = message.content + imageAttachmentInfo;
-    
+
     // 更新消息歷史中的最後一條消息
     let foundUserMessage = false;
     for (let i = 0; i < messageHistory.length; i++) {
@@ -4082,7 +4192,7 @@ if (isReply) {
         break;
       }
     }
-    
+
     // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
     if (!foundUserMessage) {
       messageHistory.push({
@@ -4093,7 +4203,7 @@ if (isReply) {
       console.log(`Added new message history entry with image attachment for ${message.author.username}`);
     }
   }
-  
+
   // 如果有 YouTube 影片信息，將其添加到消息歷史中
   if (message._youtubeInfo) {
     let foundUserMessage = false;
@@ -4109,7 +4219,7 @@ if (isReply) {
         break;
       }
     }
-    
+
     // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
     if (!foundUserMessage) {
       messageHistory.push({
@@ -4120,7 +4230,7 @@ if (isReply) {
       console.log(`Added new message history entry with YouTube info for ${message.author.username}`);
     }
   }
-  
+
   // 如果有 YouTube 搜索結果，將其添加到消息歷史中
   if (message._youtubeSearchInfo) {
     let foundUserMessage = false;
@@ -4136,7 +4246,7 @@ if (isReply) {
         break;
       }
     }
-    
+
     // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
     if (!foundUserMessage) {
       messageHistory.push({
@@ -4147,7 +4257,7 @@ if (isReply) {
       console.log(`Added new message history entry with YouTube search info for ${message.author.username}`);
     }
   }
-  
+
   // 如果有圖像分析結果，將其添加到消息歷史中
   if (message._imageAnalysisInfo) {
     let foundUserMessage = false;
@@ -4163,7 +4273,7 @@ if (isReply) {
         break;
       }
     }
-    
+
     // 如果在歷史記錄中找不到該用戶的消息，則添加一個新的消息
     if (!foundUserMessage) {
       messageHistory.push({
@@ -4174,25 +4284,25 @@ if (isReply) {
       console.log(`Added new message history entry with image analysis results for ${message.author.username}`);
     }
   }
-  
+
   // Update channel's message history
   channelConfig.messageHistory = messageHistory;
-  
+
   // Process with selected API
   try {
     // Get channel's personality or use default
     const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
-    
+
     // Add personality prompt as system message
     const formattedMessages = [
       { role: 'system', content: channelPersonality },
       ...messageHistory.map(msg => {
         // For Character.AI, ensure username is included in every message
         // This helps the model understand who is speaking
-        const content = msg.role === 'user' 
+        const content = msg.role === 'user'
           ? (msg.content.startsWith(`[${msg.author}]`) ? msg.content : `[${msg.author}]: ${msg.content}`)
           : msg.content;
-          
+
         return {
           role: msg.role,
           content: content,
@@ -4203,15 +4313,15 @@ if (isReply) {
         };
       })
     ];
-    
+
     // Get channel's preferred model or use default
     const preferredModel = channelModelPreferences.get(message.channelId) || defaultModel;
-    
+
     // Variables to track response
     let response = null;
     let modelUsed = '';
     let fallbackUsed = false;
-    
+
     // Try preferred model first
     switch (preferredModel) {
       case 'deepseek':
@@ -4225,7 +4335,7 @@ if (isReply) {
           }
         }
         break;
-        
+
       case 'gemini':
         if (GEMINI_API_KEYS.length > 0) {
           try {
@@ -4237,7 +4347,7 @@ if (isReply) {
           }
         }
         break;
-        
+
       case 'chatgpt':
         if (CHATGPT_API_KEYS.length > 0) {
           try {
@@ -4249,7 +4359,7 @@ if (isReply) {
           }
         }
         break;
-        
+
       case 'groq':
         if (GROQ_API_KEYS.length > 0) {
           try {
@@ -4275,7 +4385,7 @@ if (isReply) {
           }
         }
         break;
-        
+
       case 'characterai':
         if (CHARACTERAI_TOKENS.length > 0) {
           try {
@@ -4293,7 +4403,7 @@ if (isReply) {
           }
         }
         break;
-        
+
       case 'together':
         if (TOGETHER_API_KEYS.length > 0) {
           try {
@@ -4306,11 +4416,11 @@ if (isReply) {
         }
         break;
     }
-    
+
     // If preferred model failed, try other models as fallback
     if (!response) {
       fallbackUsed = true;
-      
+
       // Try Groq API if not already tried and keys are available
       if (!response && preferredModel !== 'groq' && GROQ_API_KEYS.length > 0) {
         try {
@@ -4321,7 +4431,7 @@ if (isReply) {
           console.log('Groq API fallback error:', error.message);
         }
       }
-      
+
       // Try Cerebras API if not already tried and keys are available
       if (!response && preferredModel !== 'cerebras' && CEREBRAS_API_KEYS.length > 0) {
         try {
@@ -4332,7 +4442,7 @@ if (isReply) {
           console.log('Cerebras API fallback error:', error.message);
         }
       }
-      
+
       // Try Gemini API if not already tried and keys are available
       if (!response && preferredModel !== 'gemini' && GEMINI_API_KEYS.length > 0) {
         try {
@@ -4342,7 +4452,7 @@ if (isReply) {
           console.log('Gemini API fallback error:', error.message);
         }
       }
-      
+
       // Try ChatGPT API if not already tried and keys are available
       if (!response && preferredModel !== 'chatgpt' && CHATGPT_API_KEYS.length > 0) {
         try {
@@ -4352,7 +4462,7 @@ if (isReply) {
           console.log('ChatGPT API fallback error:', error.message);
         }
       }
-      
+
       // Try Together API if not already tried and keys are available
       if (!response && preferredModel !== 'together' && TOGETHER_API_KEYS.length > 0) {
         try {
@@ -4362,7 +4472,7 @@ if (isReply) {
           console.log('Together API fallback error:', error.message);
         }
       }
-      
+
       // Try DeepSeek API if not already tried and keys are available (last resort)
       if (!response && preferredModel !== 'deepseek' && DEEPSEEK_API_KEYS.length > 0) {
         try {
@@ -4373,15 +4483,15 @@ if (isReply) {
         }
       }
     }
-    
+
     // If all models failed or returned empty response
     if (!response) {
       throw new Error('All available models failed to generate a response');
     }
-    
+
     // Refresh typing indicator
     await message.channel.sendTyping();
-    
+
     // 檢查用戶輸入是否為繁體中文，如果是，確保回覆也是繁體中文
     let finalResponse = response;
     if (isTraditionalChinese(message.content)) {
@@ -4389,7 +4499,7 @@ if (isReply) {
       // 確保回覆使用繁體中文
       finalResponse = ensureTraditionalChinese(response);
     }
-    
+
     // Send the response
     await message.channel.send(finalResponse);
     if (fallbackUsed) {
@@ -4397,19 +4507,19 @@ if (isReply) {
     } else {
       console.log(`Response sent using ${modelUsed} model`);
     }
-    
+
   } catch (error) {
     console.error('Error generating response:', error);
     await message.channel.send('Sorry, I glitched out for a sec. Hit me up again later?');
   }
-  },
+},
 ),
 
 
 
-client.on('error', (error) => {
-  console.error('Discord client error:', error);
-});
+  client.on('error', (error) => {
+    console.error('Discord client error:', error);
+  });
 
 // Handle process termination gracefully
 process.on('SIGINT', () => {
