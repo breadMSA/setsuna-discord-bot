@@ -6,6 +6,27 @@ const { EmbedBuilder } = require('discord.js');
 const ffmpegPath = require('ffmpeg-static');
 process.env.FFMPEG_PATH = ffmpegPath;
 
+// Pre-load encryption libraries
+try {
+    // Try to load sodium-native first (best performance)
+    require('sodium-native');
+    console.log('✅ 已載入 sodium-native 加密庫');
+} catch {
+    try {
+        // Fallback to libsodium-wrappers
+        require('libsodium-wrappers');
+        console.log('✅ 已載入 libsodium-wrappers 加密庫');
+    } catch {
+        try {
+            // Fallback to tweetnacl
+            require('tweetnacl');
+            console.log('✅ 已載入 tweetnacl 加密庫');
+        } catch (e) {
+            console.warn('⚠️ 未找到加密庫，語音功能可能無法正常運作');
+        }
+    }
+}
+
 // Music player instance (will be initialized in setupMusicPlayer)
 let player = null;
 
