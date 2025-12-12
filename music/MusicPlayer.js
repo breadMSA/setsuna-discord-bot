@@ -77,7 +77,10 @@ class MusicPlayer {
             ],
             emitNewSongOnly: true,
             emitAddSongWhenCreatingQueue: false,
-            emitAddListWhenCreatingQueue: false
+            emitAddListWhenCreatingQueue: false,
+            ffmpeg: {
+                path: ffmpegPath
+            }
         });
 
         this.setupEvents();
