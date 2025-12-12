@@ -68,9 +68,7 @@ class MusicPlayer {
         this.distube = new DisTube(client, {
             plugins: [
                 new YouTubePlugin(),
-                new SpotifyPlugin({
-                    emitEventsAfterFetching: true
-                }),
+                new SpotifyPlugin(),
                 new SoundCloudPlugin()
             ],
             emitNewSongOnly: true,
