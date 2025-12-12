@@ -841,6 +841,7 @@ client.once('ready', async () => {
   // Initialize Music Player
   try {
     musicPlayer = new MusicPlayer(client);
+    musicPlayer.init(client.user.id);
     console.log('Music player initialized successfully!');
   } catch (error) {
     console.error('Error initializing music player:', error);
@@ -943,8 +944,12 @@ client.on('interactionCreate', async interaction => {
           const result = await musicPlayer.play(voiceChannel, textChannel, query, member);
           if (!result.success) {
             await interaction.editReply(`❌ ${result.error}`);
+          } else if (result.type === 'playlist') {
+            await interaction.editReply(`📋 已加入播放列表 **${result.name}** (${result.count} 首歌)`);
+          } else if (result.type === 'track') {
+            await interaction.editReply(`🎵 已加入隊列: **${result.track?.info?.title || '未知歌曲'}**`);
           } else {
-            await interaction.editReply('🎵 正在搜尋並播放...');
+            await interaction.editReply('🎵 正在播放...');
           }
           break;
         }
@@ -962,15 +967,8 @@ client.on('interactionCreate', async interaction => {
         }
 
         case 'skip': {
-          const to = interaction.options.getInteger('to');
-          let result;
-          if (to) {
-            result = await musicPlayer.skipTo(guildId, to);
-            await interaction.reply(result.success ? `⏭️ 已跳到第 ${to} 首` : `❌ ${result.error}`);
-          } else {
-            result = await musicPlayer.skip(guildId);
-            await interaction.reply(result.success ? (result.message || '⏭️ 已跳過') : `❌ ${result.error}`);
-          }
+          const result = musicPlayer.skip(guildId);
+          await interaction.reply(result.success ? (result.message || '⏭️ 已跳過') : `❌ ${result.error}`);
           break;
         }
 
@@ -981,25 +979,25 @@ client.on('interactionCreate', async interaction => {
         }
 
         case 'queue': {
-          const queue = musicPlayer.getQueue(guildId);
-          if (!queue || !queue.songs.length) {
+          const player = musicPlayer.getPlayer(guildId);
+          if (!player || !player.current) {
             await interaction.reply({ content: '❌ 目前沒有播放隊列', ephemeral: true });
             return;
           }
           const page = interaction.options.getInteger('page') || 1;
-          const embed = musicPlayer.createQueueEmbed(queue, page);
+          const embed = musicPlayer.createQueueEmbed(player, page);
           await interaction.reply({ embeds: [embed] });
           break;
         }
 
         case 'nowplaying': {
-          const queue = musicPlayer.getQueue(guildId);
-          if (!queue || !queue.songs.length) {
+          const player = musicPlayer.getPlayer(guildId);
+          if (!player || !player.current) {
             await interaction.reply({ content: '❌ 目前沒有正在播放的歌曲', ephemeral: true });
             return;
           }
-          const embed = musicPlayer.createNowPlayingEmbed(queue.songs[0], queue);
-          const buttons = musicPlayer.createControlButtons(queue);
+          const embed = musicPlayer.createNowPlayingEmbed(player.current, player);
+          const buttons = musicPlayer.createControlButtons(player);
           await interaction.reply({ embeds: [embed], components: [buttons] });
           break;
         }

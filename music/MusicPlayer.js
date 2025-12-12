@@ -1,24 +1,18 @@
 /**
- * MusicPlayer.js - DisTube Music Player Integration for Setsuna
- * Handles all music playback functionality
+ * MusicPlayer.js - Riffy Lavalink Music Player for Setsuna
+ * Uses Lavalink server for reliable YouTube/Spotify/SoundCloud playback
  */
 
-const { DisTube } = require('distube');
-const { SpotifyPlugin } = require('@distube/spotify');
-const { SoundCloudPlugin } = require('@distube/soundcloud');
-const { YouTubePlugin } = require('@distube/youtube');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Riffy } = require('riffy');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, GatewayDispatchEvents } = require('discord.js');
 
-// Set ffmpeg path from ffmpeg-static
-const ffmpegPath = require('ffmpeg-static');
-process.env.FFMPEG_PATH = ffmpegPath;
-
-// Format time from seconds to MM:SS or HH:MM:SS
-function formatTime(seconds) {
-    if (!seconds || isNaN(seconds)) return '00:00';
+// Format time from milliseconds to MM:SS or HH:MM:SS
+function formatTime(ms) {
+    if (!ms || isNaN(ms)) return '00:00';
+    const seconds = Math.floor(ms / 1000);
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
+    const secs = seconds % 60;
 
     if (hrs > 0) {
         return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
@@ -26,184 +20,199 @@ function formatTime(seconds) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-// Parse time string (1:30, 01:30, 1:30:00) to seconds
+// Parse time string (1:30, 01:30, 1:30:00) to milliseconds
 function parseTime(timeStr) {
     if (!timeStr) return 0;
     const parts = timeStr.split(':').map(Number);
     if (parts.some(isNaN)) return 0;
 
+    let seconds = 0;
     if (parts.length === 3) {
-        return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
     } else if (parts.length === 2) {
-        return parts[0] * 60 + parts[1];
+        seconds = parts[0] * 60 + parts[1];
     } else if (parts.length === 1) {
-        return parts[0];
+        seconds = parts[0];
     }
-    return 0;
+    return seconds * 1000;
 }
 
 // Create progress bar
 function createProgressBar(current, total, length = 15) {
+    if (!total || total === 0) return '▬'.repeat(length);
     const progress = Math.round((current / total) * length);
-    const filled = '▬'.repeat(Math.max(0, progress));
+    const filled = '▬'.repeat(Math.max(0, Math.min(progress, length - 1)));
     const empty = '▬'.repeat(Math.max(0, length - progress - 1));
     return `${filled}🔘${empty}`;
 }
 
 // Truncate string
 function truncateString(str, maxLength = 50) {
-    if (!str) return '';
+    if (!str) return '未知';
     if (str.length <= maxLength) return str;
     return str.substring(0, maxLength - 3) + '...';
 }
 
 // Loop mode names in Chinese
 const loopModeNames = {
-    0: '關閉',
-    1: '單曲循環',
-    2: '隊列循環'
+    'none': '關閉',
+    'track': '單曲循環',
+    'queue': '隊列循環'
 };
+
+// Free Lavalink nodes (multiple regions for redundancy)
+const lavalinkNodes = [
+    {
+        name: 'Singapore',
+        host: 'lava1.horizxon.studio',
+        port: 80,
+        password: 'horizxon.studio',
+        secure: false
+    },
+    {
+        name: 'US-California',
+        host: 'lava2.horizxon.studio',
+        port: 80,
+        password: 'horizxon.studio',
+        secure: false
+    },
+    {
+        name: 'Germany',
+        host: 'lava3.horizxon.studio',
+        port: 80,
+        password: 'horizxon.studio',
+        secure: false
+    }
+];
 
 class MusicPlayer {
     constructor(client) {
         this.client = client;
 
-        // Initialize DisTube with plugins
-        this.distube = new DisTube(client, {
-            plugins: [
-                new YouTubePlugin(),
-                new SpotifyPlugin(),
-                new SoundCloudPlugin()
-            ],
-            emitNewSongOnly: true,
-            emitAddSongWhenCreatingQueue: false,
-            emitAddListWhenCreatingQueue: false,
-            ffmpeg: {
-                path: ffmpegPath
-            }
+        // Initialize Riffy with Lavalink nodes
+        this.riffy = new Riffy(client, lavalinkNodes, {
+            send: (payload) => {
+                const guild = client.guilds.cache.get(payload.d.guild_id);
+                if (guild) guild.shard.send(payload);
+            },
+            defaultSearchPlatform: 'ytmsearch', // YouTube Music search
+            restVersion: 'v4'
         });
 
         this.setupEvents();
+        this.setupVoiceStateUpdate();
+    }
+
+    // Initialize after client is ready
+    init(clientId) {
+        this.riffy.init(clientId);
+    }
+
+    setupVoiceStateUpdate() {
+        // Handle voice state updates
+        this.client.on('raw', (d) => {
+            if (![GatewayDispatchEvents.VoiceStateUpdate, GatewayDispatchEvents.VoiceServerUpdate].includes(d.t)) return;
+            this.riffy.updateVoiceState(d);
+        });
     }
 
     setupEvents() {
-        // When a new song starts playing
-        this.distube.on('playSong', (queue, song) => {
-            const embed = this.createNowPlayingEmbed(song, queue);
-            const buttons = this.createControlButtons(queue);
-
-            queue.textChannel?.send({
-                embeds: [embed],
-                components: [buttons]
-            }).catch(console.error);
+        // Node connected
+        this.riffy.on('nodeConnect', (node) => {
+            console.log(`[Music] Lavalink node "${node.name}" connected.`);
         });
 
-        // When a song is added to queue
-        this.distube.on('addSong', (queue, song) => {
-            const embed = new EmbedBuilder()
-                .setColor(0x00FF00)
-                .setTitle('🎵 已加入隊列')
-                .setDescription(`**[${truncateString(song.name, 60)}](${song.url})**`)
-                .addFields(
-                    { name: '👤 歌手', value: song.uploader?.name || '未知', inline: true },
-                    { name: '⏱️ 時長', value: formatTime(song.duration), inline: true },
-                    { name: '📋 隊列位置', value: `#${queue.songs.length}`, inline: true }
-                )
-                .setThumbnail(song.thumbnail)
-                .setFooter({ text: `由 ${song.user?.displayName || song.user?.username || '未知'} 添加` });
-
-            queue.textChannel?.send({ embeds: [embed] }).catch(console.error);
+        // Node error
+        this.riffy.on('nodeError', (node, error) => {
+            console.error(`[Music] Lavalink node "${node.name}" error:`, error.message);
         });
 
-        // When a playlist is added
-        this.distube.on('addList', (queue, playlist) => {
-            const embed = new EmbedBuilder()
-                .setColor(0x9B59B6)
-                .setTitle('📋 已加入播放列表')
-                .setDescription(`**${playlist.name}**`)
-                .addFields(
-                    { name: '🎵 歌曲數量', value: `${playlist.songs.length} 首`, inline: true },
-                    { name: '⏱️ 總時長', value: formatTime(playlist.songs.reduce((acc, song) => acc + song.duration, 0)), inline: true }
-                )
-                .setThumbnail(playlist.thumbnail)
-                .setFooter({ text: `由 ${playlist.songs[0]?.user?.displayName || '未知'} 添加` });
-
-            queue.textChannel?.send({ embeds: [embed] }).catch(console.error);
+        // Node disconnect
+        this.riffy.on('nodeDisconnect', (node) => {
+            console.log(`[Music] Lavalink node "${node.name}" disconnected.`);
         });
 
-        // When queue finishes
-        this.distube.on('finish', (queue) => {
+        // Track start
+        this.riffy.on('trackStart', async (player, track) => {
+            const channel = this.client.channels.cache.get(player.textChannel);
+            if (!channel) return;
+
+            const embed = this.createNowPlayingEmbed(track, player);
+            const buttons = this.createControlButtons(player);
+
+            try {
+                await channel.send({ embeds: [embed], components: [buttons] });
+            } catch (e) {
+                console.error('[Music] Error sending now playing message:', e.message);
+            }
+        });
+
+        // Queue end
+        this.riffy.on('queueEnd', async (player) => {
+            const channel = this.client.channels.cache.get(player.textChannel);
+            if (!channel) return;
+
             const embed = new EmbedBuilder()
                 .setColor(0xFFA500)
                 .setTitle('🎵 播放完畢')
                 .setDescription('隊列中的所有歌曲都已播放完畢！');
 
-            queue.textChannel?.send({ embeds: [embed] }).catch(console.error);
-        });
-
-        // When queue is empty
-        this.distube.on('empty', (queue) => {
-            const embed = new EmbedBuilder()
-                .setColor(0xFF6B6B)
-                .setTitle('👋 已離開語音頻道')
-                .setDescription('語音頻道已清空，再見！');
-
-            queue.textChannel?.send({ embeds: [embed] }).catch(console.error);
-        });
-
-        // Error handling
-        this.distube.on('error', (channel, error) => {
-            console.error('[Music Error]', error);
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTitle('❌ 播放錯誤')
-                .setDescription(`發生錯誤: ${error.message || '未知錯誤'}`);
-
-            if (channel) {
-                channel.send({ embeds: [embed] }).catch(console.error);
+            try {
+                await channel.send({ embeds: [embed] });
+                player.destroy();
+            } catch (e) {
+                console.error('[Music] Error sending queue end message:', e.message);
             }
         });
 
-        // No related songs for autoplay
-        this.distube.on('noRelated', (queue) => {
-            queue.textChannel?.send('❌ 找不到相關歌曲進行自動播放').catch(console.error);
+        // Player disconnect
+        this.riffy.on('playerDisconnect', async (player) => {
+            const channel = this.client.channels.cache.get(player.textChannel);
+            if (channel) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xFF6B6B)
+                    .setTitle('👋 已離開語音頻道')
+                    .setDescription('再見！');
+                await channel.send({ embeds: [embed] }).catch(() => { });
+            }
         });
 
-        // Search result
-        this.distube.on('searchResult', (message, results) => {
-            // This is handled by the search command directly
-        });
-
-        // Init queue
-        this.distube.on('initQueue', (queue) => {
-            queue.volume = 50;
+        // Track error
+        this.riffy.on('trackError', async (player, track, error) => {
+            console.error('[Music] Track error:', error);
+            const channel = this.client.channels.cache.get(player.textChannel);
+            if (channel) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xFF0000)
+                    .setTitle('❌ 播放錯誤')
+                    .setDescription(`無法播放 **${track.info.title}**\n錯誤: ${error.message || '未知錯誤'}`);
+                await channel.send({ embeds: [embed] }).catch(() => { });
+            }
         });
     }
 
-    createNowPlayingEmbed(song, queue) {
-        const current = queue.currentTime || 0;
-        const total = song.duration || 0;
+    createNowPlayingEmbed(track, player) {
+        const info = track.info;
+        const current = player.position || 0;
+        const total = info.length || 0;
         const progressBar = createProgressBar(current, total);
 
-        const loopMode = loopModeNames[queue.repeatMode] || '關閉';
-        const isPaused = queue.paused;
+        const loopMode = loopModeNames[player.loop] || '關閉';
+        const isPaused = player.paused;
 
         const embed = new EmbedBuilder()
             .setColor(0xFF69B4)
-            .setAuthor({
-                name: `🎵 正在播放`,
-                iconURL: song.user?.displayAvatarURL?.()
-            })
-            .setTitle(truncateString(song.name, 60))
-            .setURL(song.url)
-            .setThumbnail(song.thumbnail)
+            .setAuthor({ name: '🎵 正在播放' })
+            .setTitle(truncateString(info.title, 60))
+            .setURL(info.uri)
+            .setThumbnail(info.artworkUrl || null)
             .addFields(
-                { name: '👤 歌手', value: song.uploader?.name || '未知', inline: true },
-                { name: '⏱️ 時長', value: formatTime(song.duration), inline: true },
-                { name: '🔊 音量', value: `${queue.volume}%`, inline: true },
+                { name: '👤 歌手', value: truncateString(info.author, 30), inline: true },
+                { name: '⏱️ 時長', value: info.isStream ? '🔴 直播' : formatTime(info.length), inline: true },
+                { name: '🔊 音量', value: `${player.volume}%`, inline: true },
                 { name: '🔁 循環模式', value: loopMode, inline: true },
-                { name: '📋 隊列', value: `${queue.songs.length} 首歌`, inline: true },
-                { name: '📢 請求者', value: song.user?.displayName || song.user?.username || '未知', inline: true }
+                { name: '📋 隊列', value: `${player.queue.length + 1} 首歌`, inline: true },
+                { name: '📢 請求者', value: info.requester?.displayName || info.requester?.username || '未知', inline: true }
             )
             .addFields({
                 name: '\u200b',
@@ -212,18 +221,18 @@ class MusicPlayer {
             })
             .setTimestamp();
 
-        if (queue.songs.length > 1) {
-            const upNext = queue.songs.slice(1, 4).map((s, i) =>
-                `\`${i + 2}.\` [${truncateString(s.name, 35)}](${s.url})`
+        if (player.queue.length > 0) {
+            const upNext = player.queue.slice(0, 3).map((t, i) =>
+                `\`${i + 2}.\` [${truncateString(t.info.title, 35)}](${t.info.uri})`
             ).join('\n');
-            embed.addFields({ name: '⏭️ 接下來', value: upNext || '沒有更多歌曲', inline: false });
+            embed.addFields({ name: '⏭️ 接下來', value: upNext, inline: false });
         }
 
         return embed;
     }
 
-    createControlButtons(queue) {
-        const isPaused = queue?.paused || false;
+    createControlButtons(player) {
+        const isPaused = player?.paused || false;
 
         return new ActionRowBuilder()
             .addComponents(
@@ -250,54 +259,102 @@ class MusicPlayer {
             );
     }
 
-    createQueueEmbed(queue, page = 1, itemsPerPage = 10) {
-        const songs = queue.songs;
-        const totalPages = Math.ceil((songs.length - 1) / itemsPerPage) || 1;
+    createQueueEmbed(player, page = 1, itemsPerPage = 10) {
+        const queue = player.queue;
+        const currentTrack = player.current;
+        const totalPages = Math.ceil(queue.length / itemsPerPage) || 1;
         page = Math.max(1, Math.min(page, totalPages));
 
-        const start = (page - 1) * itemsPerPage + 1;
-        const end = Math.min(start + itemsPerPage - 1, songs.length - 1);
+        const start = (page - 1) * itemsPerPage;
+        const end = Math.min(start + itemsPerPage, queue.length);
 
         let queueList = '';
-        if (songs.length > 1) {
-            for (let i = start; i <= end; i++) {
-                const song = songs[i];
-                queueList += `\`${i}.\` [${truncateString(song.name, 40)}](${song.url}) - \`${formatTime(song.duration)}\`\n`;
-            }
+        for (let i = start; i < end; i++) {
+            const track = queue[i];
+            queueList += `\`${i + 2}.\` [${truncateString(track.info.title, 40)}](${track.info.uri}) - \`${formatTime(track.info.length)}\`\n`;
         }
 
-        const currentSong = songs[0];
-        const totalDuration = songs.reduce((acc, song) => acc + song.duration, 0);
+        const totalDuration = queue.reduce((acc, t) => acc + (t.info.length || 0), currentTrack?.info?.length || 0);
 
         const embed = new EmbedBuilder()
             .setColor(0x7289DA)
             .setTitle('🎵 音樂隊列')
-            .setDescription(`**正在播放:**\n[${truncateString(currentSong.name, 50)}](${currentSong.url}) - \`${formatTime(currentSong.duration)}\``)
+            .setDescription(`**正在播放:**\n[${truncateString(currentTrack?.info?.title, 50)}](${currentTrack?.info?.uri}) - \`${formatTime(currentTrack?.info?.length)}\``)
             .addFields({
-                name: `📋 隊列 (${songs.length - 1} 首歌)`,
+                name: `📋 隊列 (${queue.length} 首歌)`,
                 value: queueList || '隊列中沒有其他歌曲',
                 inline: false
             })
             .setFooter({
-                text: `第 ${page}/${totalPages} 頁 | 總時長: ${formatTime(totalDuration)} | 循環: ${loopModeNames[queue.repeatMode]}`
+                text: `第 ${page}/${totalPages} 頁 | 總時長: ${formatTime(totalDuration)} | 循環: ${loopModeNames[player.loop] || '關閉'}`
             });
 
         return embed;
     }
 
-    // Get queue for a guild
-    getQueue(guildId) {
-        return this.distube.getQueue(guildId);
+    // Get player for a guild
+    getPlayer(guildId) {
+        return this.riffy.players.get(guildId);
     }
 
     // Play a song
     async play(voiceChannel, textChannel, query, member) {
         try {
-            await this.distube.play(voiceChannel, query, {
-                member: member,
-                textChannel: textChannel
+            // Create or get player
+            let player = this.getPlayer(voiceChannel.guild.id);
+
+            if (!player) {
+                player = this.riffy.createConnection({
+                    guildId: voiceChannel.guild.id,
+                    voiceChannel: voiceChannel.id,
+                    textChannel: textChannel.id,
+                    deaf: true
+                });
+            }
+
+            // Search for the track
+            const resolve = await this.riffy.resolve({
+                query: query,
+                requester: member
             });
-            return { success: true };
+
+            const { loadType, tracks, playlistInfo } = resolve;
+
+            if (loadType === 'empty' || loadType === 'error' || !tracks || tracks.length === 0) {
+                return { success: false, error: '找不到任何結果' };
+            }
+
+            if (loadType === 'playlist') {
+                for (const track of tracks) {
+                    track.info.requester = member;
+                    player.queue.add(track);
+                }
+
+                if (!player.playing && !player.paused) {
+                    player.play();
+                }
+
+                return {
+                    success: true,
+                    type: 'playlist',
+                    name: playlistInfo.name,
+                    count: tracks.length
+                };
+            } else {
+                const track = tracks[0];
+                track.info.requester = member;
+                player.queue.add(track);
+
+                if (!player.playing && !player.paused) {
+                    player.play();
+                }
+
+                return {
+                    success: true,
+                    type: 'track',
+                    track: track
+                };
+            }
         } catch (error) {
             console.error('[Music Play Error]', error);
             return { success: false, error: error.message };
@@ -306,219 +363,167 @@ class MusicPlayer {
 
     // Pause playback
     pause(guildId) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
-        if (queue.paused) return { success: false, error: '音樂已經暫停了' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
+        if (player.paused) return { success: false, error: '音樂已經暫停了' };
 
-        queue.pause();
+        player.pause(true);
         return { success: true };
     }
 
     // Resume playback
     resume(guildId) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
-        if (!queue.paused) return { success: false, error: '音樂正在播放中' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
+        if (!player.paused) return { success: false, error: '音樂正在播放中' };
 
-        queue.resume();
+        player.pause(false);
         return { success: true };
     }
 
     // Skip to next song
-    async skip(guildId) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+    skip(guildId) {
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
 
-        try {
-            if (queue.songs.length <= 1) {
-                await queue.stop();
-                return { success: true, message: '隊列已清空，停止播放' };
-            }
-            await queue.skip();
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-
-    // Skip to specific position
-    async skipTo(guildId, position) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
-        if (position < 1 || position >= queue.songs.length) {
-            return { success: false, error: '無效的位置' };
+        if (player.queue.length === 0) {
+            player.stop();
+            return { success: true, message: '隊列已清空，停止播放' };
         }
 
-        try {
-            await queue.jump(position);
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+        player.stop();
+        return { success: true };
     }
 
     // Stop and leave
-    async stop(guildId) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+    stop(guildId) {
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
 
-        try {
-            await queue.stop();
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+        player.destroy();
+        return { success: true };
     }
 
-    // Set volume
+    // Set volume (0-200)
     setVolume(guildId, volume) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
 
-        volume = Math.max(0, Math.min(150, volume));
-        queue.setVolume(volume);
+        volume = Math.max(0, Math.min(200, volume));
+        player.setVolume(volume);
         return { success: true, volume: volume };
     }
 
-    // Seek to position
-    seek(guildId, seconds) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+    // Seek to position (milliseconds)
+    seek(guildId, ms) {
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
+        if (!player.current) return { success: false, error: '沒有正在播放的歌曲' };
 
-        try {
-            queue.seek(seconds);
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+        player.seek(ms);
+        return { success: true };
     }
 
     // Shuffle queue
     shuffle(guildId) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
-        if (queue.songs.length <= 2) return { success: false, error: '隊列中歌曲不足，無法隨機播放' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
+        if (player.queue.length < 2) return { success: false, error: '隊列中歌曲不足，無法隨機播放' };
 
-        queue.shuffle();
+        player.queue.shuffle();
         return { success: true };
     }
 
-    // Set loop mode (0: off, 1: song, 2: queue)
+    // Set loop mode ('none', 'track', 'queue')
     setLoop(guildId, mode) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
 
-        queue.setRepeatMode(mode);
-        return { success: true, mode: loopModeNames[mode] };
+        player.setLoop(mode);
+        return { success: true, mode: loopModeNames[mode] || mode };
     }
 
     // Toggle loop to next mode
     toggleLoop(guildId) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
 
-        const newMode = (queue.repeatMode + 1) % 3;
-        queue.setRepeatMode(newMode);
+        const modes = ['none', 'track', 'queue'];
+        const currentIndex = modes.indexOf(player.loop);
+        const newMode = modes[(currentIndex + 1) % 3];
+
+        player.setLoop(newMode);
         return { success: true, mode: loopModeNames[newMode] };
     }
 
     // Remove song from queue
     remove(guildId, position) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
-        if (position < 1 || position >= queue.songs.length) {
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
+        if (position < 1 || position > player.queue.length) {
             return { success: false, error: '無效的位置' };
         }
 
-        const removed = queue.songs.splice(position, 1)[0];
-        return { success: true, song: removed };
-    }
-
-    // Move song in queue
-    move(guildId, from, to) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
-        if (from < 1 || from >= queue.songs.length || to < 1 || to >= queue.songs.length) {
-            return { success: false, error: '無效的位置' };
-        }
-
-        const song = queue.songs.splice(from, 1)[0];
-        queue.songs.splice(to, 0, song);
-        return { success: true, song: song };
+        const removed = player.queue.remove(position - 1);
+        return { success: true, track: removed };
     }
 
     // Clear queue (keep current song)
     clear(guildId) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
 
-        const currentSong = queue.songs[0];
-        queue.songs.length = 1;
+        player.queue.clear();
         return { success: true };
     }
 
     // Apply filter
     async setFilter(guildId, filterName) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
 
         try {
-            if (filterName === 'off' || filterName === '關閉') {
-                await queue.filters.clear();
-                return { success: true, message: '已關閉所有濾鏡' };
-            }
-
-            // Available filters
             const filters = {
-                'bassboost': 'bassboost',
-                '重低音': 'bassboost',
-                'nightcore': 'nightcore',
-                '夜核': 'nightcore',
-                'vaporwave': 'vaporwave',
-                '蒸汽波': 'vaporwave',
-                '3d': '3d',
-                'echo': 'echo',
-                '回音': 'echo',
-                'karaoke': 'karaoke',
-                '卡拉OK': 'karaoke',
-                'flanger': 'flanger',
-                'gate': 'gate',
-                'haas': 'haas',
-                'reverse': 'reverse',
-                '反轉': 'reverse',
-                'surround': 'surround',
-                '環繞': 'surround',
-                'mcompand': 'mcompand',
-                'phaser': 'phaser',
-                'tremolo': 'tremolo',
-                'earwax': 'earwax'
+                'off': null,
+                '關閉': null,
+                'bassboost': { equalizer: [{ band: 0, gain: 0.6 }, { band: 1, gain: 0.7 }, { band: 2, gain: 0.8 }] },
+                '重低音': { equalizer: [{ band: 0, gain: 0.6 }, { band: 1, gain: 0.7 }, { band: 2, gain: 0.8 }] },
+                'nightcore': { timescale: { speed: 1.3, pitch: 1.3, rate: 1.0 } },
+                '夜核': { timescale: { speed: 1.3, pitch: 1.3, rate: 1.0 } },
+                'vaporwave': { timescale: { speed: 0.85, pitch: 0.9, rate: 1.0 } },
+                '蒸汽波': { timescale: { speed: 0.85, pitch: 0.9, rate: 1.0 } },
+                'karaoke': { karaoke: { level: 1.0, monoLevel: 1.0, filterBand: 220.0, filterWidth: 100.0 } },
+                '卡拉OK': { karaoke: { level: 1.0, monoLevel: 1.0, filterBand: 220.0, filterWidth: 100.0 } },
+                'tremolo': { tremolo: { frequency: 4.0, depth: 0.75 } },
+                'vibrato': { vibrato: { frequency: 4.0, depth: 0.75 } },
+                '8d': { rotation: { rotationHz: 0.2 } }
             };
 
             const filter = filters[filterName.toLowerCase()];
-            if (!filter) {
+            if (filter === undefined) {
                 return {
                     success: false,
-                    error: `未知的濾鏡。可用濾鏡: ${Object.keys(filters).filter(k => !k.includes('中文')).join(', ')}`
+                    error: `未知的濾鏡。可用濾鏡: off, bassboost, nightcore, vaporwave, karaoke, tremolo, vibrato, 8d`
                 };
             }
 
-            if (queue.filters.has(filter)) {
-                await queue.filters.remove(filter);
-                return { success: true, message: `已關閉 ${filter} 濾鏡` };
+            if (filter === null) {
+                await player.node.rest.updatePlayer({
+                    guildId: guildId,
+                    data: { filters: {} }
+                });
+                return { success: true, message: '已關閉所有濾鏡' };
             } else {
-                await queue.filters.add(filter);
-                return { success: true, message: `已啟用 ${filter} 濾鏡` };
+                await player.node.rest.updatePlayer({
+                    guildId: guildId,
+                    data: { filters: filter }
+                });
+                return { success: true, message: `已啟用 ${filterName} 濾鏡` };
             }
         } catch (error) {
+            console.error('[Music Filter Error]', error);
             return { success: false, error: error.message };
         }
-    }
-
-    // Get current filters
-    getFilters(guildId) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return [];
-        return queue.filters.names;
     }
 
     // Replay current song
@@ -528,19 +533,20 @@ class MusicPlayer {
 
     // Forward by seconds
     forward(guildId, seconds = 10) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
+        if (!player.current) return { success: false, error: '沒有正在播放的歌曲' };
 
-        const newTime = Math.min(queue.currentTime + seconds, queue.songs[0].duration - 1);
+        const newTime = Math.min(player.position + (seconds * 1000), player.current.info.length - 1000);
         return this.seek(guildId, newTime);
     }
 
     // Rewind by seconds
     rewind(guildId, seconds = 10) {
-        const queue = this.getQueue(guildId);
-        if (!queue) return { success: false, error: '沒有正在播放的音樂' };
+        const player = this.getPlayer(guildId);
+        if (!player) return { success: false, error: '沒有正在播放的音樂' };
 
-        const newTime = Math.max(queue.currentTime - seconds, 0);
+        const newTime = Math.max(player.position - (seconds * 1000), 0);
         return this.seek(guildId, newTime);
     }
 
@@ -559,8 +565,8 @@ class MusicPlayer {
             return true;
         }
 
-        const queue = this.getQueue(guildId);
-        if (!queue) {
+        const player = this.getPlayer(guildId);
+        if (!player) {
             await interaction.reply({ content: '❌ 目前沒有在播放音樂！', ephemeral: true });
             return true;
         }
@@ -570,17 +576,12 @@ class MusicPlayer {
 
         switch (customId) {
             case 'music_prev':
-                if (queue.previousSongs.length > 0) {
-                    await queue.previous();
-                    message = '⏮️ 播放上一首';
-                } else {
-                    result = this.seek(guildId, 0);
-                    message = result.success ? '⏮️ 已重新開始播放' : result.error;
-                }
+                result = this.seek(guildId, 0);
+                message = result.success ? '⏮️ 已重新開始播放' : result.error;
                 break;
 
             case 'music_pause':
-                if (queue.paused) {
+                if (player.paused) {
                     result = this.resume(guildId);
                     message = result.success ? '▶️ 已繼續播放' : result.error;
                 } else {
@@ -590,12 +591,12 @@ class MusicPlayer {
                 break;
 
             case 'music_skip':
-                result = await this.skip(guildId);
+                result = this.skip(guildId);
                 message = result.success ? (result.message || '⏭️ 已跳過') : result.error;
                 break;
 
             case 'music_stop':
-                result = await this.stop(guildId);
+                result = this.stop(guildId);
                 message = result.success ? '⏹️ 已停止播放' : result.error;
                 break;
 
@@ -610,13 +611,13 @@ class MusicPlayer {
 
         await interaction.reply({ content: message, ephemeral: true });
 
-        // Update the original message buttons if queue still exists
+        // Update the original message buttons if player still exists
         if (customId !== 'music_stop') {
-            const newQueue = this.getQueue(guildId);
-            if (newQueue) {
+            const currentPlayer = this.getPlayer(guildId);
+            if (currentPlayer) {
                 try {
                     await interaction.message.edit({
-                        components: [this.createControlButtons(newQueue)]
+                        components: [this.createControlButtons(currentPlayer)]
                     });
                 } catch (e) {
                     // Message might be deleted or not editable
