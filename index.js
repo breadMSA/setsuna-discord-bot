@@ -234,6 +234,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages, // Add support for direct messages
+    GatewayIntentBits.GuildVoiceStates, // Required for music functionality
   ],
   partials: [
     Partials.Channel,
