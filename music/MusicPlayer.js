@@ -4,7 +4,7 @@
  */
 
 const { Riffy } = require('riffy');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, GatewayDispatchEvents } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, GatewayDispatchEvents, MessageFlags } = require('discord.js');
 
 // Format time from milliseconds to MM:SS or HH:MM:SS
 function formatTime(ms) {
@@ -60,7 +60,7 @@ const loopModeNames = {
     'queue': '隊列循環'
 };
 
-// Free Lavalink nodes (multiple regions for redundancy)
+// Free Lavalink nodes
 // From: https://github.com/botxlab/lavalink-list
 const lavalinkNodes = [
     {
@@ -68,34 +68,6 @@ const lavalinkNodes = [
         host: 'lava-v4.ajieblogs.eu.org',
         port: 80,
         password: 'https://dsc.gg/ajidevserver',
-        secure: false
-    },
-    {
-        name: 'DivaHost',
-        host: 'lavalink.divahost.net',
-        port: 60002,
-        password: 'divahostv4',
-        secure: false
-    },
-    {
-        name: 'RudraCloud',
-        host: 'lavalink.rudracloud.com',
-        port: 2333,
-        password: 'RudraCloud.com',
-        secure: false
-    },
-    {
-        name: 'US-Node',
-        host: 'node.itzrandom.cloud',
-        port: 9000,
-        password: 'lavalink@itzrandomcloud',
-        secure: false
-    },
-    {
-        name: 'INZEWORLD',
-        host: 'lava.inzeworld.com',
-        port: 3128,
-        password: 'saher.inzeworld.com',
         secure: false
     }
 ];
@@ -110,7 +82,7 @@ class MusicPlayer {
                 const guild = client.guilds.cache.get(payload.d.guild_id);
                 if (guild) guild.shard.send(payload);
             },
-            defaultSearchPlatform: 'ytmsearch', // YouTube Music search
+            defaultSearchPlatform: 'ytsearch', // YouTube search (better results than ytmsearch)
             restVersion: 'v4'
         });
 
@@ -156,7 +128,12 @@ class MusicPlayer {
             const buttons = this.createControlButtons(player);
 
             try {
-                await channel.send({ embeds: [embed], components: [buttons] });
+                // Send as silent message (no notification)
+                await channel.send({
+                    embeds: [embed],
+                    components: [buttons],
+                    flags: MessageFlags.SuppressNotifications
+                });
             } catch (e) {
                 console.error('[Music] Error sending now playing message:', e.message);
             }
