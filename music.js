@@ -1,108 +1,133 @@
-const { Player } = require('discord-player');
-const { YoutubeiExtractor } = require('discord-player-youtubei');
+const { Kazagumo, Plugins } = require('kazagumo');
+const { Connectors } = require('shoukaku');
 const { EmbedBuilder } = require('discord.js');
 
-// Set FFmpeg path before anything else
-const ffmpegPath = require('ffmpeg-static');
-process.env.FFMPEG_PATH = ffmpegPath;
+// Kazagumo instance (will be initialized in setupMusicPlayer)
+let kazagumo = null;
 
-// Music player instance (will be initialized in setupMusicPlayer)
-let player = null;
+// Public Lavalink nodes - these are free public servers
+const LAVALINK_NODES = [
+    {
+        name: 'Lavalink1',
+        url: 'lavalink.jirayu.net:13592',
+        auth: 'youshallnotpass',
+        secure: false
+    },
+    {
+        name: 'Lavalink2',
+        url: 'lava.horizxon.studio:80',
+        auth: 'horizxon.studio',
+        secure: false
+    }
+];
 
 /**
- * Initialize the music player
+ * Initialize the music player with Lavalink
  * @param {Client} client - Discord client instance
  */
-async function setupMusicPlayer(client) {
-    player = new Player(client, {
-        skipFFmpeg: false,
-        ytdlOptions: {
-            quality: 'highestaudio',
-            highWaterMark: 1 << 25
+function setupMusicPlayer(client) {
+    kazagumo = new Kazagumo({
+        defaultSearchEngine: 'youtube',
+        plugins: [new Plugins.PlayerMoved(client)],
+        send: (guildId, payload) => {
+            const guild = client.guilds.cache.get(guildId);
+            if (guild) guild.shard.send(payload);
         }
+    }, new Connectors.DiscordJS(client), LAVALINK_NODES);
+
+    // Event: Lavalink ready
+    kazagumo.shoukaku.on('ready', (name) => {
+        console.log(`🎵 Lavalink 節點 ${name} 已連接`);
     });
 
-    // Register the YouTubei extractor for stable YouTube support
-    await player.extractors.register(YoutubeiExtractor, {});
+    // Event: Lavalink error
+    kazagumo.shoukaku.on('error', (name, error) => {
+        console.error(`❌ Lavalink 節點 ${name} 錯誤:`, error);
+    });
 
-    // Load default extractors for other sources (Spotify, SoundCloud, etc.)
-    await player.extractors.loadDefault((ext) => ext !== 'YouTubeExtractor');
+    // Event: Lavalink close
+    kazagumo.shoukaku.on('close', (name, code, reason) => {
+        console.warn(`⚠️ Lavalink 節點 ${name} 已關閉 (${code}): ${reason}`);
+    });
 
-    // Event: Track starts playing
-    player.events.on('playerStart', (queue, track) => {
+    // Event: Player start
+    kazagumo.on('playerStart', (player, track) => {
         const embed = new EmbedBuilder()
             .setColor('#0099ff')
             .setTitle('🎵 正在播放')
             .setDescription(`**${track.title}**`)
             .addFields(
                 { name: '作者', value: track.author || '未知', inline: true },
-                { name: '時長', value: track.duration || '未知', inline: true }
+                { name: '時長', value: formatDuration(track.length) || '未知', inline: true }
             )
             .setThumbnail(track.thumbnail)
-            .setFooter({ text: `由 ${track.requestedBy?.username || '未知'} 點播` });
+            .setFooter({ text: `由 ${track.requester?.username || '未知'} 點播` });
 
-        queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
+        const channel = client.channels.cache.get(player.textId);
+        if (channel) channel.send({ embeds: [embed] }).catch(console.error);
     });
 
-    // Event: Track added to queue
-    player.events.on('audioTrackAdd', (queue, track) => {
-        if (queue.tracks.size > 0 || queue.isPlaying()) {
-            const embed = new EmbedBuilder()
-                .setColor('#00ff00')
-                .setTitle('✅ 已加入播放列表')
-                .setDescription(`**${track.title}**`)
-                .addFields(
-                    { name: '作者', value: track.author || '未知', inline: true },
-                    { name: '時長', value: track.duration || '未知', inline: true }
-                )
-                .setThumbnail(track.thumbnail);
-
-            queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
-        }
+    // Event: Player end
+    kazagumo.on('playerEnd', (player) => {
+        // Handled by playerEmpty if queue is empty
     });
 
-    // Event: Queue ends
-    player.events.on('emptyQueue', (queue) => {
+    // Event: Queue empty
+    kazagumo.on('playerEmpty', (player) => {
         const embed = new EmbedBuilder()
             .setColor('#ff9900')
             .setTitle('👋 播放列表已清空')
             .setDescription('所有歌曲已播放完畢。');
 
-        queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
+        const channel = client.channels.cache.get(player.textId);
+        if (channel) channel.send({ embeds: [embed] }).catch(console.error);
+
+        // Destroy player after a delay
+        setTimeout(() => {
+            if (player && !player.queue.current) {
+                player.destroy();
+            }
+        }, 300000); // 5 minutes
     });
 
     // Event: Player error
-    player.events.on('playerError', (queue, error) => {
-        console.error(`播放器錯誤: ${error.message}`);
+    kazagumo.on('playerError', (player, error) => {
+        console.error('播放器錯誤:', error);
         const embed = new EmbedBuilder()
             .setColor('#ff0000')
             .setTitle('❌ 播放錯誤')
-            .setDescription(`播放時發生錯誤：${error.message}`);
+            .setDescription(`播放時發生錯誤：${error.message || '未知錯誤'}`);
 
-        queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
+        const channel = client.channels.cache.get(player.textId);
+        if (channel) channel.send({ embeds: [embed] }).catch(console.error);
     });
 
-    // Event: General error
-    player.events.on('error', (queue, error) => {
-        console.error(`一般錯誤: ${error.message}`);
-        const embed = new EmbedBuilder()
-            .setColor('#ff0000')
-            .setTitle('❌ 錯誤')
-            .setDescription(`發生錯誤：${error.message}`);
-
-        queue.metadata.channel.send({ embeds: [embed] }).catch(console.error);
-    });
-
-    console.log('🎵 音樂播放器已初始化 (使用 discord-player-youtubei)');
-    console.log(`📍 FFmpeg 路徑: ${ffmpegPath}`);
+    console.log('🎵 音樂播放器已初始化 (使用 Lavalink)');
 }
 
 /**
- * Get the music player instance
- * @returns {Player} The player instance
+ * Get the kazagumo instance
+ * @returns {Kazagumo} The kazagumo instance
  */
 function getPlayer() {
-    return player;
+    return kazagumo;
+}
+
+/**
+ * Format duration from milliseconds to MM:SS or HH:MM:SS
+ * @param {number} ms - Duration in milliseconds
+ * @returns {string} Formatted duration
+ */
+function formatDuration(ms) {
+    if (!ms) return '00:00';
+    const seconds = Math.floor((ms / 1000) % 60);
+    const minutes = Math.floor((ms / (1000 * 60)) % 60);
+    const hours = Math.floor(ms / (1000 * 60 * 60));
+
+    if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 /**
@@ -139,23 +164,11 @@ function isInVoiceChannel(member) {
     return member.voice && member.voice.channel !== null;
 }
 
-/**
- * Check if bot is in the same voice channel as user
- * @param {GuildMember} member - Guild member
- * @param {Guild} guild - Guild
- * @returns {boolean} True if in same channel
- */
-function isInSameVoiceChannel(member, guild) {
-    const botVoiceChannel = guild.members.me?.voice?.channel;
-    if (!botVoiceChannel) return false;
-    return member.voice.channel?.id === botVoiceChannel.id;
-}
-
 module.exports = {
     setupMusicPlayer,
     getPlayer,
+    formatDuration,
     createErrorEmbed,
     createSuccessEmbed,
-    isInVoiceChannel,
-    isInSameVoiceChannel
+    isInVoiceChannel
 };

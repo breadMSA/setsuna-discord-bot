@@ -910,8 +910,8 @@ const commands = [
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
-  // Initialize music player
-  await musicModule.setupMusicPlayer(client);
+  // Initialize music player (Lavalink)
+  musicModule.setupMusicPlayer(client);
 
   // Load active channels
   await loadActiveChannels();
