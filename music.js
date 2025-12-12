@@ -2,6 +2,10 @@ const { Player } = require('discord-player');
 const { YoutubeiExtractor } = require('discord-player-youtubei');
 const { EmbedBuilder } = require('discord.js');
 
+// Set FFmpeg path before anything else
+const ffmpegPath = require('ffmpeg-static');
+process.env.FFMPEG_PATH = ffmpegPath;
+
 // Music player instance (will be initialized in setupMusicPlayer)
 let player = null;
 
@@ -11,7 +15,11 @@ let player = null;
  */
 async function setupMusicPlayer(client) {
     player = new Player(client, {
-        skipFFmpeg: false
+        skipFFmpeg: false,
+        ytdlOptions: {
+            quality: 'highestaudio',
+            highWaterMark: 1 << 25
+        }
     });
 
     // Register the YouTubei extractor for stable YouTube support
@@ -99,6 +107,7 @@ async function setupMusicPlayer(client) {
     });
 
     console.log('🎵 音樂播放器已初始化 (使用 discord-player-youtubei)');
+    console.log(`📍 FFmpeg 路徑: ${ffmpegPath}`);
 }
 
 /**
