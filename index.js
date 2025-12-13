@@ -74,10 +74,11 @@ const CHATGPT_API_KEYS = [
   process.env.CHATGPT_API_KEY_3
 ].filter(key => key); // Filter out undefined/null keys
 
-const TOGETHER_API_KEYS = [
-  process.env.TOGETHER_API_KEY,
-  process.env.TOGETHER_API_KEY_2,
-  process.env.TOGETHER_API_KEY_3
+// Mistral AI API keys
+const MISTRAL_API_KEYS = [
+  process.env.MISTRAL_API_KEY,
+  process.env.MISTRAL_API_KEY_2,
+  process.env.MISTRAL_API_KEY_3
 ].filter(key => key); // Filter out undefined/null keys
 
 const GROQ_API_KEYS = [
@@ -103,7 +104,7 @@ const CHARACTERAI_TOKENS = [
 const CHARACTERAI_CHARACTER_ID = process.env.CHARACTERAI_CHARACTER_ID;
 
 // Check if any API keys are available
-if (DEEPSEEK_API_KEYS.length === 0 && GEMINI_API_KEYS.length === 0 && CHATGPT_API_KEYS.length === 0 && TOGETHER_API_KEYS.length === 0 && GROQ_API_KEYS.length === 0 && CEREBRAS_API_KEYS.length === 0 && CHARACTERAI_TOKENS.length === 0) {
+if (DEEPSEEK_API_KEYS.length === 0 && GEMINI_API_KEYS.length === 0 && CHATGPT_API_KEYS.length === 0 && MISTRAL_API_KEYS.length === 0 && GROQ_API_KEYS.length === 0 && CEREBRAS_API_KEYS.length === 0 && CHARACTERAI_TOKENS.length === 0) {
   console.warn('WARNING: No API KEY environment variables are set!');
   console.warn('The bot will not be able to process messages without at least one key.');
 }
@@ -112,13 +113,13 @@ if (DEEPSEEK_API_KEYS.length === 0 && GEMINI_API_KEYS.length === 0 && CHATGPT_AP
 let currentDeepseekKeyIndex = 0;
 let currentGeminiKeyIndex = 0;
 let currentChatGPTKeyIndex = 0;
-let currentTogetherKeyIndex = 0;
+let currentMistralKeyIndex = 0;
 let currentGroqKeyIndex = 0;
 let currentCerebrasKeyIndex = 0;
 let currentCharacterAIKeyIndex = 0;
 
 // Default model to use
-let defaultModel = 'groq'; // Options: 'deepseek', 'gemini', 'chatgpt', 'together', 'groq', 'cerebras', 'characterai'
+let defaultModel = 'groq'; // Options: 'deepseek', 'gemini', 'chatgpt', 'mistral', 'groq', 'cerebras', 'characterai'
 
 // Channel model preferences
 const channelModelPreferences = new Map();
@@ -129,8 +130,8 @@ const channelGroqModelPreferences = new Map();
 // Map to store channel-specific Cerebras model preferences
 const channelCerebrasModelPreferences = new Map();
 
-// Default Groq model to use if no preference is set
-const defaultGroqModel = 'gemma2-9b-it';
+// Default Groq model to use if no preference is set (updated December 2025 - gemma2-9b-it deprecated)
+const defaultGroqModel = 'llama-3.3-70b-versatile';
 
 // Default Cerebras model to use if no preference is set
 const defaultCerebrasModel = 'llama3.3-70b';
@@ -138,21 +139,30 @@ const defaultCerebrasModel = 'llama3.3-70b';
 // Map to store channel-specific personality preferences
 const channelPersonalityPreferences = new Map();
 
-// Available Groq models
+// Available Groq models (updated December 2025 - from official docs)
 const availableGroqModels = [
-  'gemma2-9b-it',
-  'llama-3.1-8b-instant',
-  'llama-3.3-70b-versatile',
-  'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'llama3-70b-8192',
-  'llama3-8b-8192',
-  'allam-2-7b',
-  'gemma2-27b-it',
-  'compound-beta',
-  'compound-beta-mini',
-  'mistral-saba-24b'
+  'llama-3.3-70b-versatile',    // Production - recommended
+  'llama-3.1-8b-instant',       // Production - fast
+  'openai/gpt-oss-120b',        // Production - powerful
+  'openai/gpt-oss-20b',         // Production - efficient
+  'meta-llama/llama-4-maverick-17b-128e-instruct', // Preview
+  'meta-llama/llama-4-scout-17b-16e-instruct',     // Preview
+  'qwen/qwen3-32b',             // Preview
+  'moonshotai/kimi-k2-instruct-0905', // Preview
+  'compound-beta',              // System - agentic
+  'compound-beta-mini'          // System - agentic mini
 ];
+
+// Available Mistral models (December 2025)
+const availableMistralModels = [
+  'mistral-small-2503',         // Small 3 - affordable
+  'ministral-8b-2412',          // Ministral 8B - open, fast
+  'ministral-3b-2412',          // Ministral 3B - open, fastest
+  'open-mistral-nemo'           // Nemo 12B - multilingual
+];
+
+// Default Mistral model
+const defaultMistralModel = 'ministral-8b-2412';
 
 // Available Cerebras models (updated December 2025)
 const availableCerebrasModels = [
@@ -207,13 +217,13 @@ function getCurrentGroqKey() {
   return GROQ_API_KEYS[currentGroqKeyIndex];
 }
 
-function getNextTogetherKey() {
-  currentTogetherKeyIndex = (currentTogetherKeyIndex + 1) % TOGETHER_API_KEYS.length;
-  return TOGETHER_API_KEYS[currentTogetherKeyIndex];
+function getNextMistralKey() {
+  currentMistralKeyIndex = (currentMistralKeyIndex + 1) % MISTRAL_API_KEYS.length;
+  return MISTRAL_API_KEYS[currentMistralKeyIndex];
 }
 
-function getCurrentTogetherKey() {
-  return TOGETHER_API_KEYS[currentTogetherKeyIndex];
+function getCurrentMistralKey() {
+  return MISTRAL_API_KEYS[currentMistralKeyIndex];
 }
 
 function getCurrentCharacterAIToken() {
@@ -626,7 +636,7 @@ const commands = [
               { name: 'Groq', value: 'groq' },
               { name: 'Gemini (Fast)', value: 'gemini' },
               { name: 'ChatGPT', value: 'chatgpt' },
-              { name: 'Together AI (Llama-3.3-70B-Instruct-Turbo)', value: 'together' },
+              { name: 'Mistral AI (Ministral)', value: 'mistral' },
               { name: 'DeepSeek (Slow)', value: 'deepseek' },
               { name: 'Cerebras', value: 'cerebras' },
               { name: 'Character.AI', value: 'characterai' }
@@ -638,15 +648,11 @@ const commands = [
             .setDescription('Select a specific Groq model (only applies when Groq is selected)')
             .setRequired(false)
             .addChoices(
-              { name: 'gemma2-9b-it (Default)', value: 'gemma2-9b-it' },
+              { name: 'llama-3.3-70b-versatile (Default)', value: 'llama-3.3-70b-versatile' },
               { name: 'llama-3.1-8b-instant', value: 'llama-3.1-8b-instant' },
-              { name: 'llama-3.3-70b-versatile', value: 'llama-3.3-70b-versatile' },
               { name: 'meta-llama/llama-4-maverick-17b-128e-instruct', value: 'meta-llama/llama-4-maverick-17b-128e-instruct' },
               { name: 'meta-llama/llama-4-scout-17b-16e-instruct', value: 'meta-llama/llama-4-scout-17b-16e-instruct' },
-              { name: 'llama3-70b-8192', value: 'llama3-70b-8192' },
-              { name: 'llama3-8b-8192', value: 'llama3-8b-8192' },
-              { name: 'gemma2-27b-it', value: 'gemma2-27b-it' },
-              { name: 'allam-2-7b', value: 'allam-2-7b' },
+              { name: 'openai/gpt-oss-120b', value: 'openai/gpt-oss-120b' },
               { name: 'compound-beta', value: 'compound-beta' },
               { name: 'compound-beta-mini', value: 'compound-beta-mini' },
               { name: 'mistral-saba-24b', value: 'mistral-saba-24b' }
@@ -689,7 +695,7 @@ const commands = [
               { name: 'Groq', value: 'groq' },
               { name: 'Gemini (Fast)', value: 'gemini' },
               { name: 'ChatGPT', value: 'chatgpt' },
-              { name: 'Together AI (Llama-3.3-70B-Instruct-Turbo)', value: 'together' },
+              { name: 'Mistral AI (Ministral)', value: 'mistral' },
               { name: 'DeepSeek (Slow)', value: 'deepseek' },
               { name: 'Cerebras', value: 'cerebras' },
               { name: 'Character.AI', value: 'characterai' }
@@ -708,15 +714,11 @@ const commands = [
             .setDescription('Select a specific Groq model (only applies when Groq is selected)')
             .setRequired(false)
             .addChoices(
-              { name: 'gemma2-9b-it (Default)', value: 'gemma2-9b-it' },
+              { name: 'llama-3.3-70b-versatile (Default)', value: 'llama-3.3-70b-versatile' },
               { name: 'llama-3.1-8b-instant', value: 'llama-3.1-8b-instant' },
-              { name: 'llama-3.3-70b-versatile', value: 'llama-3.3-70b-versatile' },
               { name: 'meta-llama/llama-4-maverick-17b-128e-instruct', value: 'meta-llama/llama-4-maverick-17b-128e-instruct' },
               { name: 'meta-llama/llama-4-scout-17b-16e-instruct', value: 'meta-llama/llama-4-scout-17b-16e-instruct' },
-              { name: 'llama3-70b-8192', value: 'llama3-70b-8192' },
-              { name: 'llama3-8b-8192', value: 'llama3-8b-8192' },
-              { name: 'gemma2-27b-it', value: 'gemma2-27b-it' },
-              { name: 'allam-2-7b', value: 'allam-2-7b' },
+              { name: 'openai/gpt-oss-120b', value: 'openai/gpt-oss-120b' },
               { name: 'compound-beta', value: 'compound-beta' },
               { name: 'compound-beta-mini', value: 'compound-beta-mini' },
               { name: 'mistral-saba-24b', value: 'mistral-saba-24b' }
@@ -1819,54 +1821,56 @@ Respond naturally and concisely, matching the language of the user while maintai
 
 // Process messages in active channels
 // API calling functions
-const Together = require("together-ai");
 
-async function callTogetherAPI(messages) {
-  // Try all available Together AI keys until one works
+async function callMistralAPI(messages) {
+  // Try all available Mistral AI keys until one works
   let lastError = null;
-  const initialKeyIndex = currentTogetherKeyIndex;
   let keysTriedCount = 0;
 
-  while (keysTriedCount < TOGETHER_API_KEYS.length) {
+  // Dynamically import Mistral SDK
+  const { Mistral } = await import('@mistralai/mistralai');
+
+  while (keysTriedCount < MISTRAL_API_KEYS.length) {
     try {
-      const together = new Together({
-        apiKey: getCurrentTogetherKey(),
+      const mistral = new Mistral({
+        apiKey: getCurrentMistralKey(),
       });
-      // Call Together AI API (updated December 2025 - using available free model)
-      const response = await together.chat.completions.create({
+
+      // Call Mistral AI API
+      const response = await mistral.chat.complete({
+        model: defaultMistralModel,
         messages: messages,
-        model: 'meta-llama/Llama-Vision-Free', // Updated to available free model
-        max_tokens: 500,
+        maxTokens: 500,
         temperature: 0.7
       });
 
       // Extract response content
       if (!response.choices || !response.choices[0] || !response.choices[0].message) {
         // Try next key
-        lastError = new Error('Empty response from Together API');
-        getNextTogetherKey();
+        lastError = new Error('Empty response from Mistral API');
+        getNextMistralKey();
         keysTriedCount++;
-        console.log(`Together API key ${currentTogetherKeyIndex + 1}/${TOGETHER_API_KEYS.length} returned empty response`);
+        console.log(`Mistral API key ${currentMistralKeyIndex + 1}/${MISTRAL_API_KEYS.length} returned empty response`);
         continue;
       }
+
+      // Log which Mistral model was used
+      console.log(`Used Mistral model: ${defaultMistralModel}`);
 
       // Success! Return the response
       return response.choices[0].message.content;
     } catch (error) {
       // Try next key
       lastError = error;
-      console.error(`Together API key ${currentTogetherKeyIndex + 1}/${TOGETHER_API_KEYS.length} error: ${error.message}`);
-      if (error.message && error.message.includes('Input validation error')) {
-        console.error('Together API Input validation error details:', error.response ? await error.response.text() : 'No response details');
-      }
-      getNextTogetherKey();
+      console.error(`Mistral API key ${currentMistralKeyIndex + 1}/${MISTRAL_API_KEYS.length} error: ${error.message}`);
+      getNextMistralKey();
       keysTriedCount++;
     }
   }
 
   // All keys failed, throw the last error encountered
-  console.error('All Together API keys failed.');
-  throw lastError || new Error('All Together API keys failed');
+  console.error('All Mistral API keys failed.');
+  throw lastError || new Error('All Mistral API keys failed');
 }
 
 async function callGroqAPI(messages, channelId) {
@@ -2167,13 +2171,15 @@ async function detectImageGenerationWithAI(content, messageHistory = []) {
       return false;
     }
 
-    // 使用AI模型判斷用戶是否想要生成圖片
-    // 動態導入 Google GenAI
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    // 使用Groq API判斷用戶是否想要生成圖片（節省Gemini配額）
+    // 動態導入 Groq SDK
+    const Groq = (await import('groq-sdk')).default;
 
-    // 初始化Gemini API
-    const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    // 初始化 Groq API
+    const groq = new Groq({
+      apiKey: getCurrentGroqKey(),
+      dangerouslyAllowBrowser: true
+    });
 
     // 構建提示詞
     const prompt = `請判斷以下用戶消息是否是在請求生成圖片或畫圖。只回答「是」或「否」。
@@ -2189,9 +2195,14 @@ async function detectImageGenerationWithAI(content, messageHistory = []) {
 請只回答「是」或「否」，不要解釋原因。`;
 
     // 發送請求
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text().trim().toLowerCase();
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.1-8b-instant', // 使用快速模型進行判定
+      max_tokens: 10,
+      temperature: 0.1
+    });
+
+    const text = completion.choices[0].message.content.trim().toLowerCase();
 
     // 解析回應
     const isImageRequest = text.includes('是');
@@ -2304,13 +2315,15 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
       return true;
     }
 
-    // 使用AI模型判斷用戶是否想要修改圖片
-    // 動態導入 Google GenAI
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    // 使用Groq API判斷用戶是否想要修改圖片（節省Gemini配額）
+    // 動態導入 Groq SDK
+    const Groq = (await import('groq-sdk')).default;
 
-    // 初始化Gemini API
-    const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    // 初始化 Groq API
+    const groq = new Groq({
+      apiKey: getCurrentGroqKey(),
+      dangerouslyAllowBrowser: true
+    });
 
     // 構建提示詞
     const prompt = `請判斷以下用戶消息是否是在請求修改或調整一張已存在的圖片。只回答「是」或「否」。
@@ -2326,9 +2339,14 @@ async function detectImageModificationWithAI(content, messageHistory = []) {
 請只回答「是」或「否」，不要解釋原因。`;
 
     // 發送請求
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text().trim().toLowerCase();
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.1-8b-instant', // 使用快速模型進行判定
+      max_tokens: 10,
+      temperature: 0.1
+    });
+
+    const text = completion.choices[0].message.content.trim().toLowerCase();
 
     // 解析回應
     const isModificationRequest = text.includes('是');
