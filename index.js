@@ -133,7 +133,7 @@ const channelCerebrasModelPreferences = new Map();
 const defaultGroqModel = 'gemma2-9b-it';
 
 // Default Cerebras model to use if no preference is set
-const defaultCerebrasModel = 'llama-4-scout-17b-16e-instruct';
+const defaultCerebrasModel = 'llama3.3-70b';
 
 // Map to store channel-specific personality preferences
 const channelPersonalityPreferences = new Map();
@@ -154,11 +154,10 @@ const availableGroqModels = [
   'mistral-saba-24b'
 ];
 
-// Available Cerebras models
+// Available Cerebras models (updated December 2025)
 const availableCerebrasModels = [
-  'llama-4-scout-17b-16e-instruct',
   'llama3.1-8b',
-  'llama-3.3-70b',
+  'llama3.3-70b',
   'qwen-3-32b'
 ];
 
@@ -659,9 +658,8 @@ const commands = [
             .setDescription('Select a specific Cerebras model (only applies when Cerebras is selected)')
             .setRequired(false)
             .addChoices(
-              { name: 'llama-4-scout-17b-16e-instruct (Default)', value: 'llama-4-scout-17b-16e-instruct' },
+              { name: 'llama3.3-70b (Default)', value: 'llama3.3-70b' },
               { name: 'llama3.1-8b', value: 'llama3.1-8b' },
-              { name: 'llama-3.3-70b', value: 'llama-3.3-70b' },
               { name: 'qwen-3-32b', value: 'qwen-3-32b' }
             )
         )
@@ -730,9 +728,8 @@ const commands = [
             .setDescription('Select a specific Cerebras model (only applies when Cerebras is selected)')
             .setRequired(false)
             .addChoices(
-              { name: 'llama-4-scout-17b-16e-instruct (Default)', value: 'llama-4-scout-17b-16e-instruct' },
+              { name: 'llama3.3-70b (Default)', value: 'llama3.3-70b' },
               { name: 'llama3.1-8b', value: 'llama3.1-8b' },
-              { name: 'llama-3.3-70b', value: 'llama-3.3-70b' },
               { name: 'qwen-3-32b', value: 'qwen-3-32b' }
             )
         )
@@ -1835,10 +1832,10 @@ async function callTogetherAPI(messages) {
       const together = new Together({
         apiKey: getCurrentTogetherKey(),
       });
-      // Call Together AI API
+      // Call Together AI API (updated December 2025 - using available free model)
       const response = await together.chat.completions.create({
         messages: messages,
-        model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free', // Corrected model
+        model: 'meta-llama/Llama-Vision-Free', // Updated to available free model
         max_tokens: 500,
         temperature: 0.7
       });
@@ -2005,7 +2002,7 @@ async function callDeepseekAPI(messages) {
           'Authorization': `Bearer ${getCurrentDeepseekKey()}`
         },
         body: JSON.stringify({
-          model: 'deepseek/deepseek-r1:free',
+          model: 'deepseek/deepseek-v3-base:free', // Updated December 2025 - using available free model
           messages: messages,
           max_tokens: 1000
         })
@@ -4401,11 +4398,29 @@ client.on('messageCreate', async (message) => {
     const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
 
     // Add personality prompt as system message
+    // IMPORTANT: Only include 'role' and 'content' for standard API calls
+    // Extra properties like 'channelId' cause Groq API to reject the request
     const formattedMessages = [
       { role: 'system', content: channelPersonality },
       ...messageHistory.map(msg => {
-        // For Character.AI, ensure username is included in every message
+        // For all models, ensure username is included in the content
         // This helps the model understand who is speaking
+        const content = msg.role === 'user'
+          ? (msg.content.startsWith(`[${msg.author}]`) ? msg.content : `[${msg.author}]: ${msg.content}`)
+          : msg.content;
+
+        // Return only role and content - extra properties cause API errors
+        return {
+          role: msg.role,
+          content: content
+        };
+      })
+    ];
+
+    // For Character.AI, create a separate messages array with additional metadata
+    const formattedMessagesForCharacterAI = [
+      { role: 'system', content: channelPersonality },
+      ...messageHistory.map(msg => {
         const content = msg.role === 'user'
           ? (msg.content.startsWith(`[${msg.author}]`) ? msg.content : `[${msg.author}]: ${msg.content}`)
           : msg.content;
@@ -4413,7 +4428,7 @@ client.on('messageCreate', async (message) => {
         return {
           role: msg.role,
           content: content,
-          username: msg.author, // Include username for all messages
+          username: msg.author,
           channelId: message.channelId,
           channelType: message.channel.type,
           isDM: message.channel.type === ChannelType.DM
@@ -4496,13 +4511,8 @@ client.on('messageCreate', async (message) => {
       case 'characterai':
         if (CHARACTERAI_TOKENS.length > 0) {
           try {
-            // Add channel ID and type to the messages for chat persistence
-            const messagesWithChannel = formattedMessages.map(msg => ({
-              ...msg,
-              channelId: message.channelId,
-              channelType: message.channel.type
-            }));
-            response = await callCharacterAIAPI(messagesWithChannel);
+            // Use the messages array with additional metadata for Character.AI
+            response = await callCharacterAIAPI(formattedMessagesForCharacterAI);
             modelUsed = 'Character.AI';
           } catch (error) {
             console.log('Character.AI API error:', error.message);
@@ -4619,14 +4629,11 @@ client.on('messageCreate', async (message) => {
     console.error('Error generating response:', error);
     await message.channel.send('Sorry, I glitched out for a sec. Hit me up again later?');
   }
-},
-),
+});
 
-
-
-  client.on('error', (error) => {
-    console.error('Discord client error:', error);
-  });
+client.on('error', (error) => {
+  console.error('Discord client error:', error);
+});
 
 // Handle process termination gracefully
 process.on('SIGINT', () => {
