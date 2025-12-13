@@ -4058,10 +4058,24 @@ client.on('messageCreate', async (message) => {
             }
           } catch (imageError) {
             console.error(`Error analyzing image ${attachment.url}:`, imageError);
-            imageAnalysisResults.push({
-              url: attachment.url,
-              error: imageError.message || '圖片分析失敗'
-            });
+            // Check if it's a quota exceeded error
+            const isQuotaExceeded = imageError.message && (
+              imageError.message.includes('429') ||
+              imageError.message.includes('quota') ||
+              imageError.message.includes('RESOURCE_EXHAUSTED')
+            );
+            if (isQuotaExceeded) {
+              console.log('Gemini quota exceeded for image analysis, skipping...');
+              imageAnalysisResults.push({
+                url: attachment.url,
+                error: 'Gemini 配額已用完，無法分析圖片。圖片已保存在對話中，AI 可以看到圖片連結。'
+              });
+            } else {
+              imageAnalysisResults.push({
+                url: attachment.url,
+                error: imageError.message || '圖片分析失敗'
+              });
+            }
           }
         }
 
@@ -4539,13 +4553,13 @@ client.on('messageCreate', async (message) => {
         }
         break;
 
-      case 'together':
-        if (TOGETHER_API_KEYS.length > 0) {
+      case 'mistral':
+        if (MISTRAL_API_KEYS.length > 0) {
           try {
-            response = await callTogetherAPI(formattedMessages);
-            modelUsed = 'Together AI';
+            response = await callMistralAPI(formattedMessages);
+            modelUsed = `Mistral (${defaultMistralModel})`;
           } catch (error) {
-            console.log('Together API error:', error.message);
+            console.log('Mistral API error:', error.message);
             // Will fall back to other models
           }
         }
