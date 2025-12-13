@@ -155,14 +155,14 @@ const availableGroqModels = [
 
 // Available Mistral models (December 2025)
 const availableMistralModels = [
-  'mistral-small-2503',         // Small 3 - affordable
-  'ministral-8b-2412',          // Ministral 8B - open, fast
-  'ministral-3b-2412',          // Ministral 3B - open, fastest
-  'open-mistral-nemo'           // Nemo 12B - multilingual
+  'mistral-small-latest',         // Small - affordable, latest version
+  'open-mistral-nemo',            // Nemo 12B - multilingual
+  'ministral-8b-latest',          // Ministral 8B - fast
+  'ministral-3b-latest'           // Ministral 3B - fastest
 ];
 
 // Default Mistral model
-const defaultMistralModel = 'ministral-8b-2412';
+const defaultMistralModel = 'open-mistral-nemo';
 
 // Available Cerebras models (updated December 2025)
 const availableCerebrasModels = [
