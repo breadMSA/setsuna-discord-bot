@@ -1280,8 +1280,8 @@ client.on('interactionCreate', async interaction => {
         case 'characterai':
           hasKeys = CHARACTERAI_TOKENS.length > 0;
           break;
-        case 'together':
-          hasKeys = TOGETHER_API_KEYS.length > 0;
+        case 'mistral':
+          hasKeys = MISTRAL_API_KEYS.length > 0;
           break;
       }
 
@@ -1373,8 +1373,8 @@ client.on('interactionCreate', async interaction => {
         case 'characterai':
           hasKeys = CHARACTERAI_TOKENS.length > 0;
           break;
-        case 'together':
-          hasKeys = TOGETHER_API_KEYS.length > 0;
+        case 'mistral':
+          hasKeys = MISTRAL_API_KEYS.length > 0;
           break;
       }
 
