@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, REST, Routes, PermissionFlagsBits, ChannelType, SlashCommandBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 const OpenCC = require('opencc-js');
@@ -985,7 +985,10 @@ client.on('interactionCreate', async interaction => {
           }
           const page = interaction.options.getInteger('page') || 1;
           const embed = musicPlayer.createQueueEmbed(player, page);
-          await interaction.reply({ embeds: [embed] });
+          const itemsPerPage = 10;
+          const totalPages = Math.ceil(player.queue.length / itemsPerPage) || 1;
+          const buttons = musicPlayer.createQueueButtons(page, totalPages);
+          await interaction.reply({ embeds: [embed], components: [buttons] });
           break;
         }
 
@@ -997,7 +1000,7 @@ client.on('interactionCreate', async interaction => {
           }
           const embed = musicPlayer.createNowPlayingEmbed(player.current, player);
           const buttons = musicPlayer.createControlButtons(player);
-          await interaction.reply({ embeds: [embed], components: [buttons] });
+          await interaction.reply({ embeds: [embed], components: buttons });
           break;
         }
 
