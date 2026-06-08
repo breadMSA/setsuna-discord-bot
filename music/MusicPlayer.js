@@ -87,6 +87,39 @@ function truncateString(str, maxLength = 50) {
     return str.substring(0, maxLength - 3) + '...';
 }
 
+// Bulletproof parser for Spotify track name
+function parseTrackName(track) {
+    if (!track) return '';
+    return track.name || track.track || '';
+}
+
+// Bulletproof parser for Spotify artists list
+function parseArtists(track) {
+    if (!track) return '';
+    
+    // 1. Check plural 'artists' array (official API style)
+    if (track.artists) {
+        if (Array.isArray(track.artists)) {
+            return track.artists.map(a => {
+                if (typeof a === 'string') return a;
+                if (typeof a === 'object' && a) return a.name || a.title || '';
+                return '';
+            }).filter(Boolean).join(', ');
+        }
+        if (typeof track.artists === 'string') return track.artists;
+    }
+    
+    // 2. Check singular 'artist' (scraper style)
+    if (track.artist) {
+        if (typeof track.artist === 'string') return track.artist;
+        if (typeof track.artist === 'object' && track.artist) {
+            return track.artist.name || track.artist.title || '';
+        }
+    }
+    
+    return '';
+}
+
 // Loop mode names in Chinese
 const loopModeNames = {
     'none': '關閉',
@@ -581,8 +614,8 @@ class MusicPlayer {
                         }
 
                         // Resolve and add the first track immediately to start playing quickly
-                        const firstTrackName = tracks[0].name;
-                        const firstTrackArtists = tracks[0].artists ? tracks[0].artists.map(a => a.name).join(', ') : '';
+                        const firstTrackName = parseTrackName(tracks[0]);
+                        const firstTrackArtists = parseArtists(tracks[0]);
                         const firstResolve = await this.riffy.resolve({
                             query: `${firstTrackArtists} - ${firstTrackName}`,
                             requester: member
@@ -603,8 +636,8 @@ class MusicPlayer {
                         (async () => {
                             for (let i = 1; i < tracks.length; i++) {
                                 try {
-                                    const tName = tracks[i].name;
-                                    const tArtists = tracks[i].artists ? tracks[i].artists.map(a => a.name).join(', ') : '';
+                                    const tName = parseTrackName(tracks[i]);
+                                    const tArtists = parseArtists(tracks[i]);
                                     const res = await this.riffy.resolve({
                                         query: `${tArtists} - ${tName}`,
                                         requester: member
@@ -892,20 +925,20 @@ class MusicPlayer {
         if (customId === 'music_queue_prev' || customId === 'music_queue_next') {
             const player = this.getPlayer(guildId);
             if (!player) {
-                await interaction.reply({ content: '❌ 目前沒有在播放音樂！', ephemeral: true });
+                await interaction.reply({ content: '❌ 目前沒有在播放音樂！', flags: MessageFlags.Ephemeral });
                 return true;
             }
 
             const embed = interaction.message.embeds[0];
             if (!embed || !embed.footer || !embed.footer.text) {
-                await interaction.reply({ content: '❌ 無法讀取隊列頁碼！', ephemeral: true });
+                await interaction.reply({ content: '❌ 無法讀取隊列頁碼！', flags: MessageFlags.Ephemeral });
                 return true;
             }
 
             const footerText = embed.footer.text;
             const match = footerText.match(/第 (\d+)\/(\d+) 頁/);
             if (!match) {
-                await interaction.reply({ content: '❌ 無法解析隊列頁碼！', ephemeral: true });
+                await interaction.reply({ content: '❌ 無法解析隊列頁碼！', flags: MessageFlags.Ephemeral });
                 return true;
             }
 
@@ -932,13 +965,13 @@ class MusicPlayer {
         const voiceChannel = member?.voice?.channel;
 
         if (!voiceChannel) {
-            await interaction.reply({ content: '❌ 你需要在語音頻道中才能使用這個功能！', ephemeral: true });
+            await interaction.reply({ content: '❌ 你需要在語音頻道中才能使用這個功能！', flags: MessageFlags.Ephemeral });
             return true;
         }
 
         const player = this.getPlayer(guildId);
         if (!player) {
-            await interaction.reply({ content: '❌ 目前沒有在播放音樂！', ephemeral: true });
+            await interaction.reply({ content: '❌ 目前沒有在播放音樂！', flags: MessageFlags.Ephemeral });
             return true;
         }
 
@@ -985,7 +1018,7 @@ class MusicPlayer {
                 return false;
         }
 
-        await interaction.reply({ content: message, ephemeral: true });
+        await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
 
         // Update the original message buttons if player still exists
         if (customId !== 'music_stop') {

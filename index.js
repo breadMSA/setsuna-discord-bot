@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, REST, Routes, PermissionFlagsBits, ChannelType, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, REST, Routes, PermissionFlagsBits, ChannelType, SlashCommandBuilder, MessageFlags } = require('discord.js');
 const fetch = require('node-fetch');
 const OpenCC = require('opencc-js');
 const path = require('path');
@@ -900,7 +900,7 @@ client.on('interactionCreate', async interaction => {
   // Handle music button interactions
   if (interaction.isButton() && interaction.customId.startsWith('music_')) {
     if (!musicPlayer) {
-      await interaction.reply({ content: '❌ 音樂系統尚未準備就緒！', ephemeral: true });
+      await interaction.reply({ content: '❌ 音樂系統尚未準備就緒！', flags: MessageFlags.Ephemeral });
       return;
     }
     await musicPlayer.handleButton(interaction);
@@ -912,12 +912,12 @@ client.on('interactionCreate', async interaction => {
   // Handle music commands
   if (interaction.commandName === 'music') {
     if (!interaction.inGuild()) {
-      await interaction.reply({ content: '❌ 音樂指令只能在伺服器中使用！', ephemeral: true });
+      await interaction.reply({ content: '❌ 音樂指令只能在伺服器中使用！', flags: MessageFlags.Ephemeral });
       return;
     }
 
     if (!musicPlayer) {
-      await interaction.reply({ content: '❌ 音樂系統尚未準備就緒！', ephemeral: true });
+      await interaction.reply({ content: '❌ 音樂系統尚未準備就緒！', flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -931,7 +931,7 @@ client.on('interactionCreate', async interaction => {
     const requiresVoice = ['play', 'pause', 'resume', 'skip', 'stop', 'shuffle', 'loop', 'volume', 'seek', 'remove', 'move', 'clear', 'filter', 'replay', 'forward', 'rewind'];
 
     if (requiresVoice.includes(subcommand) && !voiceChannel) {
-      await interaction.reply({ content: '❌ 你需要先加入語音頻道！', ephemeral: true });
+      await interaction.reply({ content: '❌ 你需要先加入語音頻道！', flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -980,7 +980,7 @@ client.on('interactionCreate', async interaction => {
         case 'queue': {
           const player = musicPlayer.getPlayer(guildId);
           if (!player || !player.current) {
-            await interaction.reply({ content: '❌ 目前沒有播放隊列', ephemeral: true });
+            await interaction.reply({ content: '❌ 目前沒有播放隊列', flags: MessageFlags.Ephemeral });
             return;
           }
           const page = interaction.options.getInteger('page') || 1;
@@ -995,7 +995,7 @@ client.on('interactionCreate', async interaction => {
         case 'nowplaying': {
           const player = musicPlayer.getPlayer(guildId);
           if (!player || !player.current) {
-            await interaction.reply({ content: '❌ 目前沒有正在播放的歌曲', ephemeral: true });
+            await interaction.reply({ content: '❌ 目前沒有正在播放的歌曲', flags: MessageFlags.Ephemeral });
             return;
           }
           const embed = musicPlayer.createNowPlayingEmbed(player.current, player);
@@ -1029,7 +1029,7 @@ client.on('interactionCreate', async interaction => {
           const timeStr = interaction.options.getString('time');
           const seconds = parseTime(timeStr);
           if (seconds === 0 && timeStr !== '0' && timeStr !== '0:00') {
-            await interaction.reply({ content: '❌ 無效的時間格式，請使用 1:30 或 90 的格式', ephemeral: true });
+            await interaction.reply({ content: '❌ 無效的時間格式，請使用 1:30 或 90 的格式', flags: MessageFlags.Ephemeral });
             return;
           }
           const result = musicPlayer.seek(guildId, seconds);
@@ -1086,7 +1086,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         default:
-          await interaction.reply({ content: '❌ 未知的音樂指令', ephemeral: true });
+          await interaction.reply({ content: '❌ 未知的音樂指令', flags: MessageFlags.Ephemeral });
       }
     } catch (error) {
       console.error('[Music Command Error]', error);
@@ -1094,7 +1094,7 @@ client.on('interactionCreate', async interaction => {
       if (interaction.deferred) {
         await interaction.editReply(errorMessage);
       } else if (!interaction.replied) {
-        await interaction.reply({ content: errorMessage, ephemeral: true });
+        await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
       }
     }
     return;
@@ -1102,7 +1102,7 @@ client.on('interactionCreate', async interaction => {
 
   // Check if server-only commands are used in DMs
   if (interaction.commandName === 'reset' && !interaction.inGuild()) {
-    await interaction.reply({ content: '這個指令只能在伺服器頻道中使用喔！', ephemeral: true });
+    await interaction.reply({ content: '這個指令只能在伺服器頻道中使用喔！', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -1111,7 +1111,7 @@ client.on('interactionCreate', async interaction => {
     const subcommand = interaction.options.getSubcommand();
     // Block server-only subcommands
     if (subcommand === 'activate' || subcommand === 'deactivate') {
-      await interaction.reply({ content: '這個子指令只能在伺服器頻道中使用喔！', ephemeral: true });
+      await interaction.reply({ content: '這個子指令只能在伺服器頻道中使用喔！', flags: MessageFlags.Ephemeral });
       return;
     }
     // Allow other subcommands like setmodel, checkmodel, etc. in DMs
@@ -1239,7 +1239,7 @@ client.on('interactionCreate', async interaction => {
     if (isDM) {
       const allowedDMSubcommands = ['setmodel', 'checkmodel', 'setpersonality', 'checkpersonality', 'aidetect'];
       if (!allowedDMSubcommands.includes(subcommand)) {
-        await interaction.reply({ content: '這個子指令只能在伺服器頻道中使用喔！', ephemeral: true });
+        await interaction.reply({ content: '這個子指令只能在伺服器頻道中使用喔！', flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -1350,7 +1350,7 @@ client.on('interactionCreate', async interaction => {
       else if (!isDM && !activeChannels.has(targetChannel.id)) {
         await interaction.reply({
           content: `I haven't been activated in ${targetChannel} ! Use \`/setsuna activate\` to activate me first.`,
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
@@ -1384,7 +1384,7 @@ client.on('interactionCreate', async interaction => {
       if (!hasKeys) {
         await interaction.reply({
           content: `啊...${model.toUpperCase()} API key 沒設定好啦！去找管理員問問 ${model.toUpperCase()}_API_KEY 的事情吧。`,
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
@@ -1538,7 +1538,7 @@ client.on('interactionCreate', async interaction => {
       if (personality && resetToDefault) {
         await interaction.reply({
           content: 'Please provide either a personality or choose to reset to default, not both.',
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
@@ -1546,7 +1546,7 @@ client.on('interactionCreate', async interaction => {
       if (!personality && !resetToDefault) {
         await interaction.reply({
           content: 'Please provide a personality to set or choose to reset to default.',
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
@@ -1569,7 +1569,7 @@ client.on('interactionCreate', async interaction => {
       // Reply with confirmation
       await interaction.reply({
         content: replyContent,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     } else if (subcommand === 'aidetect') {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
@@ -1610,7 +1610,7 @@ client.on('interactionCreate', async interaction => {
       // Reply with confirmation
       await interaction.reply({
         content: `AI detection for image generation requests has been ${enableAIDetect ? 'enabled' : 'disabled'} in ${targetChannel}.`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     } else if (subcommand === 'checkpersonality') {
       const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
@@ -1649,12 +1649,12 @@ client.on('interactionCreate', async interaction => {
 
         await interaction.reply({
           content: `My current personality in ${targetChannel} is:\n\n\`\`\`\n${displayPersonality}\n\`\`\``,
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       } else {
         await interaction.reply({
           content: `I'm using my default personality in ${targetChannel}.`,
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
     }
