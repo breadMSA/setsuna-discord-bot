@@ -22,27 +22,19 @@ function extractYoutubeVideoId(url) {
     return (match && match[2].length === 11) ? match[2] : null;
 }
 
-// Fetch YouTube video details using YouTube Data API
+// Fetch YouTube video details using public oembed API (bypass API key restrictions)
 async function getYoutubeVideoDetails(videoId) {
-    if (!process.env.YOUTUBE_API_KEY) return null;
     try {
-        const youtube = google.youtube({
-            version: 'v3',
-            auth: process.env.YOUTUBE_API_KEY
-        });
-        const res = await youtube.videos.list({
-            part: 'snippet',
-            id: [videoId]
-        });
-        if (res.data.items && res.data.items.length > 0) {
-            const snippet = res.data.items[0].snippet;
+        const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+        if (response.ok) {
+            const data = await response.json();
             return {
-                title: snippet.title,
-                channel: snippet.channelTitle
+                title: data.title,
+                channel: data.author_name
             };
         }
     } catch (e) {
-        console.error('[Music] Error fetching video details from YouTube API:', e);
+        console.error('[Music] Error fetching video details from oembed:', e);
     }
     return null;
 }
