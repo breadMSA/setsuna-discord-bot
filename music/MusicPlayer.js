@@ -116,6 +116,14 @@ class MusicPlayer {
     constructor(client) {
         this.client = client;
 
+        console.log('[Music] Configured Lavalink Node:', {
+            name: lavalinkNodes[0].name,
+            host: lavalinkNodes[0].host,
+            port: lavalinkNodes[0].port,
+            secure: lavalinkNodes[0].secure,
+            hasPassword: !!lavalinkNodes[0].password
+        });
+
         // Initialize Riffy with Lavalink nodes
         this.riffy = new Riffy(client, lavalinkNodes, {
             send: (payload) => {
@@ -151,7 +159,7 @@ class MusicPlayer {
 
         // Node error
         this.riffy.on('nodeError', (node, error) => {
-            console.error(`[Music] Lavalink node "${node.name}" error:`, error.message);
+            console.error(`[Music] Lavalink node "${node.name}" error:`, error);
         });
 
         // Node disconnect
