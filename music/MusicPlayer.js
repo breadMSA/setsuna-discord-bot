@@ -420,15 +420,16 @@ class MusicPlayer {
                 }
             }
 
-            // For YouTube URLs: convert to ytsearch via oEmbed title lookup
+            // For YouTube URLs: convert to title search via oEmbed
             // Direct URL loading fails on Railway IPs; searching by title works
+            // NOTE: do NOT add ytsearch: prefix here — Riffy adds it automatically via defaultSearchPlatform
             if ((query.includes('youtube.com/watch') || query.includes('youtu.be/')) && !query.includes('music.youtube.com')) {
                 const videoId = extractYoutubeVideoId(query);
                 if (videoId) {
                     try {
                         const details = await getYoutubeVideoDetails(videoId);
                         if (details && details.title) {
-                            query = `ytsearch:${details.title}`;
+                            query = details.title; // Riffy will prepend ytsearch: automatically
                             console.log(`[Music] YouTube URL converted to search: ${query}`);
                         }
                     } catch (e) {
