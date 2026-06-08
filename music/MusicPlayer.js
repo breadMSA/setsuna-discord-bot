@@ -354,8 +354,11 @@ class MusicPlayer {
                 try {
                     await textChannel.send({ content: '🔍 正在解析 Spotify 連結，請稍候...' });
                     const details = await getDetails(query);
-                    if (details && details.preview) {
-                        const { type, title, artist } = details.preview;
+                    if (details) {
+                        const type = details.type;
+                        const title = details.title || details.name || details.track;
+                        const artist = details.artist || (details.artists && details.artists.map(a => a.name).join(', '));
+                        
                         if (type === 'track') {
                             query = `${artist} - ${title}`; // Let Riffy add ytsearch: automatically
                         } else if (type === 'playlist' || type === 'album') {
@@ -403,13 +406,13 @@ class MusicPlayer {
                                     // Slight delay to prevent rate limiting
                                     await new Promise(r => setTimeout(r, 500));
                                 }
-                                await textChannel.send({ content: `✅ Spotify 播放清單 **${details.preview.title}** 中的歌曲已全部解析並加入隊列！` });
+                                await textChannel.send({ content: `✅ Spotify 播放清單 **${title}** 中的歌曲已全部解析並加入隊列！` });
                             })();
 
                             return {
                                 success: true,
                                 type: 'playlist',
-                                name: details.preview.title,
+                                name: title,
                                 count: tracks.length
                             };
                         }
