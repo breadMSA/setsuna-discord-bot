@@ -385,12 +385,8 @@ class MusicPlayer {
     createControlButtons(player) {
         const isPaused = player?.paused || false;
 
-        const row1 = new ActionRowBuilder()
+        const row = new ActionRowBuilder()
             .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('music_prev')
-                    .setEmoji('⏮️')
-                    .setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder()
                     .setCustomId('music_pause')
                     .setEmoji(isPaused ? '▶️' : '⏸️')
@@ -400,25 +396,20 @@ class MusicPlayer {
                     .setEmoji('⏭️')
                     .setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder()
-                    .setCustomId('music_stop')
-                    .setEmoji('⏹️')
-                    .setStyle(ButtonStyle.Danger),
+                    .setCustomId('music_shuffle')
+                    .setEmoji('🔀')
+                    .setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder()
                     .setCustomId('music_loop')
                     .setEmoji('🔁')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-        const row2 = new ActionRowBuilder()
-            .addComponents(
+                    .setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder()
-                    .setCustomId('music_shuffle')
-                    .setEmoji('🔀')
-                    .setLabel('隨機播放')
-                    .setStyle(ButtonStyle.Secondary)
+                    .setCustomId('music_stop')
+                    .setEmoji('⏹️')
+                    .setStyle(ButtonStyle.Danger)
             );
 
-        return [row1, row2];
+        return [row];
     }
 
     createQueueEmbed(player, page = 1, itemsPerPage = 10) {
@@ -506,6 +497,10 @@ class MusicPlayer {
                     await textChannel.send({ content: '🔍 正在解析 Spotify 連結，請稍候...' });
 
                     let token = await getSpotifyAccessToken();
+                    let apiSuccess = false;
+                    let details = null;
+                    let tracks = [];
+
                     if (token) {
                         if (isTrack) {
                             const match = query.match(spotifyTrackRegex);
@@ -518,209 +513,121 @@ class MusicPlayer {
                                 const title = trackData.name;
                                 const artist = trackData.artists ? trackData.artists.map(a => a.name).join(', ') : '';
                                 query = `${artist} - ${title}`;
+                                apiSuccess = true;
                             } catch (e) {
-                                console.error('[Spotify API Track Resolve Error]', e);
-                                if (getDetails) {
-                                    const details = await getDetails(query);
-                                    if (details && details.preview) {
-                                        query = `${details.preview.artist} - ${details.preview.title}`;
-                                    }
-                                }
+                                console.error('[Spotify API Track Resolve Error, falling back to scraper]', e.message);
                             }
                         } else if (isPlaylist) {
                             const match = query.match(spotifyPlaylistRegex);
                             const playlistId = match[1];
-                            const details = await getSpotifyPlaylistDetails(playlistId, token);
-                            const tracks = await getSpotifyPlaylistTracks(playlistId, token);
-                            
-                            if (!tracks || tracks.length === 0) {
-                                return { success: false, error: 'Spotify 播放清單中沒有任何歌曲' };
-                            }
-
-                            // Resolve and add the first track immediately to start playing quickly
-                            const firstTrackName = tracks[0].name;
-                            const firstTrackArtists = tracks[0].artists ? tracks[0].artists.map(a => a.name).join(', ') : '';
-                            const firstResolve = await this.riffy.resolve({
-                                query: `${firstTrackArtists} - ${firstTrackName}`,
-                                requester: member
-                            });
-
-                            if (firstResolve.loadType !== 'empty' && firstResolve.loadType !== 'error' && firstResolve.tracks && firstResolve.tracks.length > 0) {
-                                const mainTrack = firstResolve.tracks[0];
-                                mainTrack.info.requester = member;
-                                player.queue.add(mainTrack);
-                            }
-
-                            if (!player.playing && !player.paused) {
-                                player.play();
-                            }
-
-                            // Resolve remaining tracks in background
-                            (async () => {
-                                for (let i = 1; i < tracks.length; i++) {
-                                    try {
-                                        const tName = tracks[i].name;
-                                        const tArtists = tracks[i].artists ? tracks[i].artists.map(a => a.name).join(', ') : '';
-                                        const res = await this.riffy.resolve({
-                                            query: `${tArtists} - ${tName}`,
-                                            requester: member
-                                        });
-                                        if (res.loadType !== 'empty' && res.loadType !== 'error' && res.tracks && res.tracks.length > 0) {
-                                            const track = res.tracks[0];
-                                            track.info.requester = member;
-                                            player.queue.add(track);
-                                        }
-                                    } catch (err) {
-                                        console.error('[Music Spotify Queue Add Error]', err);
-                                    }
-                                    await new Promise(r => setTimeout(r, 500));
+                            try {
+                                details = await getSpotifyPlaylistDetails(playlistId, token);
+                                tracks = await getSpotifyPlaylistTracks(playlistId, token);
+                                if (tracks && tracks.length > 0) {
+                                    apiSuccess = true;
                                 }
-                                await textChannel.send({ content: `✅ Spotify 播放清單 **${details.name}** 中的 ${tracks.length} 首歌已全部解析並加入隊列！` });
-                            })();
-
-                            return {
-                                success: true,
-                                type: 'playlist',
-                                name: details.name,
-                                count: tracks.length
-                            };
+                            } catch (e) {
+                                console.error('[Spotify API Playlist Fetch Error, falling back to scraper]', e.message);
+                            }
                         } else if (isAlbum) {
                             const match = query.match(spotifyAlbumRegex);
                             const albumId = match[1];
-                            const details = await getSpotifyAlbumDetails(albumId, token);
-                            const tracks = await getSpotifyAlbumTracks(albumId, token);
-
-                            if (!tracks || tracks.length === 0) {
-                                return { success: false, error: 'Spotify 專輯中沒有任何歌曲' };
-                            }
-
-                            // Resolve and add the first track immediately to start playing quickly
-                            const firstTrackName = tracks[0].name;
-                            const firstTrackArtists = tracks[0].artists ? tracks[0].artists.map(a => a.name).join(', ') : '';
-                            const firstResolve = await this.riffy.resolve({
-                                query: `${firstTrackArtists} - ${firstTrackName}`,
-                                requester: member
-                            });
-
-                            if (firstResolve.loadType !== 'empty' && firstResolve.loadType !== 'error' && firstResolve.tracks && firstResolve.tracks.length > 0) {
-                                const mainTrack = firstResolve.tracks[0];
-                                mainTrack.info.requester = member;
-                                player.queue.add(mainTrack);
-                            }
-
-                            if (!player.playing && !player.paused) {
-                                player.play();
-                            }
-
-                            // Resolve remaining tracks in background
-                            (async () => {
-                                for (let i = 1; i < tracks.length; i++) {
-                                    try {
-                                        const tName = tracks[i].name;
-                                        const tArtists = tracks[i].artists ? tracks[i].artists.map(a => a.name).join(', ') : '';
-                                        const res = await this.riffy.resolve({
-                                            query: `${tArtists} - ${tName}`,
-                                            requester: member
-                                        });
-                                        if (res.loadType !== 'empty' && res.loadType !== 'error' && res.tracks && res.tracks.length > 0) {
-                                            const track = res.tracks[0];
-                                            track.info.requester = member;
-                                            player.queue.add(track);
-                                        }
-                                    } catch (err) {
-                                        console.error('[Music Spotify Queue Add Error]', err);
-                                    }
-                                    await new Promise(r => setTimeout(r, 500));
+                            try {
+                                details = await getSpotifyAlbumDetails(albumId, token);
+                                tracks = await getSpotifyAlbumTracks(albumId, token);
+                                if (tracks && tracks.length > 0) {
+                                    apiSuccess = true;
                                 }
-                                await textChannel.send({ content: `✅ Spotify 專輯 **${details.name}** 中的 ${tracks.length} 首歌已全部解析並加入隊列！` });
-                            })();
-
-                            return {
-                                success: true,
-                                type: 'playlist',
-                                name: details.name,
-                                count: tracks.length
-                            };
+                            } catch (e) {
+                                console.error('[Spotify API Album Fetch Error, falling back to scraper]', e.message);
+                            }
                         }
-                    } else {
-                        // Fallback to old behavior (spotify-url-info scraping, limited to 100 tracks)
+                    }
+
+                    // Fallback to scraper if API didn't succeed or wasn't configured
+                    if (!apiSuccess) {
                         if (getDetails) {
                             try {
-                                const details = await getDetails(query);
-                                if (details && details.preview) {
-                                    const type = details.preview.type;
-                                    const title = details.preview.title;
-                                    const artist = details.preview.artist;
+                                const scrapeDetails = await getDetails(query);
+                                if (scrapeDetails && scrapeDetails.preview) {
+                                    const type = scrapeDetails.preview.type;
+                                    const title = scrapeDetails.preview.title;
+                                    const artist = scrapeDetails.preview.artist;
 
                                     if (type === 'track') {
                                         query = `${artist} - ${title}`;
                                     } else if (type === 'playlist' || type === 'album') {
-                                        const tracks = details.tracks;
-                                        if (!tracks || tracks.length === 0) {
-                                            return { success: false, error: 'Spotify 播放清單中沒有任何歌曲' };
-                                        }
+                                        details = { name: title };
+                                        tracks = scrapeDetails.tracks || [];
 
-                                        // Warn user that we only load 100 tracks
                                         if (tracks.length >= 100) {
-                                            await textChannel.send({ content: '⚠️ 偵測到此 Spotify 連結可能包含超過 100 首歌曲，但由於未正確取得 Spotify API 憑證，本機器人僅載入了前 100 首。若需要完整載入，請確認 Railway 設定中的 `SPOTIFY_CLIENT_ID` 與 `SPOTIFY_CLIENT_SECRET` 正確無誤！' });
+                                            await textChannel.send({ content: '⚠️ 偵測到此 Spotify 連結可能包含超過 100 首歌曲，但由於 Spotify API 憑證失效（或帳號無 Premium 訂閱），本機器人已自動使用公開網頁模式，僅能載入前 100 首。' });
                                         }
-
-                                        // Resolve and add the first track immediately to start playing quickly
-                                        const firstTrackName = tracks[0].name;
-                                        const firstTrackArtists = tracks[0].artists ? tracks[0].artists.map(a => a.name).join(', ') : '';
-                                        const firstResolve = await this.riffy.resolve({
-                                            query: `${firstTrackArtists} - ${firstTrackName}`,
-                                            requester: member
-                                        });
-
-                                        if (firstResolve.loadType !== 'empty' && firstResolve.loadType !== 'error' && firstResolve.tracks && firstResolve.tracks.length > 0) {
-                                            const mainTrack = firstResolve.tracks[0];
-                                            mainTrack.info.requester = member;
-                                            player.queue.add(mainTrack);
-                                        }
-
-                                        if (!player.playing && !player.paused) {
-                                            player.play();
-                                        }
-
-                                        // Resolve remaining tracks in the background
-                                        (async () => {
-                                            for (let i = 1; i < tracks.length; i++) {
-                                                try {
-                                                    const tName = tracks[i].name;
-                                                    const tArtists = tracks[i].artists ? tracks[i].artists.map(a => a.name).join(', ') : '';
-                                                    const res = await this.riffy.resolve({
-                                                        query: `${tArtists} - ${tName}`,
-                                                        requester: member
-                                                    });
-                                                    if (res.loadType !== 'empty' && res.loadType !== 'error' && res.tracks && res.tracks.length > 0) {
-                                                        const track = res.tracks[0];
-                                                        track.info.requester = member;
-                                                        player.queue.add(track);
-                                                    }
-                                                } catch (err) {
-                                                    console.error('[Music Spotify Queue Add Error]', err);
-                                                }
-                                                await new Promise(r => setTimeout(r, 500));
-                                            }
-                                            await textChannel.send({ content: `✅ Spotify 播放清單 **${title}** 中的歌曲已全部解析並加入隊列！` });
-                                        })();
-
-                                        return {
-                                            success: true,
-                                            type: 'playlist',
-                                            name: title,
-                                            count: tracks.length
-                                        };
                                     }
                                 }
                             } catch (e) {
-                                console.error('[Music Spotify Resolve Error (Scraper)]', e);
+                                console.error('[Music Spotify Resolve Error (Scraper Fallback)]', e);
                                 return { success: false, error: '解析 Spotify 連結失敗，請確認連結是否正確，或直接輸入歌名搜尋！' };
                             }
                         } else {
-                            return { success: false, error: 'Spotify 模組未載入，無法解析該連結！' };
+                            return { success: false, error: 'Spotify 模組未載入，且 API 解析失敗，無法解析該連結！' };
                         }
+                    }
+
+                    // If it is a playlist/album, add tracks to the player queue
+                    if (isPlaylist || isAlbum) {
+                        if (!tracks || tracks.length === 0) {
+                            return { success: false, error: 'Spotify 播放清單中沒有任何歌曲' };
+                        }
+
+                        // Resolve and add the first track immediately to start playing quickly
+                        const firstTrackName = tracks[0].name;
+                        const firstTrackArtists = tracks[0].artists ? tracks[0].artists.map(a => a.name).join(', ') : '';
+                        const firstResolve = await this.riffy.resolve({
+                            query: `${firstTrackArtists} - ${firstTrackName}`,
+                            requester: member
+                        });
+
+                        if (firstResolve.loadType !== 'empty' && firstResolve.loadType !== 'error' && firstResolve.tracks && firstResolve.tracks.length > 0) {
+                            const mainTrack = firstResolve.tracks[0];
+                            mainTrack.info.requester = member;
+                            player.queue.add(mainTrack);
+                        }
+
+                        if (!player.playing && !player.paused) {
+                            player.play();
+                        }
+
+                        // Resolve remaining tracks in background
+                        const playlistName = details?.name || 'Spotify Playlist';
+                        (async () => {
+                            for (let i = 1; i < tracks.length; i++) {
+                                try {
+                                    const tName = tracks[i].name;
+                                    const tArtists = tracks[i].artists ? tracks[i].artists.map(a => a.name).join(', ') : '';
+                                    const res = await this.riffy.resolve({
+                                        query: `${tArtists} - ${tName}`,
+                                        requester: member
+                                    });
+                                    if (res.loadType !== 'empty' && res.loadType !== 'error' && res.tracks && res.tracks.length > 0) {
+                                        const track = res.tracks[0];
+                                        track.info.requester = member;
+                                        player.queue.add(track);
+                                    }
+                                } catch (err) {
+                                    console.error('[Music Spotify Queue Add Error]', err);
+                                }
+                                await new Promise(r => setTimeout(r, 500));
+                            }
+                            await textChannel.send({ content: `✅ Spotify 播放清單 **${playlistName}** 中的 ${tracks.length} 首歌已全部解析並加入隊列！` });
+                        })();
+
+                        return {
+                            success: true,
+                            type: 'playlist',
+                            name: playlistName,
+                            count: tracks.length
+                        };
                     }
                 }
             }
