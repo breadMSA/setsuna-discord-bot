@@ -357,7 +357,7 @@ class MusicPlayer {
                     if (details && details.preview) {
                         const { type, title, artist } = details.preview;
                         if (type === 'track') {
-                            query = `ytsearch:${artist} - ${title}`;
+                            query = `${artist} - ${title}`; // Let Riffy add ytsearch: automatically
                         } else if (type === 'playlist' || type === 'album') {
                             const tracks = details.tracks;
                             if (!tracks || tracks.length === 0) {
@@ -368,7 +368,7 @@ class MusicPlayer {
                             const firstTrackName = tracks[0].name;
                             const firstTrackArtists = tracks[0].artists ? tracks[0].artists.map(a => a.name).join(', ') : '';
                             const firstResolve = await this.riffy.resolve({
-                                query: `ytsearch:${firstTrackArtists} - ${firstTrackName}`,
+                                query: `${firstTrackArtists} - ${firstTrackName}`,
                                 requester: member
                             });
                             
@@ -389,7 +389,7 @@ class MusicPlayer {
                                         const tName = tracks[i].name;
                                         const tArtists = tracks[i].artists ? tracks[i].artists.map(a => a.name).join(', ') : '';
                                         const res = await this.riffy.resolve({
-                                            query: `ytsearch:${tArtists} - ${tName}`,
+                                            query: `${tArtists} - ${tName}`,
                                             requester: member
                                         });
                                         if (res.loadType !== 'empty' && res.loadType !== 'error' && res.tracks && res.tracks.length > 0) {
