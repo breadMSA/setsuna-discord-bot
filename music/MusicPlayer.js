@@ -109,11 +109,11 @@ const lavalinkNodes = [
     {
         name: 'Railway-Lavalink',
         host: host,
-        // 如果設了 PORT 就用它，否則：內部網路用 8080，公開網路用 443
-        port: parseInt(process.env.LAVALINK_PORT) || (isInternal ? 8080 : 443),
+        // 自動判定：內部網路或本地走 8080，公開網路走 443 埠
+        port: isInternal ? 8080 : 443,
         password: process.env.LAVALINK_PASSWORD || 'youshallnotpass', 
-        // 如果設了 SECURE 就用它，否則：內部網路為 false，公開網路為 true
-        secure: process.env.LAVALINK_SECURE ? (process.env.LAVALINK_SECURE === 'true') : !isInternal
+        // 自動判定：內部網路不加密，公開網路強制開啟加密 (WSS) 連線
+        secure: !isInternal
     }
 ];
 
