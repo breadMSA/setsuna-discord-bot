@@ -13,8 +13,6 @@ try {
     console.error('[Music] Failed to initialize spotify-url-info:', e);
 }
 
-const { google } = require('googleapis');
-
 // Extract YouTube Video ID from URL
 function extractYoutubeVideoId(url) {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -22,19 +20,21 @@ function extractYoutubeVideoId(url) {
     return (match && match[2].length === 11) ? match[2] : null;
 }
 
-// Fetch YouTube video details using public oembed API (bypass API key restrictions)
+// Fetch YouTube video details via YouTube oEmbed (No API Key Required)
 async function getYoutubeVideoDetails(videoId) {
     try {
-        const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
-        if (response.ok) {
-            const data = await response.json();
+        const fetchAgent = globalThis.fetch || require('node-fetch');
+        const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+        const res = await fetchAgent(url);
+        if (res.ok) {
+            const data = await res.json();
             return {
                 title: data.title,
                 channel: data.author_name
             };
         }
     } catch (e) {
-        console.error('[Music] Error fetching video details from oembed:', e);
+        console.error('[Music] Error fetching video details via oEmbed:', e);
     }
     return null;
 }
