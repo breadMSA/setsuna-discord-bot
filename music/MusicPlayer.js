@@ -60,15 +60,14 @@ const loopModeNames = {
     'queue': '隊列循環'
 };
 
-// Free Lavalink nodes
-// From: https://github.com/botxlab/lavalink-list
+// 透過 process.env 動態讀取環境變數，兼顧本地開發與雲端部署
 const lavalinkNodes = [
     {
-        name: 'AjieDev-v4',
-        host: 'lava-v4.ajieblogs.eu.org',
-        port: 80,
-        password: 'https://dsc.gg/ajidevserver',
-        secure: false
+        name: 'Railway-Lavalink',
+        host: process.env.LAVALINK_HOST || '127.0.0.1', // 讀不到就預設走本地端
+        port: process.env.LAVALINK_HOST ? 443 : 2333,   // 如果有填雲端網址就走 443 安全埠，本地走 2333
+        password: process.env.LAVALINK_PASSWORD || 'youshallnotpass', 
+        secure: process.env.LAVALINK_HOST ? true : false // 雲端專用網址必須開啟加密連線
     }
 ];
 
