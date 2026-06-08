@@ -420,8 +420,22 @@ class MusicPlayer {
                 }
             }
 
-            // For YouTube URLs: pass directly to Lavalink (no rewriting)
-            // Lavalink handles YouTube URLs natively with configured clients
+            // For YouTube URLs: convert to ytsearch via oEmbed title lookup
+            // Direct URL loading fails on Railway IPs; searching by title works
+            if ((query.includes('youtube.com/watch') || query.includes('youtu.be/')) && !query.includes('music.youtube.com')) {
+                const videoId = extractYoutubeVideoId(query);
+                if (videoId) {
+                    try {
+                        const details = await getYoutubeVideoDetails(videoId);
+                        if (details && details.title) {
+                            query = `ytsearch:${details.title}`;
+                            console.log(`[Music] YouTube URL converted to search: ${query}`);
+                        }
+                    } catch (e) {
+                        console.error('[Music] oEmbed lookup failed, using URL directly:', e.message);
+                    }
+                }
+            }
 
             // Search for the track
             const resolve = await this.riffy.resolve({
