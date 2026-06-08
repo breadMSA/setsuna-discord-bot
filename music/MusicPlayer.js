@@ -64,10 +64,10 @@ const loopModeNames = {
 const lavalinkNodes = [
     {
         name: 'Railway-Lavalink',
-        host: process.env.LAVALINK_HOST || '127.0.0.1', // 讀不到就預設走本地端
-        port: process.env.LAVALINK_HOST ? 443 : 2333,   // 如果有填雲端網址就走 443 安全埠，本地走 2333
+        host: process.env.LAVALINK_HOST || '127.0.0.1',
+        port: parseInt(process.env.LAVALINK_PORT) || (process.env.LAVALINK_HOST ? 443 : 2333),
         password: process.env.LAVALINK_PASSWORD || 'youshallnotpass', 
-        secure: process.env.LAVALINK_HOST ? true : false // 雲端專用網址必須開啟加密連線
+        secure: process.env.LAVALINK_SECURE ? (process.env.LAVALINK_SECURE === 'true') : (process.env.LAVALINK_HOST ? true : false)
     }
 ];
 
