@@ -38,6 +38,7 @@
         "ws": "^8.18.3",
         "distube": "^5.0.2",
         "@distube/spotify": "^2.0.2",
+        "spotify-url-info": "^3.2.18",
         "@distube/soundcloud": "^2.0.3",
         "@distube/youtube": "^1.0.4",
         "@distube/ytdl-core": "^4.15.3",

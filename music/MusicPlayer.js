@@ -6,6 +6,47 @@
 const { Riffy } = require('riffy');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, GatewayDispatchEvents, MessageFlags } = require('discord.js');
 
+let getDetails;
+try {
+    getDetails = require('spotify-url-info')(globalThis.fetch || fetch).getDetails;
+} catch (e) {
+    console.error('[Music] Failed to initialize spotify-url-info:', e);
+}
+
+const { google } = require('googleapis');
+
+// Extract YouTube Video ID from URL
+function extractYoutubeVideoId(url) {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+}
+
+// Fetch YouTube video details using YouTube Data API
+async function getYoutubeVideoDetails(videoId) {
+    if (!process.env.YOUTUBE_API_KEY) return null;
+    try {
+        const youtube = google.youtube({
+            version: 'v3',
+            auth: process.env.YOUTUBE_API_KEY
+        });
+        const res = await youtube.videos.list({
+            part: 'snippet',
+            id: [videoId]
+        });
+        if (res.data.items && res.data.items.length > 0) {
+            const snippet = res.data.items[0].snippet;
+            return {
+                title: snippet.title,
+                channel: snippet.channelTitle
+            };
+        }
+    } catch (e) {
+        console.error('[Music] Error fetching video details from YouTube API:', e);
+    }
+    return null;
+}
+
 // Format time from milliseconds to MM:SS or HH:MM:SS
 function formatTime(ms) {
     if (!ms || isNaN(ms)) return '00:00';
@@ -301,6 +342,94 @@ class MusicPlayer {
                     textChannel: textChannel.id,
                     deaf: true
                 });
+            }
+
+            // Intercept Spotify URLs and convert them to YouTube search queries
+            if (query.includes('open.spotify.com/') && getDetails) {
+                try {
+                    await textChannel.send({ content: '🔍 正在解析 Spotify 連結，請稍候...' });
+                    const details = await getDetails(query);
+                    if (details && details.preview) {
+                        const { type, title, artist } = details.preview;
+                        if (type === 'track') {
+                            query = `ytmsearch:${artist} - ${title}`;
+                        } else if (type === 'playlist' || type === 'album') {
+                            const tracks = details.tracks;
+                            if (!tracks || tracks.length === 0) {
+                                return { success: false, error: 'Spotify 播放清單中沒有任何歌曲' };
+                            }
+                            
+                            // Resolve and add the first track immediately to start playing quickly
+                            const firstTrackName = tracks[0].name;
+                            const firstTrackArtists = tracks[0].artists ? tracks[0].artists.map(a => a.name).join(', ') : '';
+                            const firstResolve = await this.riffy.resolve({
+                                query: `ytmsearch:${firstTrackArtists} - ${firstTrackName}`,
+                                requester: member
+                            });
+                            
+                            if (firstResolve.loadType !== 'empty' && firstResolve.loadType !== 'error' && firstResolve.tracks && firstResolve.tracks.length > 0) {
+                                const mainTrack = firstResolve.tracks[0];
+                                mainTrack.info.requester = member;
+                                player.queue.add(mainTrack);
+                            }
+                            
+                            if (!player.playing && !player.paused) {
+                                player.play();
+                            }
+                            
+                            // Resolve the remaining tracks in the background to avoid Discord interaction timeout
+                            (async () => {
+                                for (let i = 1; i < tracks.length; i++) {
+                                    try {
+                                        const tName = tracks[i].name;
+                                        const tArtists = tracks[i].artists ? tracks[i].artists.map(a => a.name).join(', ') : '';
+                                        const res = await this.riffy.resolve({
+                                            query: `ytmsearch:${tArtists} - ${tName}`,
+                                            requester: member
+                                        });
+                                        if (res.loadType !== 'empty' && res.loadType !== 'error' && res.tracks && res.tracks.length > 0) {
+                                            const track = res.tracks[0];
+                                            track.info.requester = member;
+                                            player.queue.add(track);
+                                        }
+                                    } catch (err) {
+                                        console.error('[Music Spotify Queue Add Error]', err);
+                                    }
+                                    // Slight delay to prevent rate limiting
+                                    await new Promise(r => setTimeout(r, 500));
+                                }
+                                await textChannel.send({ content: `✅ Spotify 播放清單 **${details.preview.title}** 中的歌曲已全部解析並加入隊列！` });
+                            })();
+
+                            return {
+                                success: true,
+                                type: 'playlist',
+                                name: details.preview.title,
+                                count: tracks.length
+                            };
+                        }
+                    }
+                } catch (e) {
+                    console.error('[Music Spotify Resolve Error]', e);
+                    return { success: false, error: '解析 Spotify 連結失敗，請直接輸入歌名搜尋！' };
+                }
+            }
+
+            // Intercept YouTube normal video links to bypass signature decryption errors on Lavalink
+            if ((query.includes('youtube.com/watch') || query.includes('youtu.be/')) && !query.includes('music.youtube.com')) {
+                const videoId = extractYoutubeVideoId(query);
+                if (videoId) {
+                    try {
+                        await textChannel.send({ content: '🔍 偵測到 YouTube 影片網址。為防簽名解密錯誤，正在轉換為 YouTube Music 搜尋...' });
+                        const details = await getYoutubeVideoDetails(videoId);
+                        if (details) {
+                            query = `ytmsearch:${details.channel} - ${details.title}`;
+                            console.log(`[Music] Rewrote YouTube URL to: ${query}`);
+                        }
+                    } catch (e) {
+                        console.error('[Music] Failed to resolve YouTube details, fallback to original query:', e);
+                    }
+                }
             }
 
             // Search for the track
