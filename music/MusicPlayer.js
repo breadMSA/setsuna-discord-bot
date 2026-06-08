@@ -354,10 +354,10 @@ class MusicPlayer {
                 try {
                     await textChannel.send({ content: '🔍 正在解析 Spotify 連結，請稍候...' });
                     const details = await getDetails(query);
-                    if (details) {
-                        const type = details.type;
-                        const title = details.title || details.name || details.track;
-                        const artist = details.artist || (details.artists && details.artists.map(a => a.name).join(', '));
+                    if (details && details.preview) {
+                        const type = details.preview.type;
+                        const title = details.preview.title;
+                        const artist = details.preview.artist;
                         
                         if (type === 'track') {
                             query = `${artist} - ${title}`; // Let Riffy add ytsearch: automatically
@@ -423,21 +423,14 @@ class MusicPlayer {
                 }
             }
 
-            // For YouTube URLs: convert to title search via oEmbed
-            // Direct URL loading fails on Railway IPs; searching by title works
+            // For YouTube URLs: convert to video ID search
+            // Direct URL loading fails on Railway IPs; searching by video ID works
             // NOTE: do NOT add ytsearch: prefix here — Riffy adds it automatically via defaultSearchPlatform
             if ((query.includes('youtube.com/watch') || query.includes('youtu.be/')) && !query.includes('music.youtube.com')) {
                 const videoId = extractYoutubeVideoId(query);
                 if (videoId) {
-                    try {
-                        const details = await getYoutubeVideoDetails(videoId);
-                        if (details && details.title) {
-                            query = details.title; // Riffy will prepend ytsearch: automatically
-                            console.log(`[Music] YouTube URL converted to search: ${query}`);
-                        }
-                    } catch (e) {
-                        console.error('[Music] oEmbed lookup failed, using URL directly:', e.message);
-                    }
+                    query = videoId; // Let Riffy search by video ID
+                    console.log(`[Music] YouTube URL converted to video ID search: ${query}`);
                 }
             }
 
