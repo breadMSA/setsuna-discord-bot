@@ -137,7 +137,7 @@ async function getSpotifyAccessToken() {
 // Fetch all tracks from a Spotify playlist using pagination
 async function getSpotifyPlaylistTracks(playlistId, accessToken) {
     let tracks = [];
-    let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
+    let url = `https://api.spotify.com/v1/playlists/${playlistId}/items?limit=100`;
 
     while (url) {
         try {
@@ -159,7 +159,7 @@ async function getSpotifyPlaylistTracks(playlistId, accessToken) {
             url = data.next;
         } catch (err) {
             console.error('[Spotify API] Error fetching playlist tracks page:', err.message);
-            break;
+            throw err;
         }
     }
     return tracks;
