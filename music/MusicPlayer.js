@@ -127,7 +127,7 @@ class MusicPlayer {
                 const guild = client.guilds.cache.get(payload.d.guild_id);
                 if (guild) guild.shard.send(payload);
             },
-            defaultSearchPlatform: 'ytsearch', // YouTube search (better results than ytmsearch)
+            defaultSearchPlatform: 'ytsearch',
             restVersion: 'v4'
         });
 
@@ -357,7 +357,7 @@ class MusicPlayer {
                     if (details && details.preview) {
                         const { type, title, artist } = details.preview;
                         if (type === 'track') {
-                            query = `ytmsearch:${artist} - ${title}`;
+                            query = `ytsearch:${artist} - ${title}`;
                         } else if (type === 'playlist' || type === 'album') {
                             const tracks = details.tracks;
                             if (!tracks || tracks.length === 0) {
@@ -368,7 +368,7 @@ class MusicPlayer {
                             const firstTrackName = tracks[0].name;
                             const firstTrackArtists = tracks[0].artists ? tracks[0].artists.map(a => a.name).join(', ') : '';
                             const firstResolve = await this.riffy.resolve({
-                                query: `ytmsearch:${firstTrackArtists} - ${firstTrackName}`,
+                                query: `ytsearch:${firstTrackArtists} - ${firstTrackName}`,
                                 requester: member
                             });
                             
@@ -389,7 +389,7 @@ class MusicPlayer {
                                         const tName = tracks[i].name;
                                         const tArtists = tracks[i].artists ? tracks[i].artists.map(a => a.name).join(', ') : '';
                                         const res = await this.riffy.resolve({
-                                            query: `ytmsearch:${tArtists} - ${tName}`,
+                                            query: `ytsearch:${tArtists} - ${tName}`,
                                             requester: member
                                         });
                                         if (res.loadType !== 'empty' && res.loadType !== 'error' && res.tracks && res.tracks.length > 0) {
@@ -420,22 +420,8 @@ class MusicPlayer {
                 }
             }
 
-            // Intercept YouTube normal video links to bypass signature decryption errors on Lavalink
-            if ((query.includes('youtube.com/watch') || query.includes('youtu.be/')) && !query.includes('music.youtube.com')) {
-                const videoId = extractYoutubeVideoId(query);
-                if (videoId) {
-                    try {
-                        await textChannel.send({ content: '🔍 偵測到 YouTube 影片網址。為防簽名解密錯誤，正在轉換為 YouTube Music 搜尋...' });
-                        const details = await getYoutubeVideoDetails(videoId);
-                        if (details) {
-                            query = `ytmsearch:${details.channel} - ${details.title}`;
-                            console.log(`[Music] Rewrote YouTube URL to: ${query}`);
-                        }
-                    } catch (e) {
-                        console.error('[Music] Failed to resolve YouTube details, fallback to original query:', e);
-                    }
-                }
-            }
+            // For YouTube URLs: pass directly to Lavalink (no rewriting)
+            // Lavalink handles YouTube URLs natively with configured clients
 
             // Search for the track
             const resolve = await this.riffy.resolve({
