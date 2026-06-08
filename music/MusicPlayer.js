@@ -101,14 +101,19 @@ const loopModeNames = {
     'queue': '隊列循環'
 };
 
-// 透過 process.env 動態讀取環境變數，兼顧本地開發與雲端部署
+// 透過 process.env 動態讀取環境變數，並自動偵測內部/公開網路進行最安全的配置
+const host = process.env.LAVALINK_HOST || '127.0.0.1';
+const isInternal = host.includes('railway.internal') || host.includes('localhost') || host === '127.0.0.1';
+
 const lavalinkNodes = [
     {
         name: 'Railway-Lavalink',
-        host: process.env.LAVALINK_HOST || '127.0.0.1',
-        port: parseInt(process.env.LAVALINK_PORT) || (process.env.LAVALINK_HOST ? 443 : 2333),
+        host: host,
+        // 如果設了 PORT 就用它，否則：內部網路用 8080，公開網路用 443
+        port: parseInt(process.env.LAVALINK_PORT) || (isInternal ? 8080 : 443),
         password: process.env.LAVALINK_PASSWORD || 'youshallnotpass', 
-        secure: process.env.LAVALINK_SECURE ? (process.env.LAVALINK_SECURE === 'true') : (process.env.LAVALINK_HOST ? true : false)
+        // 如果設了 SECURE 就用它，否則：內部網路為 false，公開網路為 true
+        secure: process.env.LAVALINK_SECURE ? (process.env.LAVALINK_SECURE === 'true') : !isInternal
     }
 ];
 
