@@ -3465,28 +3465,52 @@ client.on('messageCreate', async (message) => {
         console.log(`[OpenClaw] 老闆特權驗證成功，發送請求至: ${OPENCLAW_URL}/v1/chat/completions`);
         try {
           const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
-          // 截圖/瀏覽任務可能需要較長時間，設定 120 秒 timeout
-          const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
-            method: 'POST',
-            timeout: 120000,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${OPENCLAW_PASS}`
-            },
-            body: JSON.stringify({
-              model: 'openclaw',
-              messages: [
-                { role: 'user', content: message.content + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 MEDIA:<截圖的完整絕對路徑>，例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png。這是必要的格式，不可省略。]' }
-              ],
-              stream: false
-            })
-          });
+
+          // HF Space 可能在睡覺，先 ping 喚醒再 call
+          const callOpenClaw = async () => {
+            const res = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
+              method: 'POST',
+              timeout: 120000,
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENCLAW_PASS}`
+              },
+              body: JSON.stringify({
+                model: 'openclaw',
+                messages: [
+                  { role: 'user', content: message.content + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 MEDIA:<截圖的完整絕對路徑>，例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png。這是必要的格式，不可省略。]' }
+                ],
+                stream: false
+              })
+            });
+            return res;
+          };
+
+          let openclawResponse = await callOpenClaw();
+
+          // 偵測 HF Space 睡著（回傳 HTML 而非 JSON）
+          const contentType = openclawResponse.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            console.log('[OpenClaw] Space 可能在睡覺，等待喚醒...');
+            await message.channel.send('老闆，OpenClaw 剛剛在睡覺，正在喚醒中，等我 45 秒...');
+            // ping root URL 強制喚醒
+            try { await fetch(OPENCLAW_URL, { timeout: 10000 }); } catch (_) {}
+            await new Promise(resolve => setTimeout(resolve, 45000));
+            openclawResponse = await callOpenClaw();
+          }
 
           console.log(`[OpenClaw] HTTP 回應狀態: ${openclawResponse.status}`);
 
           if (!openclawResponse.ok) {
             const errBody = await openclawResponse.text();
             throw new Error(`OpenClaw 回應錯誤：HTTP ${openclawResponse.status} - ${errBody.substring(0, 300)}`);
+          }
+
+          // 再次確認是否為 JSON
+          const ct2 = openclawResponse.headers.get('content-type') || '';
+          if (!ct2.includes('application/json')) {
+            await message.channel.send('老闆，OpenClaw Space 還沒醒，等一下再試。');
+            return;
           }
 
           const openclawData = await openclawResponse.json();
@@ -5079,25 +5103,45 @@ if (TELEGRAM_TOKEN) {
 
     if (analysis.intent === 'BROWSE_WEB' && OPENCLAW_URL && OPENCLAW_PASS) {
       try {
-        const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
-          method: 'POST',
-          timeout: 120000,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${OPENCLAW_PASS}`
-          },
-          body: JSON.stringify({
-            model: 'openclaw',
-            messages: [
-              { role: 'user', content: text + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 MEDIA:<截圖的完整絕對路徑>，例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png。這是必要的格式，不可省略。]' }
-            ],
-            stream: false
-          })
-        });
+        const callOpenClawTg = async () => {
+          return fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
+            method: 'POST',
+            timeout: 120000,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${OPENCLAW_PASS}`
+            },
+            body: JSON.stringify({
+              model: 'openclaw',
+              messages: [
+                { role: 'user', content: text + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 MEDIA:<截圖的完整絕對路徑>，例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png。這是必要的格式，不可省略。]' }
+              ],
+              stream: false
+            })
+          });
+        };
+
+        let openclawResponse = await callOpenClawTg();
+
+        // 偵測 HF Space 睡著（回傳 HTML 而非 JSON）
+        const tgCt = openclawResponse.headers.get('content-type') || '';
+        if (!tgCt.includes('application/json')) {
+          console.log('[Telegram] OpenClaw Space 可能在睡覺，等待喚醒...');
+          await sendTelegramMessage(chatId, 'OpenClaw 剛剛在睡覺，正在喚醒中，等我 45 秒...');
+          try { await fetch(OPENCLAW_URL, { timeout: 10000 }); } catch (_) {}
+          await new Promise(resolve => setTimeout(resolve, 45000));
+          openclawResponse = await callOpenClawTg();
+        }
 
         if (!openclawResponse.ok) {
           const errBody = await openclawResponse.text();
           throw new Error(`OpenClaw HTTP ${openclawResponse.status}: ${errBody.substring(0, 200)}`);
+        }
+
+        const tgCt2 = openclawResponse.headers.get('content-type') || '';
+        if (!tgCt2.includes('application/json')) {
+          await sendTelegramMessage(chatId, 'OpenClaw Space 還沒醒，等一下再試。');
+          return;
         }
 
         const openclawData = await openclawResponse.json();
