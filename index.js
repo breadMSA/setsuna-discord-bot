@@ -3327,18 +3327,22 @@ client.on('messageCreate', async (message) => {
   // =================================================================
   // 🌐 主人專屬：雲端 OpenClaw 視覺網頁操作攔截器
   // =================================================================
-  if (process.env.OPENCLAW_API_URL && process.env.OPENCLAW_GATEWAY_PASSWORD) {
+  const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
+  const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
+
+  if (OPENCLAW_URL && OPENCLAW_PASS) {
     const isWebBrowsingRequest = await detectWebBrowsingWithAI(message.content);
+    console.log(`[OpenClaw] 意圖判定結果: ${isWebBrowsingRequest}, 發送者: ${message.author.id}, 是老闆: ${isBotOwner(message.author.id)}`);
 
     if (isWebBrowsingRequest) {
       if (isBotOwner(message.author.id)) {
         console.log(`[OpenClaw] 老闆特權驗證成功，即時送往雲端 OpenClaw 後端！`);
         try {
-          const openclawResponse = await fetch(`${process.env.OPENCLAW_API_URL}/api/v1/chat`, {
+          const openclawResponse = await fetch(`${OPENCLAW_URL}/api/v1/chat`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.OPENCLAW_GATEWAY_PASSWORD}`
+              'Authorization': `Bearer ${OPENCLAW_PASS}`
             },
             body: JSON.stringify({
               message: message.content,
