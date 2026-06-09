@@ -89,9 +89,9 @@ async function generateImage(prompt, imageUrl = null) {
       contents.push({ text: enhancedPrompt });
     }
 
-    // 使用 gemini-2.0-flash-preview-image-generation 模型生成圖片
+    // 使用 gemini-3.1-flash-image 模型生成圖片
     requestConfig = {
-      model: "gemini-2.0-flash-preview-image-generation",
+      model: "gemini-3.1-flash-image",
       contents: contents,
       config: {
         responseModalities: [Modality.TEXT, Modality.IMAGE],

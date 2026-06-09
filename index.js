@@ -2899,7 +2899,7 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
           console.log(`使用 API 密鑰：${currentKey.substring(0, 4)}...${currentKey.substring(currentKey.length - 4)}`);
 
           // 執行 genimg.mjs 腳本，增加超時時間和緩衝區大小
-          const { stdout } = await exec(
+          const { stdout } = await execPromise(
             `node "${path.join(__dirname, 'genimg.mjs')}" --api-key=${currentKey} "${currentPrompt.replace(/"/g, '\"')}"`,
             {
               maxBuffer: 20 * 1024 * 1024, // 增加緩衝區大小到 20MB
