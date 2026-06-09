@@ -3334,6 +3334,66 @@ client.on('messageCreate', async (message) => {
   await message.channel.sendTyping();
 
   // =================================================================
+  // 🎵 文字音樂指令攔截器（在語音頻道播歌）
+  // =================================================================
+  const musicTextTriggers = [
+    /^(播放|播歌|點歌|play|點播)\s+(.+)/i,
+  ];
+  const musicSkipTriggers = /^(切歌|跳過|skip)\s*$/i;
+  const musicPauseTriggers = /^(暫停|pause)\s*$/i;
+  const musicResumeTriggers = /^(繼續|resume|繼續播)\s*$/i;
+  const musicStopTriggers = /^(停止|stop|停播)\s*$/i;
+
+  if (musicPlayer && !isDM) {
+    let musicMatchQuery = null;
+    for (const trigger of musicTextTriggers) {
+      const match = message.content.match(trigger);
+      if (match) { musicMatchQuery = match[2].trim(); break; }
+    }
+
+    if (musicMatchQuery) {
+      const member = message.member;
+      const voiceChannel = member?.voice?.channel;
+      if (!voiceChannel) {
+        await message.reply('你得先進語音頻道我才能幫你播啊...');
+        return;
+      }
+      await message.channel.sendTyping();
+      const result = await musicPlayer.play(voiceChannel, message.channel, musicMatchQuery, member);
+      if (!result.success) {
+        await message.reply(`找不到這首歌欸：${result.error}`);
+      } else if (result.type === 'playlist') {
+        await message.reply(`好啊，幫你排了 **${result.name}** 的 ${result.count} 首歌。`);
+      } else {
+        await message.reply(`好，幫你播 **${result.track?.info?.title || musicMatchQuery}**。`);
+      }
+      return;
+    }
+
+    if (musicSkipTriggers.test(message.content)) {
+      const result = musicPlayer.skip(message.guildId);
+      await message.reply(result.success ? '好，切下一首。' : `切不了：${result.error}`);
+      return;
+    }
+    if (musicPauseTriggers.test(message.content)) {
+      const result = musicPlayer.pause(message.guildId);
+      await message.reply(result.success ? '好，暫停了。' : `${result.error}`);
+      return;
+    }
+    if (musicResumeTriggers.test(message.content)) {
+      const result = musicPlayer.resume(message.guildId);
+      await message.reply(result.success ? '繼續了。' : `${result.error}`);
+      return;
+    }
+    if (musicStopTriggers.test(message.content)) {
+      const result = await musicPlayer.stop(message.guildId);
+      await message.reply(result.success ? '停了，掰。' : `${result.error}`);
+      return;
+    }
+  }
+  // =================================================================
+
+  // =================================================================
   // 🌐 主人專屬：雲端 OpenClaw 視覺網頁操作攔截器
   // =================================================================
   const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
@@ -3357,7 +3417,6 @@ client.on('messageCreate', async (message) => {
             body: JSON.stringify({
               model: 'openclaw',
               messages: [
-                { role: 'system', content: channelPersonality },
                 { role: 'user', content: message.content }
               ],
               stream: false
@@ -3365,25 +3424,39 @@ client.on('messageCreate', async (message) => {
           });
 
           if (!openclawResponse.ok) {
-            throw new Error(`OpenClaw 回應錯誤：HTTP ${openclawResponse.status}`);
+            const errBody = await openclawResponse.text();
+            throw new Error(`OpenClaw 回應錯誤：HTTP ${openclawResponse.status} - ${errBody.substring(0, 200)}`);
           }
 
           const openclawData = await openclawResponse.json();
-          // OpenAI-compatible 格式：choices[0].message.content
-          const replyText = openclawData?.choices?.[0]?.message?.content
+          const rawResult = openclawData?.choices?.[0]?.message?.content
             || openclawData.reply || openclawData.message || openclawData.content
-            || '老闆，OpenClaw 沒有回傳可用的結果。';
+            || null;
+
+          if (!rawResult) {
+            await message.channel.send('老闆，OpenClaw 沒有回傳可用的結果。');
+            return;
+          }
+
+          console.log(`[OpenClaw] 原始回傳（前300字）: ${rawResult.substring(0, 300)}`);
+
+          // 用 Gemini 加 Setsuna 人設包裝 OpenClaw 的原始查詢結果
+          const wrappedMessages = [
+            { role: 'system', content: channelPersonality },
+            { role: 'user', content: `老闆問了：「${message.content}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${rawResult}` }
+          ];
+          const finalReply = await callGeminiAPI(wrappedMessages);
 
           // Discord 單則訊息上限 2000 字，超過就切割
-          if (replyText.length <= 2000) {
-            await message.channel.send(replyText);
+          if (finalReply.length <= 2000) {
+            await message.channel.send(finalReply);
           } else {
-            const chunks = replyText.match(/[\s\S]{1,2000}/g) || [replyText];
+            const chunks = finalReply.match(/[\s\S]{1,2000}/g) || [finalReply];
             for (const chunk of chunks) {
               await message.channel.send(chunk);
             }
           }
-          return; // 執行完畢，不繼續觸發一般聊天邏輯
+          return;
         } catch (err) {
           console.error('[OpenClaw] 連線失敗：', err);
           await message.channel.send('老闆，雲端 OpenClaw 連線失敗，可能主機正在開機轉世中，請稍後再試！\n錯誤：' + err.message);
@@ -4765,20 +4838,25 @@ client.on('error', (error) => {
 });
 
 // =================================================================
-// 🤖 Telegram Bot Polling Handler (Bypasses HF Network Restrictions)
+// 🤖 Telegram Bot Polling Handler
 // =================================================================
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (TELEGRAM_TOKEN) {
   console.log('[Telegram] Bot token detected, starting polling...');
   let lastUpdateId = 0;
+  let telegramInitialized = false; // 啟動時先跳過舊訊息
 
   const sendTelegramMessage = async (chatId, text) => {
     try {
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text: text })
       });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[Telegram] sendMessage 失敗 HTTP ${res.status}: ${errText}`);
+      }
     } catch (err) {
       console.error('[Telegram] Error sending message:', err);
     }
@@ -4795,6 +4873,7 @@ if (TELEGRAM_TOKEN) {
   };
 
   const handleTelegramMessage = async (chatId, text, username) => {
+    console.log(`[Telegram] 收到訊息 from ${username}: ${text}`);
     await sendTelegramChatAction(chatId, 'typing');
 
     const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
@@ -4802,6 +4881,7 @@ if (TELEGRAM_TOKEN) {
 
     if (OPENCLAW_URL && OPENCLAW_PASS) {
       const isWebBrowsingRequest = await detectWebBrowsingWithAI(text);
+      console.log(`[Telegram] OpenClaw 意圖判定: ${isWebBrowsingRequest}`);
       if (isWebBrowsingRequest) {
         try {
           const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
@@ -4813,7 +4893,6 @@ if (TELEGRAM_TOKEN) {
             body: JSON.stringify({
               model: 'openclaw',
               messages: [
-                { role: 'system', content: setsunaPersonality },
                 { role: 'user', content: text }
               ],
               stream: false
@@ -4821,15 +4900,29 @@ if (TELEGRAM_TOKEN) {
           });
 
           if (!openclawResponse.ok) {
-            throw new Error(`OpenClaw responded with status ${openclawResponse.status}`);
+            const errBody = await openclawResponse.text();
+            throw new Error(`OpenClaw HTTP ${openclawResponse.status}: ${errBody.substring(0, 200)}`);
           }
 
           const openclawData = await openclawResponse.json();
-          const replyText = openclawData?.choices?.[0]?.message?.content
+          const rawResult = openclawData?.choices?.[0]?.message?.content
             || openclawData.reply || openclawData.message || openclawData.content
-            || '老闆，OpenClaw 沒有回傳可用的結果。';
+            || null;
 
-          await sendTelegramMessage(chatId, replyText);
+          if (!rawResult) {
+            await sendTelegramMessage(chatId, '老闆，OpenClaw 沒有回傳可用的結果。');
+            return;
+          }
+
+          console.log(`[Telegram] OpenClaw 原始回傳（前300字）: ${rawResult.substring(0, 300)}`);
+
+          // 用 Gemini 包裝 OpenClaw 結果，加上 Setsuna 人設語氣
+          const wrappedMessages = [
+            { role: 'system', content: setsunaPersonality },
+            { role: 'user', content: `老闆問了：「${text}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${rawResult}` }
+          ];
+          const finalReply = await callGeminiAPI(wrappedMessages);
+          await sendTelegramMessage(chatId, finalReply);
           return;
         } catch (err) {
           console.error('[Telegram] OpenClaw error:', err);
@@ -4848,31 +4941,52 @@ if (TELEGRAM_TOKEN) {
       await sendTelegramMessage(chatId, responseText);
     } catch (err) {
       console.error('[Telegram] Gemini API error:', err);
-      await sendTelegramMessage(chatId, '抱歉，我的大腦出了點小狀況，晚點再試試？');
+      await sendTelegramMessage(chatId, '大腦當機了，晚點再聊？');
     }
   };
 
   const pollTelegram = async () => {
     try {
-      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=30`);
-      if (response.ok) {
+      // timeout=0 = 短輪詢，不怕被 hosting 平台切斷長連線
+      const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=0`;
+      const response = await fetch(url, { timeout: 15000 });
+      if (!response.ok) {
+        const errBody = await response.text();
+        console.error(`[Telegram Polling] HTTP ${response.status}: ${errBody.substring(0, 300)}`);
+      } else {
         const data = await response.json();
-        if (data.ok && data.result) {
+        if (!data.ok) {
+          console.error(`[Telegram Polling] Telegram API error: ${JSON.stringify(data)}`);
+        } else if (data.result && data.result.length > 0) {
+          const nowSec = Math.floor(Date.now() / 1000);
           for (const update of data.result) {
             lastUpdateId = update.update_id;
+            if (!telegramInitialized) continue; // 啟動時先把舊訊息全部 offset 掉，不處理
             if (update.message && update.message.text) {
+              const msgDate = update.message.date || 0;
+              if (nowSec - msgDate > 60) {
+                console.log(`[Telegram] 跳過舊訊息 (${nowSec - msgDate}秒前): ${update.message.text}`);
+                continue; // 跳過超過 60 秒的舊訊息
+              }
               const text = update.message.text;
               const chatId = update.message.chat.id;
               const username = update.message.from.username || update.message.from.first_name || 'User';
               handleTelegramMessage(chatId, text, username).catch(console.error);
             }
           }
+          if (!telegramInitialized) {
+            telegramInitialized = true;
+            console.log(`[Telegram] 初始化完成，跳過了 ${data.result.length} 條舊訊息，開始接收新訊息。`);
+          }
+        } else if (!telegramInitialized) {
+          telegramInitialized = true;
+          console.log('[Telegram] 初始化完成，沒有積壓訊息，開始接收新訊息。');
         }
       }
     } catch (err) {
-      console.error('[Telegram Polling Error]', err);
+      console.error('[Telegram Polling Error]', err.message);
     }
-    setTimeout(pollTelegram, 1000);
+    setTimeout(pollTelegram, 2000); // 每 2 秒輪詢一次
   };
 
   pollTelegram();
