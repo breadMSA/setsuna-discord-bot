@@ -3347,14 +3347,15 @@ client.on('messageCreate', async (message) => {
       if (isBotOwner(message.author.id)) {
         console.log(`[OpenClaw] 老闆特權驗證成功，即時送往雲端 OpenClaw 後端！`);
         try {
-          const openclawResponse = await fetch(`${OPENCLAW_URL}/api/v1/chat`, {
+          const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${OPENCLAW_PASS}`
             },
             body: JSON.stringify({
-              message: message.content,
+              model: 'auto',
+              messages: [{ role: 'user', content: message.content }],
               stream: false
             })
           });
@@ -3364,7 +3365,10 @@ client.on('messageCreate', async (message) => {
           }
 
           const openclawData = await openclawResponse.json();
-          const replyText = openclawData.reply || openclawData.message || openclawData.content || '老闆，OpenClaw 沒有回傳可用的結果。';
+          // OpenAI-compatible 格式：choices[0].message.content
+          const replyText = openclawData?.choices?.[0]?.message?.content
+            || openclawData.reply || openclawData.message || openclawData.content
+            || '老闆，OpenClaw 沒有回傳可用的結果。';
 
           // Discord 單則訊息上限 2000 字，超過就切割
           if (replyText.length <= 2000) {
