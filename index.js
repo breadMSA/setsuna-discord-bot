@@ -3338,8 +3338,8 @@ client.on('messageCreate', async (message) => {
   // 支援自然語言：幫我播歌啦 xxx, 播首 xxx, 來一首 xxx, 放 xxx, etc.
   // =================================================================
   const musicPlayPatterns = [
-    /(?:幫我|幫忙|給我|我要|我想)?(?:播放|播歌|播首|點歌|點播|放歌|放首|來一?首|play)(?:啦|吧|一下|嘛|欸)?[,，\s]+(.+)/i,
-    /^(?:播放|播歌|點歌|play|點播|放)\s+(.+)/i,
+    // 幫我播/幫我播歌/幫我播放/播/play + 任何詞（空格與標點符號可省略）
+    /(?:幫我|幫忙|給我|我要|我想)?(?:播放|播歌|播首|播|點歌|點播|放歌|放首|來一?首|play)(?:啦|吧|一下|嘛|欸)?[,，\s]*(.+)$/i
   ];
   const musicSkipPattern = /(?:切歌|跳過|skip|下一首|切下一首)/i;
   const musicPausePattern = /(?:暫停|pause|先暫停|停一下)/i;
@@ -4952,46 +4952,55 @@ if (TELEGRAM_TOKEN) {
 
   const pollTelegram = async () => {
     try {
-      // timeout=0 = 短輪詢，不怕被 hosting 平台切斷長連線
-      const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=0`;
-      const response = await fetch(url, { timeout: 15000 });
+      // 使用長輪詢 (long polling)，timeout 設為 20 秒，反應更即時且省頻寬
+      const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=20`;
+      const response = await fetch(url, { timeout: 25000 });
       if (!response.ok) {
         const errBody = await response.text();
         console.error(`[Telegram Polling] HTTP ${response.status}: ${errBody.substring(0, 300)}`);
-      } else {
-        const data = await response.json();
-        if (!data.ok) {
-          console.error(`[Telegram Polling] Telegram API error: ${JSON.stringify(data)}`);
-        } else if (data.result && data.result.length > 0) {
-          const nowSec = Math.floor(Date.now() / 1000);
-          for (const update of data.result) {
-            lastUpdateId = update.update_id;
-            if (!telegramInitialized) continue; // 啟動時先把舊訊息全部 offset 掉，不處理
-            if (update.message && update.message.text) {
-              const msgDate = update.message.date || 0;
-              if (nowSec - msgDate > 60) {
-                console.log(`[Telegram] 跳過舊訊息 (${nowSec - msgDate}秒前): ${update.message.text}`);
-                continue; // 跳過超過 60 秒的舊訊息
-              }
-              const text = update.message.text;
-              const chatId = update.message.chat.id;
-              const username = update.message.from.username || update.message.from.first_name || 'User';
-              handleTelegramMessage(chatId, text, username).catch(console.error);
-            }
-          }
-          if (!telegramInitialized) {
-            telegramInitialized = true;
-            console.log(`[Telegram] 初始化完成，跳過了 ${data.result.length} 條舊訊息，開始接收新訊息。`);
-          }
-        } else if (!telegramInitialized) {
-          telegramInitialized = true;
-          console.log('[Telegram] 初始化完成，沒有積壓訊息，開始接收新訊息。');
-        }
+        setTimeout(pollTelegram, 5000); // 出錯時等 5 秒再試，避免無限循環連打
+        return;
       }
+      
+      const data = await response.json();
+      if (!data.ok) {
+        console.error(`[Telegram Polling] Telegram API error: ${JSON.stringify(data)}`);
+        setTimeout(pollTelegram, 5000);
+        return;
+      }
+
+      if (data.result && data.result.length > 0) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        for (const update of data.result) {
+          lastUpdateId = update.update_id;
+          if (!telegramInitialized) continue; // 啟動時先把舊訊息全部 offset 掉，不處理
+          if (update.message && update.message.text) {
+            const msgDate = update.message.date || 0;
+            if (nowSec - msgDate > 60) {
+              console.log(`[Telegram] 跳過舊訊息 (${nowSec - msgDate}秒前): ${update.message.text}`);
+              continue; // 跳過超過 60 秒的舊訊息
+            }
+            const text = update.message.text;
+            const chatId = update.message.chat.id;
+            const username = update.message.from.username || update.message.from.first_name || 'User';
+            handleTelegramMessage(chatId, text, username).catch(console.error);
+          }
+        }
+        if (!telegramInitialized) {
+          telegramInitialized = true;
+          console.log(`[Telegram] 初始化完成，跳過了 ${data.result.length} 條舊訊息，開始接收新訊息。`);
+        }
+      } else if (!telegramInitialized) {
+        telegramInitialized = true;
+        console.log('[Telegram] 初始化完成，沒有積壓訊息，開始接收新訊息。');
+      }
+      
+      // 成功時立即進行下一次輪詢（加上 100ms 避免調用棧過深）
+      setTimeout(pollTelegram, 100);
     } catch (err) {
       console.error('[Telegram Polling Error]', err.message);
+      setTimeout(pollTelegram, 5000); // 拋出異常時等 5 秒再試
     }
-    setTimeout(pollTelegram, 2000); // 每 2 秒輪詢一次
   };
 
   pollTelegram();
