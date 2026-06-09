@@ -874,6 +874,15 @@ client.once('ready', async () => {
   }
 
   console.log('Bot is ready to respond to messages!');
+
+  // OpenClaw 環境變數偵測
+  const _oclawUrl = process.env.OPENCLAW_API_URL;
+  const _oclawPass = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
+  if (_oclawUrl && _oclawPass) {
+    console.log(`[OpenClaw] ✅ 環境變數已載入！URL: ${_oclawUrl}, 密碼前4碼: ${_oclawPass.substring(0, 4)}...`);
+  } else {
+    console.log(`[OpenClaw] ❌ 環境變數未設定！OPENCLAW_API_URL=${_oclawUrl || '未設定'}, GATEWAY_PASSWORD=${_oclawPass || '未設定'}`);
+  }
 });
 
 // Handle slash commands
