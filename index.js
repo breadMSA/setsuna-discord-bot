@@ -3476,8 +3476,7 @@ client.on('messageCreate', async (message) => {
             body: JSON.stringify({
               model: 'openclaw',
               messages: [
-                { role: 'system', content: '當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。' },
-                { role: 'user', content: message.content }
+                { role: 'user', content: message.content + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 MEDIA:<截圖的完整絕對路徑>，例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png。這是必要的格式，不可省略。]' }
               ],
               stream: false
             })
@@ -5090,8 +5089,7 @@ if (TELEGRAM_TOKEN) {
           body: JSON.stringify({
             model: 'openclaw',
             messages: [
-              { role: 'system', content: '當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。' },
-              { role: 'user', content: text }
+              { role: 'user', content: text + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 MEDIA:<截圖的完整絕對路徑>，例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png。這是必要的格式，不可省略。]' }
             ],
             stream: false
           })
