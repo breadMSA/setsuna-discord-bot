@@ -3491,7 +3491,7 @@ client.on('messageCreate', async (message) => {
 
           const openclawData = await openclawResponse.json();
           console.log(`[OpenClaw] 完整回傳結構 keys: ${Object.keys(openclawData).join(', ')}`);
-          console.log(`[OpenClaw] choices[0].message.content 前500字: ${String(openclawData?.choices?.[0]?.message?.content || '(empty)').substring(0, 500)}`);
+          console.log('[OpenClaw] 完整回應 JSON:', JSON.stringify(openclawData, null, 2));
 
           const rawResult = openclawData?.choices?.[0]?.message?.content
             || openclawData.reply || openclawData.message || openclawData.content
@@ -3512,13 +3512,101 @@ client.on('messageCreate', async (message) => {
           ];
           const finalReply = await callGeminiAPI(wrappedMessages);
 
+          // 提取附件
+          const attachments = [];
+          const msgObj = openclawData?.choices?.[0]?.message || {};
+          
+          if (Array.isArray(msgObj.attachments)) {
+            for (const att of msgObj.attachments) {
+              if (typeof att === 'string') attachments.push(att);
+              else if (att && att.url) attachments.push(att.url);
+              else if (att && att.path) attachments.push(att.path);
+              else if (att && att.filePath) attachments.push(att.filePath);
+            }
+          }
+          if (msgObj.mediaUrl) attachments.push(msgObj.mediaUrl);
+          if (msgObj.filePath) attachments.push(msgObj.filePath);
+          if (msgObj.path) attachments.push(msgObj.path);
+          if (Array.isArray(msgObj.mediaUrls)) attachments.push(...msgObj.mediaUrls);
+          if (Array.isArray(openclawData.attachments)) attachments.push(...openclawData.attachments);
+          if (openclawData.mediaUrl) attachments.push(openclawData.mediaUrl);
+
+          const uniqueAttachments = [...new Set(attachments)].filter(Boolean);
+          console.log('[OpenClaw] 偵測到附件列表:', uniqueAttachments);
+
+          const discordFiles = [];
+          for (let i = 0; i < uniqueAttachments.length; i++) {
+            const attPath = uniqueAttachments[i];
+            let fileUrl = attPath;
+            if (!attPath.startsWith('http://') && !attPath.startsWith('https://')) {
+              let normalizedPath = attPath.replace(/\\/g, '/');
+              if (normalizedPath.includes('/.openclaw/media/')) {
+                const parts = normalizedPath.split('/.openclaw/media/');
+                fileUrl = `${OPENCLAW_URL}/media/${parts[1]}`;
+              } else if (normalizedPath.includes('/.openclaw/workspace/media/')) {
+                const parts = normalizedPath.split('/.openclaw/workspace/media/');
+                fileUrl = `${OPENCLAW_URL}/media/${parts[1]}`;
+              } else if (normalizedPath.includes('/.openclaw/workspace/')) {
+                const parts = normalizedPath.split('/.openclaw/workspace/');
+                fileUrl = `${OPENCLAW_URL}/workspace/${parts[1]}`;
+              } else if (normalizedPath.includes('/media/')) {
+                const parts = normalizedPath.split('/media/');
+                fileUrl = `${OPENCLAW_URL}/media/${parts[1]}`;
+              } else if (normalizedPath.includes('/workspace/')) {
+                const parts = normalizedPath.split('/workspace/');
+                fileUrl = `${OPENCLAW_URL}/workspace/${parts[1]}`;
+              } else {
+                fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/').pop()}`;
+              }
+            }
+
+            console.log(`[OpenClaw] 嘗試下載附件 #${i + 1}: ${fileUrl}`);
+            try {
+              const fileRes = await fetch(fileUrl, {
+                headers: {
+                  'Authorization': `Bearer ${OPENCLAW_PASS}`
+                },
+                timeout: 30000
+              });
+              if (fileRes.ok) {
+                const buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
+                discordFiles.push({
+                  attachment: buffer,
+                  name: fileUrl.split('/').pop() || `screenshot_${i + 1}.png`
+                });
+                console.log(`[OpenClaw] 成功下載附件 #${i + 1}`);
+              } else {
+                console.error(`[OpenClaw] 下載附件 #${i + 1} 失敗，HTTP ${fileRes.status}`);
+              }
+            } catch (downloadErr) {
+              console.error(`[OpenClaw] 下載附件 #${i + 1} 錯誤:`, downloadErr.message);
+            }
+          }
+
+          // 清理幻覺連結
+          let cleanedReply = finalReply;
+          cleanedReply = cleanedReply.replace(/\[IMAGE SHARED BY Setsuna:[^\]]+\]/gi, '');
+          cleanedReply = cleanedReply.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
+          cleanedReply = cleanedReply.trim();
+
           // Discord 單則訊息上限 2000 字，超過就切割
-          if (finalReply.length <= 2000) {
-            await message.channel.send(finalReply);
+          if (cleanedReply.length <= 2000) {
+            await message.channel.send({
+              content: cleanedReply,
+              files: discordFiles.length > 0 ? discordFiles : undefined
+            });
           } else {
-            const chunks = finalReply.match(/[\s\S]{1,2000}/g) || [finalReply];
-            for (const chunk of chunks) {
-              await message.channel.send(chunk);
+            const chunks = cleanedReply.match(/[\s\S]{1,2000}/g) || [cleanedReply];
+            for (let i = 0; i < chunks.length; i++) {
+              const chunk = chunks[i];
+              if (i === chunks.length - 1) {
+                await message.channel.send({
+                  content: chunk,
+                  files: discordFiles.length > 0 ? discordFiles : undefined
+                });
+              } else {
+                await message.channel.send(chunk);
+              }
             }
           }
           return;
