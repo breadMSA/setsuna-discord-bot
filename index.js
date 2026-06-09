@@ -2963,8 +2963,74 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
     };
 
   } catch (error) {
-    console.error('Error in generateImageWithGemini:', error);
-    throw error;
+    console.error('Error in generateImageWithGemini (Gemini failed):', error.message);
+
+    // Fallback 1: Try OpenAI DALL-E if CHATGPT_API_KEYS are available
+    if (CHATGPT_API_KEYS && CHATGPT_API_KEYS.length > 0) {
+      console.log('Gemini image generation failed. Attempting fallback to OpenAI DALL-E...');
+      try {
+        const OpenAI = (await import('openai')).default;
+        const openaiKey = CHATGPT_API_KEYS[currentChatGPTKeyIndex];
+        const openai = new OpenAI({ apiKey: openaiKey });
+
+        let finalPrompt = prompt;
+        if (imageUrl) {
+          finalPrompt = `Based on the reference image at ${imageUrl}, ${prompt}`;
+        }
+
+        console.log('Calling OpenAI DALL-E API...');
+        const response = await openai.images.generate({
+          model: "dall-e-3",
+          prompt: finalPrompt,
+          n: 1,
+          size: "1024x1024",
+          response_format: "b64_json"
+        });
+
+        const b64Data = response.data[0].b64_json;
+        if (b64Data) {
+          console.log('Successfully generated image using OpenAI DALL-E!');
+          return {
+            imageData: b64Data,
+            mimeType: 'image/png',
+            responseText: '這是使用 OpenAI DALL-E 生成的圖片'
+          };
+        }
+      } catch (dalleError) {
+        console.error('OpenAI DALL-E fallback failed:', dalleError.message);
+      }
+    }
+
+    // Fallback 2: Try Pollinations AI (completely free, keyless, very fast)
+    console.log('Gemini and OpenAI failed/unavailable. Attempting fallback to Pollinations AI...');
+    try {
+      let finalPrompt = prompt;
+      if (imageUrl) {
+        finalPrompt = `Based on the reference image at ${imageUrl}, ${prompt}`;
+      }
+      const encodedPrompt = encodeURIComponent(finalPrompt);
+      const seed = Math.floor(Math.random() * 1000000);
+      const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&private=true&enhance=false&seed=${seed}`;
+
+      console.log(`Fetching image from Pollinations AI: ${url}`);
+      const response = await fetch(url, { timeout: 30000 });
+      if (!response.ok) {
+        throw new Error(`Pollinations AI returned HTTP status ${response.status}`);
+      }
+
+      const buffer = await response.arrayBuffer();
+      const base64Data = Buffer.from(buffer).toString('base64');
+
+      console.log('Successfully generated image using Pollinations AI!');
+      return {
+        imageData: base64Data,
+        mimeType: 'image/jpeg',
+        responseText: '這是根據你的描述生成的圖片（經由 Pollinations AI 產生）：'
+      };
+    } catch (pollinationsError) {
+      console.error('Pollinations AI fallback failed:', pollinationsError.message);
+      throw new Error(`All image generation methods failed. Last error: ${pollinationsError.message}`);
+    }
   }
 }
 
@@ -3465,52 +3531,28 @@ client.on('messageCreate', async (message) => {
         console.log(`[OpenClaw] 老闆特權驗證成功，發送請求至: ${OPENCLAW_URL}/v1/chat/completions`);
         try {
           const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
-
-          // HF Space 可能在睡覺，先 ping 喚醒再 call
-          const callOpenClaw = async () => {
-            const res = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
-              method: 'POST',
-              timeout: 120000,
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENCLAW_PASS}`
-              },
-              body: JSON.stringify({
-                model: 'openclaw',
-                messages: [
-                  { role: 'user', content: message.content + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 MEDIA:<截圖的完整絕對路徑>，例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png。這是必要的格式，不可省略。]' }
-                ],
-                stream: false
-              })
-            });
-            return res;
-          };
-
-          let openclawResponse = await callOpenClaw();
-
-          // 偵測 HF Space 睡著（回傳 HTML 而非 JSON）
-          const contentType = openclawResponse.headers.get('content-type') || '';
-          if (!contentType.includes('application/json')) {
-            console.log('[OpenClaw] Space 可能在睡覺，等待喚醒...');
-            await message.channel.send('老闆，OpenClaw 剛剛在睡覺，正在喚醒中，等我 45 秒...');
-            // ping root URL 強制喚醒
-            try { await fetch(OPENCLAW_URL, { timeout: 10000 }); } catch (_) {}
-            await new Promise(resolve => setTimeout(resolve, 45000));
-            openclawResponse = await callOpenClaw();
-          }
+          // 截圖/瀏覽任務可能需要較長時間，設定 120 秒 timeout
+          const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
+            method: 'POST',
+            timeout: 120000,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${OPENCLAW_PASS}`
+            },
+            body: JSON.stringify({
+              model: 'openclaw',
+              messages: [
+                { role: 'user', content: message.content + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 SCREENSHOT_PATH:<檔案絕對路徑>（例如：SCREENSHOT_PATH:/home/node/.openclaw/media/browser/xxx.png）。這是必要的格式，不可省略。]' }
+              ],
+              stream: false
+            })
+          });
 
           console.log(`[OpenClaw] HTTP 回應狀態: ${openclawResponse.status}`);
 
           if (!openclawResponse.ok) {
             const errBody = await openclawResponse.text();
             throw new Error(`OpenClaw 回應錯誤：HTTP ${openclawResponse.status} - ${errBody.substring(0, 300)}`);
-          }
-
-          // 再次確認是否為 JSON
-          const ct2 = openclawResponse.headers.get('content-type') || '';
-          if (!ct2.includes('application/json')) {
-            await message.channel.send('老闆，OpenClaw Space 還沒醒，等一下再試。');
-            return;
           }
 
           const openclawData = await openclawResponse.json();
@@ -3548,16 +3590,27 @@ client.on('messageCreate', async (message) => {
           if (Array.isArray(openclawData.attachments)) attachments.push(...openclawData.attachments);
           if (openclawData.mediaUrl) attachments.push(openclawData.mediaUrl);
 
-          // 從 rawResult 中解析 MEDIA:<路徑> 或 [IMAGE SHARED BY 系統工具: <路徑/網址>]
+          // 從 rawResult 中解析 SCREENSHOT_PATH:<路徑>、MEDIA:<路徑>、[IMAGE SHARED BY 系統工具: <路徑/網址>] 和通用絕對路徑
           if (rawResult) {
-            const mediaRegex = /MEDIA:([^\r\n\s]+)/gi;
+            const screenshotRegex = /SCREENSHOT_PATH:([^\r\n\s]+)/gi;
             let match;
+            while ((match = screenshotRegex.exec(rawResult)) !== null) {
+              attachments.push(match[1]);
+            }
+
+            const mediaRegex = /MEDIA:([^\r\n\s]+)/gi;
             while ((match = mediaRegex.exec(rawResult)) !== null) {
               attachments.push(match[1]);
             }
             
             const sharedByRegex = /\[IMAGE SHARED BY [^\]]+:\s*([^\]]+)\]/gi;
             while ((match = sharedByRegex.exec(rawResult)) !== null) {
+              attachments.push(match[1]);
+            }
+
+            // 通用絕對路徑匹配兜底
+            const absolutePathRegex = /(\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+)/gi;
+            while ((match = absolutePathRegex.exec(rawResult)) !== null) {
               attachments.push(match[1]);
             }
           }
@@ -3616,8 +3669,10 @@ client.on('messageCreate', async (message) => {
 
           // 清理 rawResult 中的特殊標籤後，再交給 Gemini 包裝人設
           let cleanRawResult = rawResult;
+          cleanRawResult = cleanRawResult.replace(/SCREENSHOT_PATH:[^\r\n\s]+/gi, '');
           cleanRawResult = cleanRawResult.replace(/MEDIA:[^\r\n\s]+/gi, '');
           cleanRawResult = cleanRawResult.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
+          cleanRawResult = cleanRawResult.replace(/\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
           cleanRawResult = cleanRawResult.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
           cleanRawResult = cleanRawResult.trim();
 
@@ -3630,8 +3685,10 @@ client.on('messageCreate', async (message) => {
 
           // 清理 finalReply 幻覺連結
           let cleanedReply = finalReply;
+          cleanedReply = cleanedReply.replace(/SCREENSHOT_PATH:[^\r\n\s]+/gi, '');
           cleanedReply = cleanedReply.replace(/MEDIA:[^\r\n\s]+/gi, '');
           cleanedReply = cleanedReply.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
+          cleanedReply = cleanedReply.replace(/\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
           cleanedReply = cleanedReply.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
           cleanedReply = cleanedReply.trim();
 
@@ -5103,45 +5160,25 @@ if (TELEGRAM_TOKEN) {
 
     if (analysis.intent === 'BROWSE_WEB' && OPENCLAW_URL && OPENCLAW_PASS) {
       try {
-        const callOpenClawTg = async () => {
-          return fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
-            method: 'POST',
-            timeout: 120000,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${OPENCLAW_PASS}`
-            },
-            body: JSON.stringify({
-              model: 'openclaw',
-              messages: [
-                { role: 'user', content: text + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 MEDIA:<截圖的完整絕對路徑>，例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png。這是必要的格式，不可省略。]' }
-              ],
-              stream: false
-            })
-          });
-        };
-
-        let openclawResponse = await callOpenClawTg();
-
-        // 偵測 HF Space 睡著（回傳 HTML 而非 JSON）
-        const tgCt = openclawResponse.headers.get('content-type') || '';
-        if (!tgCt.includes('application/json')) {
-          console.log('[Telegram] OpenClaw Space 可能在睡覺，等待喚醒...');
-          await sendTelegramMessage(chatId, 'OpenClaw 剛剛在睡覺，正在喚醒中，等我 45 秒...');
-          try { await fetch(OPENCLAW_URL, { timeout: 10000 }); } catch (_) {}
-          await new Promise(resolve => setTimeout(resolve, 45000));
-          openclawResponse = await callOpenClawTg();
-        }
+        const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
+          method: 'POST',
+          timeout: 120000,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENCLAW_PASS}`
+          },
+          body: JSON.stringify({
+            model: 'openclaw',
+            messages: [
+              { role: 'user', content: text + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 SCREENSHOT_PATH:<檔案絕對路徑>（例如：SCREENSHOT_PATH:/home/node/.openclaw/media/browser/xxx.png）。這是必要的格式，不可省略。]' }
+            ],
+            stream: false
+          })
+        });
 
         if (!openclawResponse.ok) {
           const errBody = await openclawResponse.text();
           throw new Error(`OpenClaw HTTP ${openclawResponse.status}: ${errBody.substring(0, 200)}`);
-        }
-
-        const tgCt2 = openclawResponse.headers.get('content-type') || '';
-        if (!tgCt2.includes('application/json')) {
-          await sendTelegramMessage(chatId, 'OpenClaw Space 還沒醒，等一下再試。');
-          return;
         }
 
         const openclawData = await openclawResponse.json();
@@ -5174,14 +5211,23 @@ if (TELEGRAM_TOKEN) {
         if (Array.isArray(openclawData.attachments)) tgAttachments.push(...openclawData.attachments);
         if (openclawData.mediaUrl) tgAttachments.push(openclawData.mediaUrl);
 
-        // 從 rawResult 解析 MEDIA:<路徑> 和 [IMAGE SHARED BY ...] 標籤
-        const tgMediaRegex = /MEDIA:([^\r\n\s]+)/gi;
+        // 從 rawResult 解析 SCREENSHOT_PATH:<路徑>、MEDIA:<路徑>、[IMAGE SHARED BY ...] 和通用絕對路徑
+        const tgScreenshotRegex = /SCREENSHOT_PATH:([^\r\n\s]+)/gi;
         let tgMatch;
+        while ((tgMatch = tgScreenshotRegex.exec(rawResult)) !== null) {
+          tgAttachments.push(tgMatch[1]);
+        }
+        const tgMediaRegex = /MEDIA:([^\r\n\s]+)/gi;
         while ((tgMatch = tgMediaRegex.exec(rawResult)) !== null) {
           tgAttachments.push(tgMatch[1]);
         }
         const tgSharedByRegex = /\[IMAGE SHARED BY [^\]]+:\s*([^\]]+)\]/gi;
         while ((tgMatch = tgSharedByRegex.exec(rawResult)) !== null) {
+          tgAttachments.push(tgMatch[1]);
+        }
+        // 通用絕對路徑匹配兜底
+        const tgAbsolutePathRegex = /(\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+)/gi;
+        while ((tgMatch = tgAbsolutePathRegex.exec(rawResult)) !== null) {
           tgAttachments.push(tgMatch[1]);
         }
 
@@ -5190,8 +5236,10 @@ if (TELEGRAM_TOKEN) {
 
         // 清理 rawResult，再交給 Gemini 包裝人設
         let cleanRawResult = rawResult;
+        cleanRawResult = cleanRawResult.replace(/SCREENSHOT_PATH:[^\r\n\s]+/gi, '');
         cleanRawResult = cleanRawResult.replace(/MEDIA:[^\r\n\s]+/gi, '');
         cleanRawResult = cleanRawResult.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
+        cleanRawResult = cleanRawResult.replace(/\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
         cleanRawResult = cleanRawResult.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
         cleanRawResult = cleanRawResult.trim();
 
@@ -5204,8 +5252,10 @@ if (TELEGRAM_TOKEN) {
 
         // 清理 finalReply 中的幻覺標籤
         let cleanedTgReply = finalReply;
+        cleanedTgReply = cleanedTgReply.replace(/SCREENSHOT_PATH:[^\r\n\s]+/gi, '');
         cleanedTgReply = cleanedTgReply.replace(/MEDIA:[^\r\n\s]+/gi, '');
         cleanedTgReply = cleanedTgReply.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
+        cleanedTgReply = cleanedTgReply.replace(/\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
         cleanedTgReply = cleanedTgReply.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
         cleanedTgReply = cleanedTgReply.trim();
 
