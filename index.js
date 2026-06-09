@@ -3335,20 +3335,23 @@ client.on('messageCreate', async (message) => {
 
   // =================================================================
   // 🎵 文字音樂指令攔截器（在語音頻道播歌）
+  // 支援自然語言：幫我播歌啦 xxx, 播首 xxx, 來一首 xxx, 放 xxx, etc.
   // =================================================================
-  const musicTextTriggers = [
-    /^(播放|播歌|點歌|play|點播)\s+(.+)/i,
+  const musicPlayPatterns = [
+    /(?:幫我|幫忙|給我|我要|我想)?(?:播放|播歌|播首|點歌|點播|放歌|放首|來一?首|play)(?:啦|吧|一下|嘛|欸)?[,，\s]+(.+)/i,
+    /^(?:播放|播歌|點歌|play|點播|放)\s+(.+)/i,
   ];
-  const musicSkipTriggers = /^(切歌|跳過|skip)\s*$/i;
-  const musicPauseTriggers = /^(暫停|pause)\s*$/i;
-  const musicResumeTriggers = /^(繼續|resume|繼續播)\s*$/i;
-  const musicStopTriggers = /^(停止|stop|停播)\s*$/i;
+  const musicSkipPattern = /(?:切歌|跳過|skip|下一首|切下一首)/i;
+  const musicPausePattern = /(?:暫停|pause|先暫停|停一下)/i;
+  const musicResumePattern = /(?:繼續|resume|繼續播|繼續放)/i;
+  const musicStopPattern = /(?:停止|stop|停播|停掉|關掉音樂|不要播了|關音樂)/i;
 
   if (musicPlayer && !isDM) {
+    // 嘗試匹配播歌指令
     let musicMatchQuery = null;
-    for (const trigger of musicTextTriggers) {
-      const match = message.content.match(trigger);
-      if (match) { musicMatchQuery = match[2].trim(); break; }
+    for (const pattern of musicPlayPatterns) {
+      const match = message.content.match(pattern);
+      if (match) { musicMatchQuery = match[1].trim(); break; }
     }
 
     if (musicMatchQuery) {
@@ -3370,22 +3373,24 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    if (musicSkipTriggers.test(message.content)) {
+    // 只匹配純控制指令（整句就是指令）
+    const contentTrimmed = message.content.trim();
+    if (musicSkipPattern.test(contentTrimmed) && contentTrimmed.length < 15) {
       const result = musicPlayer.skip(message.guildId);
       await message.reply(result.success ? '好，切下一首。' : `切不了：${result.error}`);
       return;
     }
-    if (musicPauseTriggers.test(message.content)) {
+    if (musicPausePattern.test(contentTrimmed) && contentTrimmed.length < 15) {
       const result = musicPlayer.pause(message.guildId);
       await message.reply(result.success ? '好，暫停了。' : `${result.error}`);
       return;
     }
-    if (musicResumeTriggers.test(message.content)) {
+    if (musicResumePattern.test(contentTrimmed) && contentTrimmed.length < 15) {
       const result = musicPlayer.resume(message.guildId);
       await message.reply(result.success ? '繼續了。' : `${result.error}`);
       return;
     }
-    if (musicStopTriggers.test(message.content)) {
+    if (musicStopPattern.test(contentTrimmed) && contentTrimmed.length < 15) {
       const result = await musicPlayer.stop(message.guildId);
       await message.reply(result.success ? '停了，掰。' : `${result.error}`);
       return;
