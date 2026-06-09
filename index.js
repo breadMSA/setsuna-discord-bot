@@ -3460,7 +3460,7 @@ client.on('messageCreate', async (message) => {
   const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
   const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
-  if (OPENCLAW_URL && OPENCLAW_PASS && analysis.intent === 'BROWSE_WEB') {
+  if (OPENCLAW_URL && analysis.intent === 'BROWSE_WEB') {
     if (isBotOwner(message.author.id)) {
         console.log(`[OpenClaw] 老闆特權驗證成功，發送請求至: ${OPENCLAW_URL}/v1/chat/completions`);
         try {
