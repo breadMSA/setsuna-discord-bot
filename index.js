@@ -3476,6 +3476,7 @@ client.on('messageCreate', async (message) => {
             body: JSON.stringify({
               model: 'openclaw',
               messages: [
+                { role: 'system', content: '當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。' },
                 { role: 'user', content: message.content }
               ],
               stream: false
@@ -3505,13 +3506,6 @@ client.on('messageCreate', async (message) => {
 
           console.log(`[OpenClaw] 原始回傳（前300字）: ${rawResult.substring(0, 300)}`);
 
-          // 用 Gemini 加 Setsuna 人設包裝 OpenClaw 的原始查詢結果
-          const wrappedMessages = [
-            { role: 'system', content: channelPersonality },
-            { role: 'user', content: `老闆問了：「${message.content}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${rawResult}` }
-          ];
-          const finalReply = await callGeminiAPI(wrappedMessages);
-
           // 提取附件
           const attachments = [];
           const msgObj = openclawData?.choices?.[0]?.message || {};
@@ -3530,6 +3524,20 @@ client.on('messageCreate', async (message) => {
           if (Array.isArray(msgObj.mediaUrls)) attachments.push(...msgObj.mediaUrls);
           if (Array.isArray(openclawData.attachments)) attachments.push(...openclawData.attachments);
           if (openclawData.mediaUrl) attachments.push(openclawData.mediaUrl);
+
+          // 從 rawResult 中解析 MEDIA:<路徑> 或 [IMAGE SHARED BY 系統工具: <路徑/網址>]
+          if (rawResult) {
+            const mediaRegex = /MEDIA:([^\r\n\s]+)/gi;
+            let match;
+            while ((match = mediaRegex.exec(rawResult)) !== null) {
+              attachments.push(match[1]);
+            }
+            
+            const sharedByRegex = /\[IMAGE SHARED BY [^\]]+:\s*([^\]]+)\]/gi;
+            while ((match = sharedByRegex.exec(rawResult)) !== null) {
+              attachments.push(match[1]);
+            }
+          }
 
           const uniqueAttachments = [...new Set(attachments)].filter(Boolean);
           console.log('[OpenClaw] 偵測到附件列表:', uniqueAttachments);
@@ -3583,9 +3591,24 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          // 清理幻覺連結
+          // 清理 rawResult 中的特殊標籤後，再交給 Gemini 包裝人設
+          let cleanRawResult = rawResult;
+          cleanRawResult = cleanRawResult.replace(/MEDIA:[^\r\n\s]+/gi, '');
+          cleanRawResult = cleanRawResult.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
+          cleanRawResult = cleanRawResult.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
+          cleanRawResult = cleanRawResult.trim();
+
+          // 用 Gemini 加 Setsuna 人設包裝 OpenClaw 的原始查詢結果
+          const wrappedMessages = [
+            { role: 'system', content: channelPersonality },
+            { role: 'user', content: `老闆問了：「${message.content}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${cleanRawResult}` }
+          ];
+          const finalReply = await callGeminiAPI(wrappedMessages);
+
+          // 清理 finalReply 幻覺連結
           let cleanedReply = finalReply;
-          cleanedReply = cleanedReply.replace(/\[IMAGE SHARED BY Setsuna:[^\]]+\]/gi, '');
+          cleanedReply = cleanedReply.replace(/MEDIA:[^\r\n\s]+/gi, '');
+          cleanedReply = cleanedReply.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
           cleanedReply = cleanedReply.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
           cleanedReply = cleanedReply.trim();
 
@@ -5023,6 +5046,28 @@ if (TELEGRAM_TOKEN) {
     } catch (err) {}
   };
 
+  const sendTelegramPhoto = async (chatId, buffer, filename, caption) => {
+    try {
+      const { FormData, Blob } = await import('node-fetch');
+      const form = new FormData();
+      form.append('chat_id', String(chatId));
+      form.append('photo', new Blob([buffer], { type: 'image/png' }), filename || 'screenshot.png');
+      if (caption) form.append('caption', caption);
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, {
+        method: 'POST',
+        body: form
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[Telegram] sendPhoto 失敗 HTTP ${res.status}: ${errText}`);
+      } else {
+        console.log('[Telegram] sendPhoto 成功');
+      }
+    } catch (err) {
+      console.error('[Telegram] sendPhoto error:', err.message);
+    }
+  };
+
   const handleTelegramMessage = async (chatId, text, username) => {
     console.log(`[Telegram] 收到訊息 from ${username}: ${text}`);
     await sendTelegramChatAction(chatId, 'typing');
@@ -5037,6 +5082,7 @@ if (TELEGRAM_TOKEN) {
       try {
         const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
           method: 'POST',
+          timeout: 120000,
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${OPENCLAW_PASS}`
@@ -5044,6 +5090,7 @@ if (TELEGRAM_TOKEN) {
           body: JSON.stringify({
             model: 'openclaw',
             messages: [
+              { role: 'system', content: '當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。' },
               { role: 'user', content: text }
             ],
             stream: false
@@ -5067,13 +5114,98 @@ if (TELEGRAM_TOKEN) {
 
         console.log(`[Telegram] OpenClaw 原始回傳（前300字）: ${rawResult.substring(0, 300)}`);
 
+        // 提取附件：JSON 欄位
+        const tgAttachments = [];
+        const tgMsgObj = openclawData?.choices?.[0]?.message || {};
+        if (Array.isArray(tgMsgObj.attachments)) {
+          for (const att of tgMsgObj.attachments) {
+            if (typeof att === 'string') tgAttachments.push(att);
+            else if (att && att.url) tgAttachments.push(att.url);
+            else if (att && att.path) tgAttachments.push(att.path);
+            else if (att && att.filePath) tgAttachments.push(att.filePath);
+          }
+        }
+        if (tgMsgObj.mediaUrl) tgAttachments.push(tgMsgObj.mediaUrl);
+        if (tgMsgObj.filePath) tgAttachments.push(tgMsgObj.filePath);
+        if (tgMsgObj.path) tgAttachments.push(tgMsgObj.path);
+        if (Array.isArray(tgMsgObj.mediaUrls)) tgAttachments.push(...tgMsgObj.mediaUrls);
+        if (Array.isArray(openclawData.attachments)) tgAttachments.push(...openclawData.attachments);
+        if (openclawData.mediaUrl) tgAttachments.push(openclawData.mediaUrl);
+
+        // 從 rawResult 解析 MEDIA:<路徑> 和 [IMAGE SHARED BY ...] 標籤
+        const tgMediaRegex = /MEDIA:([^\r\n\s]+)/gi;
+        let tgMatch;
+        while ((tgMatch = tgMediaRegex.exec(rawResult)) !== null) {
+          tgAttachments.push(tgMatch[1]);
+        }
+        const tgSharedByRegex = /\[IMAGE SHARED BY [^\]]+:\s*([^\]]+)\]/gi;
+        while ((tgMatch = tgSharedByRegex.exec(rawResult)) !== null) {
+          tgAttachments.push(tgMatch[1]);
+        }
+
+        const tgUniqueAttachments = [...new Set(tgAttachments)].filter(Boolean);
+        console.log('[Telegram] OpenClaw 偵測到附件列表:', tgUniqueAttachments);
+
+        // 清理 rawResult，再交給 Gemini 包裝人設
+        let cleanRawResult = rawResult;
+        cleanRawResult = cleanRawResult.replace(/MEDIA:[^\r\n\s]+/gi, '');
+        cleanRawResult = cleanRawResult.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
+        cleanRawResult = cleanRawResult.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
+        cleanRawResult = cleanRawResult.trim();
+
         // 用 Gemini 包裝 OpenClaw 結果，加上 Setsuna 人設語氣
         const wrappedMessages = [
           { role: 'system', content: setsunaPersonality },
-          { role: 'user', content: `老闆問了：「${text}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${rawResult}` }
+          { role: 'user', content: `老闆問了：「${text}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${cleanRawResult}` }
         ];
         const finalReply = await callGeminiAPI(wrappedMessages);
-        await sendTelegramMessage(chatId, finalReply);
+
+        // 清理 finalReply 中的幻覺標籤
+        let cleanedTgReply = finalReply;
+        cleanedTgReply = cleanedTgReply.replace(/MEDIA:[^\r\n\s]+/gi, '');
+        cleanedTgReply = cleanedTgReply.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
+        cleanedTgReply = cleanedTgReply.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
+        cleanedTgReply = cleanedTgReply.trim();
+
+        await sendTelegramMessage(chatId, cleanedTgReply);
+
+        // 下載並發送圖片附件
+        for (let i = 0; i < tgUniqueAttachments.length; i++) {
+          const attPath = tgUniqueAttachments[i];
+          let fileUrl = attPath;
+          if (!attPath.startsWith('http://') && !attPath.startsWith('https://')) {
+            let normalizedPath = attPath.replace(/\\/g, '/');
+            if (normalizedPath.includes('/.openclaw/media/')) {
+              fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/.openclaw/media/')[1]}`;
+            } else if (normalizedPath.includes('/.openclaw/workspace/media/')) {
+              fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/.openclaw/workspace/media/')[1]}`;
+            } else if (normalizedPath.includes('/.openclaw/workspace/')) {
+              fileUrl = `${OPENCLAW_URL}/workspace/${normalizedPath.split('/.openclaw/workspace/')[1]}`;
+            } else if (normalizedPath.includes('/media/')) {
+              fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/media/')[1]}`;
+            } else if (normalizedPath.includes('/workspace/')) {
+              fileUrl = `${OPENCLAW_URL}/workspace/${normalizedPath.split('/workspace/')[1]}`;
+            } else {
+              fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/').pop()}`;
+            }
+          }
+          console.log(`[Telegram] 嘗試下載附件 #${i + 1}: ${fileUrl}`);
+          try {
+            const fileRes = await fetch(fileUrl, {
+              headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
+              timeout: 30000
+            });
+            if (fileRes.ok) {
+              const buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
+              await sendTelegramPhoto(chatId, buffer, fileUrl.split('/').pop() || `screenshot_${i + 1}.png`, null);
+            } else {
+              console.error(`[Telegram] 下載附件 #${i + 1} 失敗，HTTP ${fileRes.status}`);
+            }
+          } catch (downloadErr) {
+            console.error(`[Telegram] 下載附件 #${i + 1} 錯誤:`, downloadErr.message);
+          }
+        }
+
         return;
       } catch (err) {
         console.error('[Telegram] OpenClaw error:', err);

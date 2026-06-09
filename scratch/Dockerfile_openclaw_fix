@@ -1,0 +1,49 @@
+FROM ghcr.io/openclaw/openclaw:latest
+
+# 切換到 root 以安裝 Chromium 和系統依賴
+USER root
+
+# 更新並安裝 Chromium 及必要字型、依賴
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    fonts-liberation \
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    libxss1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 建立設定資料夾，確保 node 用戶有權限
+RUN mkdir -p /home/node/.openclaw && \
+    chown -R node:node /home/node/.openclaw
+
+# 設定環境變數，讓 Playwright / Puppeteer 直接使用系統的 Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+
+# 關閉沙盒模式，避免 Docker 權限問題導致瀏覽器打不開
+ENV OPENCLAW_BROWSER_NO_SANDBOX=1
+
+# 寫入 entrypoint script：啟動前把 GATEWAY_PASSWORD 寫進設定檔
+RUN printf '#!/bin/sh\n\
+TOKEN="${GATEWAY_PASSWORD:-changeme}"\n\
+cat > /home/node/.openclaw/openclaw.json <<EOF\n\
+{"gateway":{"mode":"local","port":7860,"auth":{"mode":"token","token":"${TOKEN}"},"http":{"endpoints":{"chatCompletions":{"enabled":true}}}}}\n\
+EOF\n\
+mkdir -p /home/node/.openclaw/workspace\n\
+cat > /home/node/.openclaw/workspace/AGENTS.md <<EOF\n\
+當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。\n\
+EOF\n\
+echo "[entrypoint] Config and workspace rules initialized."\n\
+exec node openclaw.mjs gateway --allow-unconfigured\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# 切換回 node 用戶
+USER node
+
+# 曝露 Hugging Face Space 規定的 7860 Port
+EXPOSE 7860
+
+# 用 entrypoint 啟動，確保每次都用固定 token
+CMD ["/bin/sh", "/entrypoint.sh"]
