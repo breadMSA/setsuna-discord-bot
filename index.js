@@ -901,23 +901,95 @@ function isBotOwner(userId) {
 // =================================================================
 // 🧠 OpenClaw 輔助函式：用 Groq 極速判定是否為上網查詢請求
 // =================================================================
-async function detectWebBrowsingWithAI(content) {
+function detectIntentWithRegex(content) {
+  const musicPlayPatterns = [
+    /(?:幫我|幫忙|給我|我要|我想)?(?:播放|播歌|播首|播|點歌|點播|放歌|放首|來一?首|play)(?:啦|吧|一下|嘛|欸)?[,，\s]+(.+)$/i,
+    /^(?:播放|播歌|播首|播|點歌|點播|放歌|放首|來一?首|play)(?:啦|吧|一下|嘛|欸)?[,，\s]*(.+)$/i
+  ];
+  const musicSkipPattern = /(?:切歌|跳過|skip|下一首|切下一首)/i;
+  const musicPausePattern = /(?:暫停|pause|先暫停|停一下)/i;
+  const musicResumePattern = /(?:繼續|resume|繼續播|繼續放)/i;
+  const musicStopPattern = /(?:停止|stop|停播|停掉|關掉音樂|不要播了|關音樂)/i;
+
+  const contentTrimmed = content.trim();
+
+  // 檢查是否是播歌
+  for (const pattern of musicPlayPatterns) {
+    const match = content.match(pattern);
+    if (match) {
+      const query = match[1].trim();
+      // 避免 "wanna play minecraft" 這種非音樂的 "play" 誤判
+      if (/play/i.test(content) && !/(?:播放|播歌|點歌|放)/.test(content)) {
+        if (/(?:minecraft|mc|game|basketball|csgo|lol|league|game|apex|valorant|fortnite|pubg)/i.test(content)) {
+          break;
+        }
+      }
+      if (query.length > 0) {
+        return { intent: 'PLAY_MUSIC', musicQuery: query };
+      }
+    }
+  }
+
+  if (musicSkipPattern.test(contentTrimmed) && contentTrimmed.length < 15) {
+    return { intent: 'SKIP_MUSIC', musicQuery: null };
+  }
+  if (musicPausePattern.test(contentTrimmed) && contentTrimmed.length < 15) {
+    return { intent: 'PAUSE_MUSIC', musicQuery: null };
+  }
+  if (musicResumePattern.test(contentTrimmed) && contentTrimmed.length < 15) {
+    return { intent: 'RESUME_MUSIC', musicQuery: null };
+  }
+  if (musicStopPattern.test(contentTrimmed) && contentTrimmed.length < 15) {
+    return { intent: 'STOP_MUSIC', musicQuery: null };
+  }
+
+  // 判斷是否為網頁查詢
+  const webKeywords = /(天氣|新聞|公車|路況|股票|股價|截圖|網頁|連結|上網查|查一下)/i;
+  if (webKeywords.test(content)) {
+    return { intent: 'BROWSE_WEB', musicQuery: null };
+  }
+
+  return { intent: 'CHAT', musicQuery: null };
+}
+
+async function detectIntentWithAI(content) {
   try {
     const Groq = require('groq-sdk');
     const groq = new Groq({ apiKey: getCurrentGroqKey() });
 
-    const prompt = `請判斷以下用戶消息是否是在請求「上網查最新資料」、「打開某個網頁連結」、「對某個網站截圖」、「查詢天氣」、「查詢餐廳或地點」或「安排行程」。只回答「是」或「否」。\n\n用戶消息: "${content}"\n\n請只回答「是」或「否」，不要解釋原因。`;
+    const prompt = `請分析以下用戶消息的意圖，並將其分類為以下其中一個意圖類型：
+1. "PLAY_MUSIC": 用戶想要「播放音樂」、「播歌」、「點歌」、「放歌」（例如："幫我播 blood in the water"、"來一首周杰倫的歌"、"play blood in the water"）。注意：純粹提及 play 但不是指播歌/播放音樂（例如 "wanna play Minecraft?", "play basketball", "play CSGO"）應判定為 "CHAT"。
+2. "SKIP_MUSIC": 用戶明確要求「切歌」、「下一首」、「跳過」。
+3. "PAUSE_MUSIC": 用戶明確要求「暫停播放」。
+4. "RESUME_MUSIC": 用戶明確要求「繼續播放」。
+5. "STOP_MUSIC": 用戶明確要求「停止播放」、「關掉音樂」、「不要播了」、「離開語音頻道」。
+6. "BROWSE_WEB": 用戶明確要求「上網查詢最新即時資料（如今日天氣、即時公車動態、最新新聞、今天股價、時間）」、「對某個網站/網頁進行截圖」、「打開網頁連結」或「安排需要上網查資料的行程」。
+7. "CHAT": 其他所有一般的對話、閒聊、打招呼、問題回答等（如 "wanna play Minecraft?", "你好", "自我介紹"）。
+
+用戶消息: "${content}"
+
+請務必只返回以下 JSON 格式（不要包含任何 markdown 標記或額外文字）：
+{
+  "intent": "意圖代碼",
+  "musicQuery": "如果是 PLAY_MUSIC，提取出想播放的歌曲/音樂名稱或搜尋關鍵字；否則為 null"
+}`;
 
     const completion = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'llama-3.1-8b-instant', // 使用極速且免費額度充足的 8B 模型
-      max_tokens: 10,
-      temperature: 0.1
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 150,
+      temperature: 0.1,
+      response_format: { type: 'json_object' }
     });
-    return completion.choices[0].message.content.trim().includes('是');
+
+    const parsed = JSON.parse(completion.choices[0].message.content.trim());
+    return {
+      intent: parsed.intent || 'CHAT',
+      musicQuery: parsed.musicQuery || null
+    };
   } catch (e) {
-    console.error('[OpenClaw 路由判定出錯]', e);
-    return false;
+    console.error('[Intent detection error, falling back to regex]', e);
+    return detectIntentWithRegex(content);
   }
 }
 
@@ -3334,27 +3406,13 @@ client.on('messageCreate', async (message) => {
   await message.channel.sendTyping();
 
   // =================================================================
-  // 🎵 文字音樂指令攔截器（在語音頻道播歌）
-  // 支援自然語言：幫我播歌啦 xxx, 播首 xxx, 來一首 xxx, 放 xxx, etc.
+  // 🧠 意圖判定與攔截器 (AI 驅動，備有 Regex 回退)
   // =================================================================
-  const musicPlayPatterns = [
-    // 幫我播/幫我播歌/幫我播放/播/play + 任何詞（空格與標點符號可省略）
-    /(?:幫我|幫忙|給我|我要|我想)?(?:播放|播歌|播首|播|點歌|點播|放歌|放首|來一?首|play)(?:啦|吧|一下|嘛|欸)?[,，\s]*(.+)$/i
-  ];
-  const musicSkipPattern = /(?:切歌|跳過|skip|下一首|切下一首)/i;
-  const musicPausePattern = /(?:暫停|pause|先暫停|停一下)/i;
-  const musicResumePattern = /(?:繼續|resume|繼續播|繼續放)/i;
-  const musicStopPattern = /(?:停止|stop|停播|停掉|關掉音樂|不要播了|關音樂)/i;
+  const analysis = await detectIntentWithAI(message.content);
+  console.log(`[Message Intent] 意圖: ${analysis.intent}, 查詢內容: ${analysis.musicQuery}`);
 
   if (musicPlayer && !isDM) {
-    // 嘗試匹配播歌指令
-    let musicMatchQuery = null;
-    for (const pattern of musicPlayPatterns) {
-      const match = message.content.match(pattern);
-      if (match) { musicMatchQuery = match[1].trim(); break; }
-    }
-
-    if (musicMatchQuery) {
+    if (analysis.intent === 'PLAY_MUSIC' && analysis.musicQuery) {
       const member = message.member;
       const voiceChannel = member?.voice?.channel;
       if (!voiceChannel) {
@@ -3362,35 +3420,33 @@ client.on('messageCreate', async (message) => {
         return;
       }
       await message.channel.sendTyping();
-      const result = await musicPlayer.play(voiceChannel, message.channel, musicMatchQuery, member);
+      const result = await musicPlayer.play(voiceChannel, message.channel, analysis.musicQuery, member);
       if (!result.success) {
         await message.reply(`找不到這首歌欸：${result.error}`);
       } else if (result.type === 'playlist') {
         await message.reply(`好啊，幫你排了 **${result.name}** 的 ${result.count} 首歌。`);
       } else {
-        await message.reply(`好，幫你播 **${result.track?.info?.title || musicMatchQuery}**。`);
+        await message.reply(`好，幫你播 **${result.track?.info?.title || analysis.musicQuery}**。`);
       }
       return;
     }
 
-    // 只匹配純控制指令（整句就是指令）
-    const contentTrimmed = message.content.trim();
-    if (musicSkipPattern.test(contentTrimmed) && contentTrimmed.length < 15) {
+    if (analysis.intent === 'SKIP_MUSIC') {
       const result = musicPlayer.skip(message.guildId);
       await message.reply(result.success ? '好，切下一首。' : `切不了：${result.error}`);
       return;
     }
-    if (musicPausePattern.test(contentTrimmed) && contentTrimmed.length < 15) {
+    if (analysis.intent === 'PAUSE_MUSIC') {
       const result = musicPlayer.pause(message.guildId);
       await message.reply(result.success ? '好，暫停了。' : `${result.error}`);
       return;
     }
-    if (musicResumePattern.test(contentTrimmed) && contentTrimmed.length < 15) {
+    if (analysis.intent === 'RESUME_MUSIC') {
       const result = musicPlayer.resume(message.guildId);
       await message.reply(result.success ? '繼續了。' : `${result.error}`);
       return;
     }
-    if (musicStopPattern.test(contentTrimmed) && contentTrimmed.length < 15) {
+    if (analysis.intent === 'STOP_MUSIC') {
       const result = await musicPlayer.stop(message.guildId);
       await message.reply(result.success ? '停了，掰。' : `${result.error}`);
       return;
@@ -3404,12 +3460,8 @@ client.on('messageCreate', async (message) => {
   const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
   const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
-  if (OPENCLAW_URL && OPENCLAW_PASS) {
-    const isWebBrowsingRequest = await detectWebBrowsingWithAI(message.content);
-    console.log(`[OpenClaw] 意圖判定結果: ${isWebBrowsingRequest}, 發送者: ${message.author.id}, 是老闆: ${isBotOwner(message.author.id)}`);
-
-    if (isWebBrowsingRequest) {
-      if (isBotOwner(message.author.id)) {
+  if (OPENCLAW_URL && OPENCLAW_PASS && analysis.intent === 'BROWSE_WEB') {
+    if (isBotOwner(message.author.id)) {
         console.log(`[OpenClaw] 老闆特權驗證成功，即時送往雲端 OpenClaw 後端！`);
         try {
           const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
@@ -4884,56 +4936,55 @@ if (TELEGRAM_TOKEN) {
     const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
     const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
-    if (OPENCLAW_URL && OPENCLAW_PASS) {
-      const isWebBrowsingRequest = await detectWebBrowsingWithAI(text);
-      console.log(`[Telegram] OpenClaw 意圖判定: ${isWebBrowsingRequest}`);
-      if (isWebBrowsingRequest) {
-        try {
-          const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${OPENCLAW_PASS}`
-            },
-            body: JSON.stringify({
-              model: 'openclaw',
-              messages: [
-                { role: 'user', content: text }
-              ],
-              stream: false
-            })
-          });
+    const analysis = await detectIntentWithAI(text);
+    console.log(`[Telegram] 意圖判定: ${analysis.intent}`);
 
-          if (!openclawResponse.ok) {
-            const errBody = await openclawResponse.text();
-            throw new Error(`OpenClaw HTTP ${openclawResponse.status}: ${errBody.substring(0, 200)}`);
-          }
+    if (analysis.intent === 'BROWSE_WEB' && OPENCLAW_URL && OPENCLAW_PASS) {
+      try {
+        const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENCLAW_PASS}`
+          },
+          body: JSON.stringify({
+            model: 'openclaw',
+            messages: [
+              { role: 'user', content: text }
+            ],
+            stream: false
+          })
+        });
 
-          const openclawData = await openclawResponse.json();
-          const rawResult = openclawData?.choices?.[0]?.message?.content
-            || openclawData.reply || openclawData.message || openclawData.content
-            || null;
+        if (!openclawResponse.ok) {
+          const errBody = await openclawResponse.text();
+          throw new Error(`OpenClaw HTTP ${openclawResponse.status}: ${errBody.substring(0, 200)}`);
+        }
 
-          if (!rawResult) {
-            await sendTelegramMessage(chatId, '老闆，OpenClaw 沒有回傳可用的結果。');
-            return;
-          }
+        const openclawData = await openclawResponse.json();
+        const rawResult = openclawData?.choices?.[0]?.message?.content
+          || openclawData.reply || openclawData.message || openclawData.content
+          || null;
 
-          console.log(`[Telegram] OpenClaw 原始回傳（前300字）: ${rawResult.substring(0, 300)}`);
-
-          // 用 Gemini 包裝 OpenClaw 結果，加上 Setsuna 人設語氣
-          const wrappedMessages = [
-            { role: 'system', content: setsunaPersonality },
-            { role: 'user', content: `老闆問了：「${text}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${rawResult}` }
-          ];
-          const finalReply = await callGeminiAPI(wrappedMessages);
-          await sendTelegramMessage(chatId, finalReply);
-          return;
-        } catch (err) {
-          console.error('[Telegram] OpenClaw error:', err);
-          await sendTelegramMessage(chatId, `OpenClaw 連線失敗：${err.message}`);
+        if (!rawResult) {
+          await sendTelegramMessage(chatId, '老闆，OpenClaw 沒有回傳可用的結果。');
           return;
         }
+
+        console.log(`[Telegram] OpenClaw 原始回傳（前300字）: ${rawResult.substring(0, 300)}`);
+
+        // 用 Gemini 包裝 OpenClaw 結果，加上 Setsuna 人設語氣
+        const wrappedMessages = [
+          { role: 'system', content: setsunaPersonality },
+          { role: 'user', content: `老闆問了：「${text}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${rawResult}` }
+        ];
+        const finalReply = await callGeminiAPI(wrappedMessages);
+        await sendTelegramMessage(chatId, finalReply);
+        return;
+      } catch (err) {
+        console.error('[Telegram] OpenClaw error:', err);
+        await sendTelegramMessage(chatId, `OpenClaw 連線失敗：${err.message}`);
+        return;
       }
     }
 
