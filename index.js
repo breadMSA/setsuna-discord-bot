@@ -3354,7 +3354,7 @@ client.on('messageCreate', async (message) => {
               'Authorization': `Bearer ${OPENCLAW_PASS}`
             },
             body: JSON.stringify({
-              model: 'auto',
+              model: 'openclaw',
               messages: [{ role: 'user', content: message.content }],
               stream: false
             })
