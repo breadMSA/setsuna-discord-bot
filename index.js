@@ -3347,6 +3347,7 @@ client.on('messageCreate', async (message) => {
       if (isBotOwner(message.author.id)) {
         console.log(`[OpenClaw] 老闆特權驗證成功，即時送往雲端 OpenClaw 後端！`);
         try {
+          const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
           const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
             method: 'POST',
             headers: {
@@ -3355,7 +3356,10 @@ client.on('messageCreate', async (message) => {
             },
             body: JSON.stringify({
               model: 'openclaw',
-              messages: [{ role: 'user', content: message.content }],
+              messages: [
+                { role: 'system', content: channelPersonality },
+                { role: 'user', content: message.content }
+              ],
               stream: false
             })
           });
@@ -4759,6 +4763,120 @@ client.on('messageCreate', async (message) => {
 client.on('error', (error) => {
   console.error('Discord client error:', error);
 });
+
+// =================================================================
+// 🤖 Telegram Bot Polling Handler (Bypasses HF Network Restrictions)
+// =================================================================
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+if (TELEGRAM_TOKEN) {
+  console.log('[Telegram] Bot token detected, starting polling...');
+  let lastUpdateId = 0;
+
+  const sendTelegramMessage = async (chatId, text) => {
+    try {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: text })
+      });
+    } catch (err) {
+      console.error('[Telegram] Error sending message:', err);
+    }
+  };
+
+  const sendTelegramChatAction = async (chatId, action) => {
+    try {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendChatAction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, action: action })
+      });
+    } catch (err) {}
+  };
+
+  const handleTelegramMessage = async (chatId, text, username) => {
+    await sendTelegramChatAction(chatId, 'typing');
+
+    const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
+    const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
+
+    if (OPENCLAW_URL && OPENCLAW_PASS) {
+      const isWebBrowsingRequest = await detectWebBrowsingWithAI(text);
+      if (isWebBrowsingRequest) {
+        try {
+          const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${OPENCLAW_PASS}`
+            },
+            body: JSON.stringify({
+              model: 'openclaw',
+              messages: [
+                { role: 'system', content: setsunaPersonality },
+                { role: 'user', content: text }
+              ],
+              stream: false
+            })
+          });
+
+          if (!openclawResponse.ok) {
+            throw new Error(`OpenClaw responded with status ${openclawResponse.status}`);
+          }
+
+          const openclawData = await openclawResponse.json();
+          const replyText = openclawData?.choices?.[0]?.message?.content
+            || openclawData.reply || openclawData.message || openclawData.content
+            || '老闆，OpenClaw 沒有回傳可用的結果。';
+
+          await sendTelegramMessage(chatId, replyText);
+          return;
+        } catch (err) {
+          console.error('[Telegram] OpenClaw error:', err);
+          await sendTelegramMessage(chatId, `OpenClaw 連線失敗：${err.message}`);
+          return;
+        }
+      }
+    }
+
+    try {
+      const formattedMessages = [
+        { role: 'system', content: setsunaPersonality },
+        { role: 'user', content: `[${username}]: ${text}` }
+      ];
+      const responseText = await callGeminiAPI(formattedMessages);
+      await sendTelegramMessage(chatId, responseText);
+    } catch (err) {
+      console.error('[Telegram] Gemini API error:', err);
+      await sendTelegramMessage(chatId, '抱歉，我的大腦出了點小狀況，晚點再試試？');
+    }
+  };
+
+  const pollTelegram = async () => {
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=30`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.ok && data.result) {
+          for (const update of data.result) {
+            lastUpdateId = update.update_id;
+            if (update.message && update.message.text) {
+              const text = update.message.text;
+              const chatId = update.message.chat.id;
+              const username = update.message.from.username || update.message.from.first_name || 'User';
+              handleTelegramMessage(chatId, text, username).catch(console.error);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Telegram Polling Error]', err);
+    }
+    setTimeout(pollTelegram, 1000);
+  };
+
+  pollTelegram();
+}
 
 // Handle process termination gracefully
 process.on('SIGINT', () => {
