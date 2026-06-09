@@ -889,6 +889,29 @@ function isBotOwner(userId) {
   return BOT_OWNER_IDS.includes(userId);
 }
 
+// =================================================================
+// 🧠 OpenClaw 輔助函式：用 Groq 極速判定是否為上網查詢請求
+// =================================================================
+async function detectWebBrowsingWithAI(content) {
+  try {
+    const Groq = require('groq-sdk');
+    const groq = new Groq({ apiKey: getCurrentGroqKey() });
+
+    const prompt = `請判斷以下用戶消息是否是在請求「上網查最新資料」、「打開某個網頁連結」、「對某個網站截圖」、「查詢天氣」、「查詢餐廳或地點」或「安排行程」。只回答「是」或「否」。\n\n用戶消息: "${content}"\n\n請只回答「是」或「否」，不要解釋原因。`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.1-8b-instant', // 使用極速且免費額度充足的 8B 模型
+      max_tokens: 10,
+      temperature: 0.1
+    });
+    return completion.choices[0].message.content.trim().includes('是');
+  } catch (e) {
+    console.error('[OpenClaw 路由判定出錯]', e);
+    return false;
+  }
+}
+
 // 初始化YouTube API
 const { google } = require('googleapis');
 if (!process.env.YOUTUBE_API_KEY) {
@@ -2103,7 +2126,7 @@ async function callGeminiAPI(messages) {
 
       // Initialize Gemini API
       const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
 
       // Create chat session
       const chat = model.startChat({
@@ -3301,6 +3324,59 @@ client.on('messageCreate', async (message) => {
   // Show typing indicator immediately
   await message.channel.sendTyping();
 
+  // =================================================================
+  // 🌐 主人專屬：雲端 OpenClaw 視覺網頁操作攔截器
+  // =================================================================
+  if (process.env.OPENCLAW_API_URL && process.env.OPENCLAW_GATEWAY_PASSWORD) {
+    const isWebBrowsingRequest = await detectWebBrowsingWithAI(message.content);
+
+    if (isWebBrowsingRequest) {
+      if (isBotOwner(message.author.id)) {
+        console.log(`[OpenClaw] 老闆特權驗證成功，即時送往雲端 OpenClaw 後端！`);
+        try {
+          const openclawResponse = await fetch(`${process.env.OPENCLAW_API_URL}/api/v1/chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.OPENCLAW_GATEWAY_PASSWORD}`
+            },
+            body: JSON.stringify({
+              message: message.content,
+              stream: false
+            })
+          });
+
+          if (!openclawResponse.ok) {
+            throw new Error(`OpenClaw 回應錯誤：HTTP ${openclawResponse.status}`);
+          }
+
+          const openclawData = await openclawResponse.json();
+          const replyText = openclawData.reply || openclawData.message || openclawData.content || '老闆，OpenClaw 沒有回傳可用的結果。';
+
+          // Discord 單則訊息上限 2000 字，超過就切割
+          if (replyText.length <= 2000) {
+            await message.channel.send(replyText);
+          } else {
+            const chunks = replyText.match(/[\s\S]{1,2000}/g) || [replyText];
+            for (const chunk of chunks) {
+              await message.channel.send(chunk);
+            }
+          }
+          return; // 執行完畢，不繼續觸發一般聊天邏輯
+        } catch (err) {
+          console.error('[OpenClaw] 連線失敗：', err);
+          await message.channel.send('老闆，雲端 OpenClaw 連線失敗，可能主機正在開機轉世中，請稍後再試！\n錯誤：' + err.message);
+          return;
+        }
+      } else {
+        // 路人想亂用時的傲嬌拒絕
+        await message.channel.send('靠北，本小姐上網查資料很累耶，這功能只有我老闆可以用！');
+        return;
+      }
+    }
+  }
+  // =================================================================
+
   // 獲取頻道的消息歷史用於上下文判斷
   // 從 Discord 獲取最近的消息 (50條，與README一致)
   const recentMessages = await message.channel.messages.fetch({ limit: 50 });
@@ -4002,11 +4078,8 @@ client.on('messageCreate', async (message) => {
         // 導入 Google GenAI
         const { GoogleGenAI } = await import('@google/genai');
 
-        // 獲取 Gemini API 密鑰
-        let apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey && GEMINI_API_KEYS && GEMINI_API_KEYS.length > 0) {
-          apiKey = GEMINI_API_KEYS[currentGeminiKeyIndex];
-        }
+        // 獲取 Gemini API 密鑰（使用輪轉系統）
+        let apiKey = getCurrentGeminiKey();
 
         if (!apiKey) {
           throw new Error('No Gemini API key available');
@@ -4033,7 +4106,7 @@ client.on('messageCreate', async (message) => {
 
             // 使用 Gemini 2.0 Flash 模型進行圖像理解
             const result = await ai.models.generateContent({
-              model: "gemini-2.0-flash",
+              model: "gemini-3.1-flash-lite",
               contents: [
                 {
                   inlineData: {
