@@ -3462,11 +3462,13 @@ client.on('messageCreate', async (message) => {
 
   if (OPENCLAW_URL && OPENCLAW_PASS && analysis.intent === 'BROWSE_WEB') {
     if (isBotOwner(message.author.id)) {
-        console.log(`[OpenClaw] 老闆特權驗證成功，即時送往雲端 OpenClaw 後端！`);
+        console.log(`[OpenClaw] 老闆特權驗證成功，發送請求至: ${OPENCLAW_URL}/v1/chat/completions`);
         try {
           const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
+          // 截圖/瀏覽任務可能需要較長時間，設定 120 秒 timeout
           const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
             method: 'POST',
+            timeout: 120000,
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${OPENCLAW_PASS}`
@@ -3480,17 +3482,23 @@ client.on('messageCreate', async (message) => {
             })
           });
 
+          console.log(`[OpenClaw] HTTP 回應狀態: ${openclawResponse.status}`);
+
           if (!openclawResponse.ok) {
             const errBody = await openclawResponse.text();
-            throw new Error(`OpenClaw 回應錯誤：HTTP ${openclawResponse.status} - ${errBody.substring(0, 200)}`);
+            throw new Error(`OpenClaw 回應錯誤：HTTP ${openclawResponse.status} - ${errBody.substring(0, 300)}`);
           }
 
           const openclawData = await openclawResponse.json();
+          console.log(`[OpenClaw] 完整回傳結構 keys: ${Object.keys(openclawData).join(', ')}`);
+          console.log(`[OpenClaw] choices[0].message.content 前500字: ${String(openclawData?.choices?.[0]?.message?.content || '(empty)').substring(0, 500)}`);
+
           const rawResult = openclawData?.choices?.[0]?.message?.content
             || openclawData.reply || openclawData.message || openclawData.content
             || null;
 
           if (!rawResult) {
+            console.error('[OpenClaw] 無可用結果，完整回傳:', JSON.stringify(openclawData).substring(0, 500));
             await message.channel.send('老闆，OpenClaw 沒有回傳可用的結果。');
             return;
           }
@@ -3515,17 +3523,15 @@ client.on('messageCreate', async (message) => {
           }
           return;
         } catch (err) {
-          console.error('[OpenClaw] 連線失敗：', err);
-          await message.channel.send('老闆，雲端 OpenClaw 連線失敗，可能主機正在開機轉世中，請稍後再試！\n錯誤：' + err.message);
+          console.error('[OpenClaw] 連線失敗：', err.message);
+          await message.channel.send(`老闆，雲端 OpenClaw 連線失敗！\n錯誤：${err.message}`);
           return;
         }
       } else {
-        // 路人想亂用時的傲嬌拒絕
         await message.channel.send('靠北，本小姐上網查資料很累耶，這功能只有我老闆可以用！');
         return;
       }
     }
-  }
   // =================================================================
 
   // 獲取頻道的消息歷史用於上下文判斷
