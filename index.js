@@ -2975,48 +2975,36 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       const encodedPrompt = encodeURIComponent(finalPrompt);
       const seed = Math.floor(Math.random() * 1000000);
       
-      const pollinationsKey = process.env.POLLINATIONS_API_KEY;
-      // Note: "nologo=true" is a premium/paid feature on Pollinations AI. If a free key requests it, 
-      // the API returns a 402 Payment Required error. Removing it makes free keys work.
-      // We explicitly set model=flux (Flux Schnell) as requested.
-      let url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux`;
-      const headers = {};
+      const rawKey = process.env.POLLINATIONS_API_KEY;
+      const pollinationsKey = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, '') : null;
+      
+      let response;
       
       if (pollinationsKey) {
-        headers['Authorization'] = `Bearer ${pollinationsKey}`;
-        url += `&key=${pollinationsKey}`;
-        console.log('Using POLLINATIONS_API_KEY for request...');
-      }
-
-      console.log(`Fetching image from Pollinations AI: ${url.replace(/key=[^&]+/, 'key=****')}`);
-      let response;
-      try {
-        response = await fetch(url, { headers, timeout: 30000 });
-      } catch (e) {
-        console.log(`Pollinations request with key threw error: ${e.message}`);
-      }
-      
-      // If request with key fails, fallback to keyless request
-      if ((!response || !response.ok) && pollinationsKey) {
-        const statusStr = response ? `Status ${response.status}` : 'Error';
-        console.log(`Pollinations AI with key failed (${statusStr}). Retrying without key...`);
-        const cleanUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux`;
+        // Attempt 1: Using the user's API key on the unified gateway endpoint
+        // With a paid key, we can request nologo=true and private=true
+        const url = `https://gen.pollinations.ai/image/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux&nologo=true&private=true&key=${pollinationsKey}`;
+        const headers = {
+          'Authorization': `Bearer ${pollinationsKey}`
+        };
+        console.log('Using POLLINATIONS_API_KEY for unified API request...');
         try {
-          response = await fetch(cleanUrl, { timeout: 30000 });
+          response = await fetch(url, { headers, timeout: 30000 });
         } catch (e) {
-          console.log(`Pollinations keyless request threw error: ${e.message}`);
+          console.log(`Pollinations request with key threw error: ${e.message}`);
         }
       }
-
-      // If direct keyless request fails (often due to Railway IP block), fallback to proxying via corsproxy.io
+      
+      // Attempt 2: Fallback to keyless legacy GET endpoint if keyed request failed/was not configured
       if (!response || !response.ok) {
-        const statusStr = response ? `Status ${response.status}` : 'Error';
-        console.log(`Pollinations AI direct request failed (${statusStr}). Retrying keyless via proxy...`);
-        const proxiedUrl = `https://corsproxy.io/?https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux`;
+        const statusStr = response ? `Status ${response.status}` : 'No key configured';
+        console.log(`Pollinations AI keyed request not available/failed (${statusStr}). Retrying keyless via legacy endpoint...`);
+        // Note: keyless requests on image.pollinations.ai cannot use nologo=true or private=true
+        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux`;
         try {
-          response = await fetch(proxiedUrl, { timeout: 30000 });
+          response = await fetch(fallbackUrl, { timeout: 30000 });
         } catch (e) {
-          console.log(`Pollinations proxied request threw error: ${e.message}`);
+          console.log(`Pollinations keyless request threw error: ${e.message}`);
         }
       }
 
