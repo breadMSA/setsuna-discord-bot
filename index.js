@@ -3561,7 +3561,7 @@ client.on('messageCreate', async (message) => {
         try {
           const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
           // 截圖/瀏覽任務可能需要較長時間，設定 120 秒 timeout
-          const browserPrompt = message.content + '\n\n【系統指令：你必須直接且唯一使用網頁瀏覽工具 (browser) 實際造訪 Yahoo 搜尋 (https://tw.search.yahoo.com/) 或 DuckDuckGo (https://html.duckduckgo.com/) 進行搜尋以獲取即時資訊。請絕對不要造訪 Google 搜尋，因為 Google 的防機器人機制會阻擋你的瀏覽器訪問。請絕對不要調用或使用內建的 web_search 或 search grounding 工具！】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]';
+          const browserPrompt = message.content + '\n\n【系統指令：你必須直接且唯一使用網頁瀏覽工具 (browser) 實際造訪 Yahoo 搜尋 (https://tw.search.yahoo.com/) 或 DuckDuckGo (https://html.duckduckgo.com/) 進行搜尋以獲取即時資訊。請絕對不要造訪 Google 搜尋，因為 Google 的防機器人機制會阻擋你的瀏覽器訪問。請絕對不要調用或使用內建的 web_search 或 search grounding 工具！】【重要系統指令：在使用網頁瀏覽工具 (browser) 時，請絕對不要使用 CSS 選擇器 (selector 參數) 來定位元素，你必須完全使用元素參考或目標 ID (targetId 或 ref 參數) 來操作輸入框或點擊按鈕！否則瀏覽器會回傳錯誤。】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]';
 
           const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
             method: 'POST',
@@ -5249,7 +5249,7 @@ if (TELEGRAM_TOKEN) {
           body: JSON.stringify({
             model: 'openclaw',
             messages: [
-              { role: 'user', content: text + '\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]' }
+              { role: 'user', content: text + '\n\n【重要系統指令：在使用網頁瀏覽工具 (browser) 時，請絕對不要使用 CSS 選擇器 (selector 參數) 來定位元素，你必須完全使用元素參考或目標 ID (targetId 或 ref 參數) 來操作輸入框或點擊按鈕！否則瀏覽器會回傳錯誤。】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]' }
             ],
             stream: false
           })

@@ -65,7 +65,7 @@ const config = {
       openclaw: {
         cdpUrl: 'http://127.0.0.1:18800',
         cdpPort: 18800,
-        driver: 'openclaw',
+        driver: 'existing-session',
         attachOnly: true,
         color: '#FF6B00'
       }
@@ -84,7 +84,7 @@ fs.writeFileSync('/home/node/.openclaw/openclaw.json', JSON.stringify(config, nu
 fs.mkdirSync('/home/node/.openclaw/workspace', { recursive: true });
 fs.writeFileSync('/home/node/.openclaw/workspace/IDENTITY.md', '# Identity\nName: Setsuna\n');
 fs.writeFileSync('/home/node/.openclaw/workspace/USER.md', '# User\nName: Boss\n');
-const systemPrompt = '當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。如果搜尋工具 (web_search) 回傳錯誤、無結果，或者回傳「搜尋服務受到限制/服務異常」等提示時，你必須改用網頁瀏覽工具 (browser) 實際造訪搜尋引擎（如 Google 或 Yahoo）進行搜尋，以獲取所需的即時資訊。';
+const systemPrompt = '當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。如果搜尋工具 (web_search) 回傳錯誤、無結果，或者回傳「搜尋服務受到限制/服務異常」等提示時，你必須改用網頁瀏覽工具 (browser) 實際造訪搜尋引擎（如 Google 或 Yahoo）進行搜尋，以獲取所需的即時資訊。在使用網頁瀏覽工具 (browser) 時，請絕對不要使用 CSS 選擇器 (selector 參數)，你必須完全使用元素參考或目標 ID (targetId 或 ref 參數) 來操作定位！';
 fs.writeFileSync('/home/node/.openclaw/workspace/SYSTEM.md', systemPrompt);
 fs.writeFileSync('/home/node/.openclaw/workspace/AGENTS.md', systemPrompt);
 EOF
