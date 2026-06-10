@@ -15,8 +15,7 @@ console.log('Starting OpenClaw gateway wrapper on port:', PORT);
 
 // Start OpenClaw gateway on TARGET_PORT
 const openclaw = spawn('node', ['openclaw.mjs', 'gateway', '--allow-unconfigured', '--port', String(TARGET_PORT)], {
-  stdio: 'inherit',
-  shell: true
+  stdio: 'inherit'
 });
 
 openclaw.on('exit', (code) => {

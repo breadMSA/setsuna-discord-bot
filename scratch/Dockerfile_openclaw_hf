@@ -71,5 +71,7 @@ COPY proxy.js /home/node/proxy.js
 
 EXPOSE 18789
 
+ENTRYPOINT []
+
 # Run the node initialization script to write openclaw.json, create AGENTS.md, and start the proxy wrapper under tini
 CMD sh -c 'node /home/node/init-config.js && mkdir -p /home/node/.openclaw/workspace && printf "當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。" > /home/node/.openclaw/workspace/AGENTS.md && exec tini -- node /home/node/proxy.js'
