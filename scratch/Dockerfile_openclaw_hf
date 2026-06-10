@@ -65,7 +65,7 @@ const config = {
       openclaw: {
         cdpUrl: 'http://127.0.0.1:18800',
         cdpPort: 18800,
-        driver: 'existing-session',
+        driver: 'openclaw',
         attachOnly: true,
         color: '#FF6B00'
       }
