@@ -2635,6 +2635,29 @@ async function detectImageGenerationRequest(content, messageHistory = []) {
     (previousImageGenerationRequest && (hasSizeDescription || hasPositionDescription || hasSpecificObjects));
 }
 
+// 使用 Gemini API 來將畫圖 prompt 精煉並翻譯成英文以獲得更高的生圖品質
+async function refinePromptWithGemini(prompt) {
+  try {
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are an AI prompt engineer. Your job is to translate the user\'s image generation request into a detailed, high-quality, descriptive English prompt suitable for AI image generators like Stable Diffusion or Flux. Keep it focused on visual details, style, subject, lighting, and composition. Do not include conversation filler. Only return the final English prompt text, no preamble, no explanations.'
+      },
+      {
+        role: 'user',
+        content: `Please refine and translate this request into a detailed image generation prompt in English: "${prompt}"`
+      }
+    ];
+    const refined = await callGeminiAPI(messages);
+    if (refined && refined.trim()) {
+      return refined.trim().replace(/^['"`]|['"`]$/g, ''); // 移除多餘引號
+    }
+  } catch (err) {
+    console.error('Error in refinePromptWithGemini:', err.message);
+  }
+  return prompt;
+}
+
 // 使用 genimg.mjs 生成圖片的函數
 async function generateImageWithGemini(prompt, imageUrl = null) {
   try {
@@ -2969,8 +2992,19 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
     console.log('Gemini failed/unavailable. Attempting fallback to Pollinations AI...');
     try {
       let finalPrompt = prompt;
+      try {
+        console.log('Refining image generation prompt with Gemini...');
+        const refined = await refinePromptWithGemini(prompt);
+        if (refined && refined.trim()) {
+          console.log(`Refined prompt from "${prompt}" to "${refined}"`);
+          finalPrompt = refined;
+        }
+      } catch (err) {
+        console.error('Failed to refine prompt with Gemini:', err.message);
+      }
+
       if (imageUrl) {
-        finalPrompt = `Based on the reference image at ${imageUrl}, ${prompt}`;
+        finalPrompt = `Based on the reference image at ${imageUrl}, ${finalPrompt}`;
       }
       const encodedPrompt = encodeURIComponent(finalPrompt);
       const seed = Math.floor(Math.random() * 1000000);
