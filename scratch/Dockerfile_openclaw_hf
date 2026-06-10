@@ -65,7 +65,13 @@ const config = { \
   } \
 }; \
 fs.mkdirSync('/home/node/.openclaw', { recursive: true }); \
-fs.writeFileSync('/home/node/.openclaw/openclaw.json', JSON.stringify(config, null, 2));" > /home/node/init-config.js
+fs.writeFileSync('/home/node/.openclaw/openclaw.json', JSON.stringify(config, null, 2)); \
+fs.mkdirSync('/home/node/.openclaw/workspace', { recursive: true }); \
+fs.writeFileSync('/home/node/.openclaw/workspace/IDENTITY.md', '# Identity\\nName: Setsuna\\n'); \
+fs.writeFileSync('/home/node/.openclaw/workspace/USER.md', '# User\\nName: Boss\\n'); \
+const systemPrompt = '當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。如果搜尋工具 (web_search) 回傳錯誤、無結果，或者回傳「搜尋服務受到限制/服務異常」等提示時，你必須改用網頁瀏覽工具 (browser) 實際造訪搜尋引擎（如 Google 或 Yahoo）進行搜尋，以獲取所需的即時資訊。'; \
+fs.writeFileSync('/home/node/.openclaw/workspace/SYSTEM.md', systemPrompt); \
+fs.writeFileSync('/home/node/.openclaw/workspace/AGENTS.md', systemPrompt);" > /home/node/init-config.js
 
 RUN cat << 'EOF' > /home/node/proxy.js
 const http = require('http');
@@ -202,5 +208,4 @@ EXPOSE 18789
 
 ENTRYPOINT []
 
-# Run the node initialization script to write openclaw.json, create AGENTS.md, and start the proxy wrapper under tini
-CMD sh -c 'node openclaw.mjs onboard --non-interactive --accept-risk --mode local --flow quickstart --auth-choice skip && node /home/node/init-config.js && mkdir -p /home/node/.openclaw/workspace && printf "當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。如果搜尋工具 (web_search) 回傳錯誤、無結果，或者回傳「搜尋服務受到限制/服務異常」等提示時，你必須改用網頁瀏覽工具 (browser) 實際造訪搜尋引擎（如 Google 或 Yahoo）進行搜尋，以獲取所需的即時資訊。" > /home/node/.openclaw/workspace/AGENTS.md && exec tini -- node /home/node/proxy.js'
+CMD sh -c 'node /home/node/init-config.js && exec tini -- node /home/node/proxy.js'
