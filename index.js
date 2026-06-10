@@ -3561,7 +3561,7 @@ client.on('messageCreate', async (message) => {
         try {
           const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
           // 截圖/瀏覽任務可能需要較長時間，設定 120 秒 timeout
-          const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
+          let openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
             method: 'POST',
             timeout: 120000,
             headers: {
@@ -3584,13 +3584,56 @@ client.on('messageCreate', async (message) => {
             throw new Error(`OpenClaw 回應錯誤：HTTP ${openclawResponse.status} - ${errBody.substring(0, 300)}`);
           }
 
-          const openclawData = await openclawResponse.json();
+          let openclawData = await openclawResponse.json();
           console.log(`[OpenClaw] 完整回傳結構 keys: ${Object.keys(openclawData).join(', ')}`);
           console.log('[OpenClaw] 完整回應 JSON:', JSON.stringify(openclawData, null, 2));
 
-          const rawResult = openclawData?.choices?.[0]?.message?.content
+          let rawResult = openclawData?.choices?.[0]?.message?.content
             || openclawData.reply || openclawData.message || openclawData.content
             || null;
+
+          // 偵測搜尋服務是否受到限制，如果受限，則強制重試，要求 OpenClaw 使用 browser 瀏覽器工具
+          const searchRestrictedRegex = /搜尋服務.*限制|搜尋服務.*異常|無法.*搜尋|暫無法.*天氣|連線異常/gi;
+          if (rawResult && searchRestrictedRegex.test(rawResult)) {
+            console.log('[OpenClaw] ⚠️ 偵測到網頁搜尋受限或異常，正在發起自動降級重試，強制使用 browser 爬蟲...');
+            const fallbackPrompt = message.content + '\n\n【系統指令：由於之前的搜尋工具回傳了搜尋受限或異常，你必須直接且唯一使用網頁瀏覽工具 (browser) 實際造訪 Google 搜尋並獲取即時資訊。請絕對不要使用任何 web_search 或 search grounding 工具！】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]';
+            
+            try {
+              const retryResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
+                method: 'POST',
+                timeout: 120000,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${OPENCLAW_PASS}`
+                },
+                body: JSON.stringify({
+                  model: 'openclaw',
+                  messages: [
+                    { role: 'user', content: fallbackPrompt }
+                  ],
+                  stream: false
+                })
+              });
+
+              if (retryResponse.ok) {
+                const retryData = await retryResponse.json();
+                console.log('[OpenClaw Fallback] 完整回應 JSON:', JSON.stringify(retryData, null, 2));
+                const retryResult = retryData?.choices?.[0]?.message?.content
+                  || retryData.reply || retryData.message || retryData.content
+                  || null;
+
+                if (retryResult) {
+                  console.log('[OpenClaw Fallback] 成功取得重試結果！');
+                  rawResult = retryResult;
+                  openclawData = retryData; // 更新 openclawData 以便後續提取附件
+                }
+              } else {
+                console.error(`[OpenClaw Fallback] 重試失敗，HTTP 狀態碼: ${retryResponse.status}`);
+              }
+            } catch (retryErr) {
+              console.error('[OpenClaw Fallback] 重試過程發生錯誤:', retryErr.message);
+            }
+          }
 
           if (!rawResult) {
             console.error('[OpenClaw] 無可用結果，完整回傳:', JSON.stringify(openclawData).substring(0, 500));
