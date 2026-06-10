@@ -75,7 +75,6 @@ const config = {
       '--disable-dev-shm-usage',
       '--no-sandbox',
       '--no-zygote',
-      '--single-process',
       '--js-flags=--max-old-space-size=512'
     ]
   }
@@ -175,18 +174,29 @@ const server = http.createServer((req, res) => {
   if (req.url === '/process-status') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     const { execSync } = require('child_process');
-    try {
-      const psOutput = execSync('ps aux').toString();
-      let netstatOutput = '';
+    const http = require('http');
+    
+    // Check if Chromium port is reachable and query it
+    http.get('http://127.0.0.1:18800/json/version', (res2) => {
+      let data = '';
+      res2.on('data', (chunk) => data += chunk);
+      res2.on('end', () => {
+        try {
+          const psOutput = execSync('ps aux').toString();
+          return res.end(`CHROMIUM CDP RESPONSE:\n${data}\n\nPS AUX:\n${psOutput}`);
+        } catch (e) {
+          return res.end(`CHROMIUM CDP RESPONSE:\n${data}\n\nError checking PS: ${e.message}`);
+        }
+      });
+    }).on('error', (err2) => {
       try {
-        netstatOutput = execSync('ss -tulpn || netstat -an').toString();
-      } catch (e2) {
-        netstatOutput = e2.message;
+        const psOutput = execSync('ps aux').toString();
+        return res.end(`CHROMIUM CDP ERROR: ${err2.message}\n\nPS AUX:\n${psOutput}`);
+      } catch (e) {
+        return res.end(`CHROMIUM CDP ERROR: ${err2.message}\n\nError checking PS: ${e.message}`);
       }
-      return res.end(`PS AUX:\n${psOutput}\n\nNETSTAT:\n${netstatOutput}`);
-    } catch (e) {
-      return res.end(`Error checking status: ${e.message}`);
-    }
+    });
+    return;
   }
 
   // Check if it is a GET request to a media file path (potential screenshot download)
@@ -251,4 +261,4 @@ EXPOSE 18789
 
 ENTRYPOINT []
 
-CMD sh -c 'node /home/node/init-config.js && /usr/bin/chromium --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --no-zygote --single-process --remote-debugging-port=18800 --remote-debugging-address=127.0.0.1 > /home/node/chromium.log 2>&1 & exec tini -- node /home/node/proxy.js'
+CMD sh -c 'node /home/node/init-config.js && /usr/bin/chromium --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --no-zygote --remote-debugging-port=18800 --remote-debugging-address=0.0.0.0 > /home/node/chromium.log 2>&1 & exec tini -- node /home/node/proxy.js'
