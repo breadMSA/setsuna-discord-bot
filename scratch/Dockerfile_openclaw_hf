@@ -163,6 +163,32 @@ function serveLatestScreenshot(res) {
 
 // Proxy server
 const server = http.createServer((req, res) => {
+  if (req.url === '/chromium-log') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    if (fs.existsSync('/home/node/chromium.log')) {
+      return res.end(fs.readFileSync('/home/node/chromium.log'));
+    } else {
+      return res.end('chromium.log does not exist');
+    }
+  }
+
+  if (req.url === '/process-status') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    const { execSync } = require('child_process');
+    try {
+      const psOutput = execSync('ps aux').toString();
+      let netstatOutput = '';
+      try {
+        netstatOutput = execSync('ss -tulpn || netstat -an').toString();
+      } catch (e2) {
+        netstatOutput = e2.message;
+      }
+      return res.end(`PS AUX:\n${psOutput}\n\nNETSTAT:\n${netstatOutput}`);
+    } catch (e) {
+      return res.end(`Error checking status: ${e.message}`);
+    }
+  }
+
   // Check if it is a GET request to a media file path (potential screenshot download)
   const isMediaRequest = req.method === 'GET' && (
     req.url.includes('/media/') ||
