@@ -2976,7 +2976,10 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       const seed = Math.floor(Math.random() * 1000000);
       
       const pollinationsKey = process.env.POLLINATIONS_API_KEY;
-      let url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${seed}`;
+      // Note: "nologo=true" is a premium/paid feature on Pollinations AI. If a free key requests it, 
+      // the API returns a 402 Payment Required error. Removing it makes free keys work.
+      // We explicitly set model=flux (Flux Schnell) as requested.
+      let url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux`;
       const headers = {};
       
       if (pollinationsKey) {
@@ -2986,7 +2989,15 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       }
 
       console.log(`Fetching image from Pollinations AI: ${url.replace(/key=[^&]+/, 'key=****')}`);
-      const response = await fetch(url, { headers, timeout: 30000 });
+      let response = await fetch(url, { headers, timeout: 30000 });
+      
+      // If request with key fails, fallback to keyless request
+      if (!response.ok && pollinationsKey) {
+        console.log(`Pollinations AI with key failed (Status ${response.status}). Retrying without key...`);
+        const cleanUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux`;
+        response = await fetch(cleanUrl, { timeout: 30000 });
+      }
+
       if (!response.ok) {
         throw new Error(`Pollinations AI returned HTTP status ${response.status}`);
       }
@@ -3594,49 +3605,79 @@ client.on('messageCreate', async (message) => {
           const discordFiles = [];
           for (let i = 0; i < uniqueAttachments.length; i++) {
             const attPath = uniqueAttachments[i];
-            let fileUrl = attPath;
-            if (!attPath.startsWith('http://') && !attPath.startsWith('https://')) {
+            let success = false;
+            let buffer = null;
+            let finalFileUrl = '';
+            
+            if (attPath.startsWith('http://') || attPath.startsWith('https://')) {
+              finalFileUrl = attPath;
+              try {
+                const fileRes = await fetch(finalFileUrl, {
+                  headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
+                  timeout: 30000
+                });
+                if (fileRes.ok) {
+                  buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
+                  success = true;
+                }
+              } catch (e) {
+                console.error(`[OpenClaw] 下載直接網址失敗: ${e.message}`);
+              }
+            } else {
               let normalizedPath = attPath.replace(/\\/g, '/');
+              let subPath = '';
               if (normalizedPath.includes('/.openclaw/media/')) {
-                const parts = normalizedPath.split('/.openclaw/media/');
-                fileUrl = `${OPENCLAW_URL}/media/${parts[1]}`;
+                subPath = normalizedPath.split('/.openclaw/media/')[1];
               } else if (normalizedPath.includes('/.openclaw/workspace/media/')) {
-                const parts = normalizedPath.split('/.openclaw/workspace/media/');
-                fileUrl = `${OPENCLAW_URL}/media/${parts[1]}`;
+                subPath = normalizedPath.split('/.openclaw/workspace/media/')[1];
               } else if (normalizedPath.includes('/.openclaw/workspace/')) {
-                const parts = normalizedPath.split('/.openclaw/workspace/');
-                fileUrl = `${OPENCLAW_URL}/workspace/${parts[1]}`;
+                subPath = normalizedPath.split('/.openclaw/workspace/')[1];
               } else if (normalizedPath.includes('/media/')) {
-                const parts = normalizedPath.split('/media/');
-                fileUrl = `${OPENCLAW_URL}/media/${parts[1]}`;
+                subPath = normalizedPath.split('/media/')[1];
               } else if (normalizedPath.includes('/workspace/')) {
-                const parts = normalizedPath.split('/workspace/');
-                fileUrl = `${OPENCLAW_URL}/workspace/${parts[1]}`;
+                subPath = normalizedPath.split('/workspace/')[1];
               } else {
-                fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/').pop()}`;
+                subPath = normalizedPath.split('/').pop();
+              }
+              
+              const filename = subPath.split('/').pop();
+              const candidates = [
+                `${OPENCLAW_URL}/media/${subPath}`,
+                `${OPENCLAW_URL}/__openclaw__/assistant-media/${subPath}`,
+                `${OPENCLAW_URL}/assistant-media/${subPath}`,
+                `${OPENCLAW_URL}/media/${filename}`,
+                `${OPENCLAW_URL}/__openclaw__/assistant-media/${filename}`,
+                `${OPENCLAW_URL}/assistant-media/${filename}`,
+                `${OPENCLAW_URL}/workspace/${subPath}`
+              ];
+              
+              for (const url of candidates) {
+                console.log(`[OpenClaw] 嘗試下載附件 #${i + 1} 候選網址: ${url}`);
+                try {
+                  const fileRes = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
+                    timeout: 10000
+                  });
+                  if (fileRes.ok) {
+                    buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
+                    finalFileUrl = url;
+                    success = true;
+                    console.log(`[OpenClaw] 成功下載附件 #${i + 1}: ${url}`);
+                    break;
+                  }
+                } catch (e) {
+                  // 靜默嘗試其他候選網址
+                }
               }
             }
-
-            console.log(`[OpenClaw] 嘗試下載附件 #${i + 1}: ${fileUrl}`);
-            try {
-              const fileRes = await fetch(fileUrl, {
-                headers: {
-                  'Authorization': `Bearer ${OPENCLAW_PASS}`
-                },
-                timeout: 30000
+            
+            if (success && buffer) {
+              discordFiles.push({
+                attachment: buffer,
+                name: finalFileUrl.split('/').pop() || `screenshot_${i + 1}.png`
               });
-              if (fileRes.ok) {
-                const buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
-                discordFiles.push({
-                  attachment: buffer,
-                  name: fileUrl.split('/').pop() || `screenshot_${i + 1}.png`
-                });
-                console.log(`[OpenClaw] 成功下載附件 #${i + 1}`);
-              } else {
-                console.error(`[OpenClaw] 下載附件 #${i + 1} 失敗，HTTP ${fileRes.status}`);
-              }
-            } catch (downloadErr) {
-              console.error(`[OpenClaw] 下載附件 #${i + 1} 錯誤:`, downloadErr.message);
+            } else {
+              console.error(`[OpenClaw] 下載附件 #${i + 1} 失敗，所有候選網址皆不可用：${attPath}`);
             }
           }
 
@@ -5237,37 +5278,76 @@ if (TELEGRAM_TOKEN) {
         // 下載並發送圖片附件
         for (let i = 0; i < tgUniqueAttachments.length; i++) {
           const attPath = tgUniqueAttachments[i];
-          let fileUrl = attPath;
-          if (!attPath.startsWith('http://') && !attPath.startsWith('https://')) {
+          let success = false;
+          let buffer = null;
+          let finalFileUrl = '';
+          
+          if (attPath.startsWith('http://') || attPath.startsWith('https://')) {
+            finalFileUrl = attPath;
+            try {
+              const fileRes = await fetch(finalFileUrl, {
+                headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
+                timeout: 30000
+              });
+              if (fileRes.ok) {
+                buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
+                success = true;
+              }
+            } catch (e) {
+              console.error(`[Telegram] 下載直接網址失敗: ${e.message}`);
+            }
+          } else {
             let normalizedPath = attPath.replace(/\\/g, '/');
+            let subPath = '';
             if (normalizedPath.includes('/.openclaw/media/')) {
-              fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/.openclaw/media/')[1]}`;
+              subPath = normalizedPath.split('/.openclaw/media/')[1];
             } else if (normalizedPath.includes('/.openclaw/workspace/media/')) {
-              fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/.openclaw/workspace/media/')[1]}`;
+              subPath = normalizedPath.split('/.openclaw/workspace/media/')[1];
             } else if (normalizedPath.includes('/.openclaw/workspace/')) {
-              fileUrl = `${OPENCLAW_URL}/workspace/${normalizedPath.split('/.openclaw/workspace/')[1]}`;
+              subPath = normalizedPath.split('/.openclaw/workspace/')[1];
             } else if (normalizedPath.includes('/media/')) {
-              fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/media/')[1]}`;
+              subPath = normalizedPath.split('/media/')[1];
             } else if (normalizedPath.includes('/workspace/')) {
-              fileUrl = `${OPENCLAW_URL}/workspace/${normalizedPath.split('/workspace/')[1]}`;
+              subPath = normalizedPath.split('/workspace/')[1];
             } else {
-              fileUrl = `${OPENCLAW_URL}/media/${normalizedPath.split('/').pop()}`;
+              subPath = normalizedPath.split('/').pop();
+            }
+            
+            const filename = subPath.split('/').pop();
+            const candidates = [
+              `${OPENCLAW_URL}/media/${subPath}`,
+              `${OPENCLAW_URL}/__openclaw__/assistant-media/${subPath}`,
+              `${OPENCLAW_URL}/assistant-media/${subPath}`,
+              `${OPENCLAW_URL}/media/${filename}`,
+              `${OPENCLAW_URL}/__openclaw__/assistant-media/${filename}`,
+              `${OPENCLAW_URL}/assistant-media/${filename}`,
+              `${OPENCLAW_URL}/workspace/${subPath}`
+            ];
+            
+            for (const url of candidates) {
+              console.log(`[Telegram] 嘗試下載附件 #${i + 1} 候選網址: ${url}`);
+              try {
+                const fileRes = await fetch(url, {
+                  headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
+                  timeout: 10000
+                });
+                if (fileRes.ok) {
+                  buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
+                  finalFileUrl = url;
+                  success = true;
+                  console.log(`[Telegram] 成功下載附件 #${i + 1}: ${url}`);
+                  break;
+                }
+              } catch (e) {
+                // 靜默嘗試其他候選網址
+              }
             }
           }
-          console.log(`[Telegram] 嘗試下載附件 #${i + 1}: ${fileUrl}`);
-          try {
-            const fileRes = await fetch(fileUrl, {
-              headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
-              timeout: 30000
-            });
-            if (fileRes.ok) {
-              const buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
-              await sendTelegramPhoto(chatId, buffer, fileUrl.split('/').pop() || `screenshot_${i + 1}.png`, null);
-            } else {
-              console.error(`[Telegram] 下載附件 #${i + 1} 失敗，HTTP ${fileRes.status}`);
-            }
-          } catch (downloadErr) {
-            console.error(`[Telegram] 下載附件 #${i + 1} 錯誤:`, downloadErr.message);
+          
+          if (success && buffer) {
+            await sendTelegramPhoto(chatId, buffer, finalFileUrl.split('/').pop() || `screenshot_${i + 1}.png`, null);
+          } else {
+            console.error(`[Telegram] 下載附件 #${i + 1} 失敗，所有候選網址皆不可用：${attPath}`);
           }
         }
 

@@ -18,60 +18,56 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV OPENCLAW_BROWSER_NO_SANDBOX=1
 ENV NODE_OPTIONS="--max-old-space-size=1024"
-
-# Create a clean entrypoint shell script to generate the openclaw.json configuration without escaping bugs
-RUN echo '#!/bin/sh\n\
-mkdir -p /home/node/.openclaw\n\
-cat << "EOF" > /home/node/.openclaw/openclaw.json\n\
-{\n\
-  "gateway": {\n\
-    "mode": "local",\n\
-    "bind": "lan",\n\
-    "auth": {\n\
-      "mode": "token",\n\
-      "token": "GATEWAY_PASSWORD_PLACEHOLDER"\n\
-    },\n\
-    "http": {\n\
-      "endpoints": {\n\
-        "chatCompletions": {\n\
-          "enabled": true\n\
-        }\n\
-      }\n\
-    }\n\
-  },\n\
-  "agents": {\n\
-    "defaults": {\n\
-      "model": {\n\
-        "primary": "google/gemini-3.1-flash-lite"\n\
-      }\n\
-    }\n\
-  },\n\
-  "tools": {\n\
-    "web": {\n\
-      "search": {\n\
-        "provider": "gemini"\n\
-      }\n\
-    }\n\
-  },\n\
-  "browser": {\n\
-    "noSandbox": true,\n\
-    "extraArgs": [\n\
-      "--disable-gpu",\n\
-      "--disable-dev-shm-usage",\n\
-      "--no-sandbox",\n\
-      "--js-flags=--max-old-space-size=512"\n\
-    ]\n\
-  }\n\
-}\n\
-EOF\n\
-sed -i "s/GATEWAY_PASSWORD_PLACEHOLDER/${GATEWAY_PASSWORD}/g" /home/node/.openclaw/openclaw.json\n\
-echo "[entrypoint] Configuration file initialized."\n\
-exec node openclaw.mjs gateway --allow-unconfigured\n\
-' > /entrypoint.sh && chmod +x /entrypoint.sh
+ENV TINI_SUBREAPER=1
 
 USER node
 
-EXPOSE 7860
+# Create the init script that safely writes openclaw.json using Node.js to avoid any shell escaping issues
+RUN echo "const fs = require('fs'); \
+const config = { \
+  gateway: { \
+    mode: 'local', \
+    bind: 'lan', \
+    auth: { \
+      mode: 'token', \
+      token: process.env.GATEWAY_PASSWORD \
+    }, \
+    http: { \
+      endpoints: { \
+        chatCompletions: { \
+          enabled: true \
+        } \
+      } \
+    } \
+  }, \
+  agents: { \
+    defaults: { \
+      model: { \
+        primary: 'google/gemini-3.1-flash-lite' \
+      } \
+    } \
+  }, \
+  tools: { \
+    web: { \
+      search: { \
+        provider: 'gemini' \
+      } \
+    } \
+  }, \
+  browser: { \
+    noSandbox: true, \
+    extraArgs: [ \
+      '--disable-gpu', \
+      '--disable-dev-shm-usage', \
+      '--no-sandbox', \
+      '--js-flags=--max-old-space-size=512' \
+    ] \
+  } \
+}; \
+fs.mkdirSync('/home/node/.openclaw', { recursive: true }); \
+fs.writeFileSync('/home/node/.openclaw/openclaw.json', JSON.stringify(config, null, 2));" > /home/node/init-config.js
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/bin/sh", "/entrypoint.sh"]
+EXPOSE 18789
+
+# Run the node initialization script to write openclaw.json, create AGENTS.md, and start openclaw under tini
+CMD sh -c 'node /home/node/init-config.js && mkdir -p /home/node/.openclaw/workspace && printf "當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。" > /home/node/.openclaw/workspace/AGENTS.md && exec tini -- node openclaw.mjs gateway --allow-unconfigured'
