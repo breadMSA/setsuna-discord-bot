@@ -2989,17 +2989,40 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       }
 
       console.log(`Fetching image from Pollinations AI: ${url.replace(/key=[^&]+/, 'key=****')}`);
-      let response = await fetch(url, { headers, timeout: 30000 });
+      let response;
+      try {
+        response = await fetch(url, { headers, timeout: 30000 });
+      } catch (e) {
+        console.log(`Pollinations request with key threw error: ${e.message}`);
+      }
       
       // If request with key fails, fallback to keyless request
-      if (!response.ok && pollinationsKey) {
-        console.log(`Pollinations AI with key failed (Status ${response.status}). Retrying without key...`);
+      if ((!response || !response.ok) && pollinationsKey) {
+        const statusStr = response ? `Status ${response.status}` : 'Error';
+        console.log(`Pollinations AI with key failed (${statusStr}). Retrying without key...`);
         const cleanUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux`;
-        response = await fetch(cleanUrl, { timeout: 30000 });
+        try {
+          response = await fetch(cleanUrl, { timeout: 30000 });
+        } catch (e) {
+          console.log(`Pollinations keyless request threw error: ${e.message}`);
+        }
       }
 
-      if (!response.ok) {
-        throw new Error(`Pollinations AI returned HTTP status ${response.status}`);
+      // If direct keyless request fails (often due to Railway IP block), fallback to proxying via corsproxy.io
+      if (!response || !response.ok) {
+        const statusStr = response ? `Status ${response.status}` : 'Error';
+        console.log(`Pollinations AI direct request failed (${statusStr}). Retrying keyless via proxy...`);
+        const proxiedUrl = `https://corsproxy.io/?https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux`;
+        try {
+          response = await fetch(proxiedUrl, { timeout: 30000 });
+        } catch (e) {
+          console.log(`Pollinations proxied request threw error: ${e.message}`);
+        }
+      }
+
+      if (!response || !response.ok) {
+        const errStatus = response ? `HTTP status ${response.status}` : 'Fetch error';
+        throw new Error(`Pollinations AI returned ${errStatus}`);
       }
 
       const buffer = await response.arrayBuffer();
@@ -3641,7 +3664,7 @@ client.on('messageCreate', async (message) => {
               }
               
               const filename = subPath.split('/').pop();
-              const candidates = [
+              const urlBases = [
                 `${OPENCLAW_URL}/media/${subPath}`,
                 `${OPENCLAW_URL}/__openclaw__/assistant-media/${subPath}`,
                 `${OPENCLAW_URL}/assistant-media/${subPath}`,
@@ -3651,18 +3674,36 @@ client.on('messageCreate', async (message) => {
                 `${OPENCLAW_URL}/workspace/${subPath}`
               ];
               
-              for (const url of candidates) {
-                console.log(`[OpenClaw] 嘗試下載附件 #${i + 1} 候選網址: ${url}`);
+              const candidates = [];
+              for (const base of urlBases) {
+                // 1. Header only
+                candidates.push({ url: base, useHeader: true });
+                // 2. Query param token only (no header)
+                if (OPENCLAW_PASS) {
+                  const delimiter = base.includes('?') ? '&' : '?';
+                  const tokenUrl = `${base}${delimiter}token=${encodeURIComponent(OPENCLAW_PASS)}`;
+                  candidates.push({ url: tokenUrl, useHeader: false });
+                  // 3. Both query param token and header
+                  candidates.push({ url: tokenUrl, useHeader: true });
+                }
+              }
+              
+              for (const candidate of candidates) {
+                console.log(`[OpenClaw] 嘗試下載附件 #${i + 1} 候選網址: ${candidate.url} (使用Header: ${candidate.useHeader})`);
                 try {
-                  const fileRes = await fetch(url, {
-                    headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
+                  const headers = {};
+                  if (candidate.useHeader && OPENCLAW_PASS) {
+                    headers['Authorization'] = `Bearer ${OPENCLAW_PASS}`;
+                  }
+                  const fileRes = await fetch(candidate.url, {
+                    headers,
                     timeout: 10000
                   });
                   if (fileRes.ok) {
                     buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
-                    finalFileUrl = url;
+                    finalFileUrl = candidate.url;
                     success = true;
-                    console.log(`[OpenClaw] 成功下載附件 #${i + 1}: ${url}`);
+                    console.log(`[OpenClaw] 成功下載附件 #${i + 1}: ${candidate.url}`);
                     break;
                   }
                 } catch (e) {
@@ -5314,7 +5355,7 @@ if (TELEGRAM_TOKEN) {
             }
             
             const filename = subPath.split('/').pop();
-            const candidates = [
+            const urlBases = [
               `${OPENCLAW_URL}/media/${subPath}`,
               `${OPENCLAW_URL}/__openclaw__/assistant-media/${subPath}`,
               `${OPENCLAW_URL}/assistant-media/${subPath}`,
@@ -5324,18 +5365,36 @@ if (TELEGRAM_TOKEN) {
               `${OPENCLAW_URL}/workspace/${subPath}`
             ];
             
-            for (const url of candidates) {
-              console.log(`[Telegram] 嘗試下載附件 #${i + 1} 候選網址: ${url}`);
+            const candidates = [];
+            for (const base of urlBases) {
+              // 1. Header only
+              candidates.push({ url: base, useHeader: true });
+              // 2. Query param token only (no header)
+              if (OPENCLAW_PASS) {
+                const delimiter = base.includes('?') ? '&' : '?';
+                const tokenUrl = `${base}${delimiter}token=${encodeURIComponent(OPENCLAW_PASS)}`;
+                candidates.push({ url: tokenUrl, useHeader: false });
+                // 3. Both query param token and header
+                candidates.push({ url: tokenUrl, useHeader: true });
+              }
+            }
+            
+            for (const candidate of candidates) {
+              console.log(`[Telegram] 嘗試下載附件 #${i + 1} 候選網址: ${candidate.url} (使用Header: ${candidate.useHeader})`);
               try {
-                const fileRes = await fetch(url, {
-                  headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
+                const headers = {};
+                if (candidate.useHeader && OPENCLAW_PASS) {
+                  headers['Authorization'] = `Bearer ${OPENCLAW_PASS}`;
+                }
+                const fileRes = await fetch(candidate.url, {
+                  headers,
                   timeout: 10000
                 });
                 if (fileRes.ok) {
                   buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
-                  finalFileUrl = url;
+                  finalFileUrl = candidate.url;
                   success = true;
-                  console.log(`[Telegram] 成功下載附件 #${i + 1}: ${url}`);
+                  console.log(`[Telegram] 成功下載附件 #${i + 1}: ${candidate.url}`);
                   break;
                 }
               } catch (e) {
