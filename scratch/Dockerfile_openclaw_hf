@@ -57,6 +57,9 @@ const config = {
   },
   browser: {
     noSandbox: true,
+    localLaunchTimeoutMs: 120000,
+    localCdpReadyTimeoutMs: 120000,
+    actionTimeoutMs: 120000,
     extraArgs: [
       '--disable-gpu',
       '--disable-dev-shm-usage',
