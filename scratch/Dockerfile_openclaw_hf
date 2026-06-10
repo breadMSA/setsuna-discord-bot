@@ -50,7 +50,7 @@ const config = { \
   tools: { \
     web: { \
       search: { \
-        provider: 'gemini' \
+        enabled: false \
       } \
     } \
   }, \
