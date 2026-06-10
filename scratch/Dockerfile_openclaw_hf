@@ -1,0 +1,77 @@
+FROM ghcr.io/openclaw/openclaw:latest
+
+USER root
+
+# Install Chromium dependencies, fonts, and tini (reaps zombie Chromium processes to prevent 503/OOM)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    fonts-liberation \
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    libxss1 \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+ENV OPENCLAW_BROWSER_NO_SANDBOX=1
+ENV NODE_OPTIONS="--max-old-space-size=1024"
+
+# Create a clean entrypoint shell script to generate the openclaw.json configuration without escaping bugs
+RUN echo '#!/bin/sh\n\
+mkdir -p /home/node/.openclaw\n\
+cat << "EOF" > /home/node/.openclaw/openclaw.json\n\
+{\n\
+  "gateway": {\n\
+    "mode": "local",\n\
+    "bind": "lan",\n\
+    "auth": {\n\
+      "mode": "token",\n\
+      "token": "GATEWAY_PASSWORD_PLACEHOLDER"\n\
+    },\n\
+    "http": {\n\
+      "endpoints": {\n\
+        "chatCompletions": {\n\
+          "enabled": true\n\
+        }\n\
+      }\n\
+    }\n\
+  },\n\
+  "agents": {\n\
+    "defaults": {\n\
+      "model": {\n\
+        "primary": "google/gemini-3.1-flash-lite"\n\
+      }\n\
+    }\n\
+  },\n\
+  "tools": {\n\
+    "web": {\n\
+      "search": {\n\
+        "provider": "gemini"\n\
+      }\n\
+    }\n\
+  },\n\
+  "browser": {\n\
+    "noSandbox": true,\n\
+    "extraArgs": [\n\
+      "--disable-gpu",\n\
+      "--disable-dev-shm-usage",\n\
+      "--no-sandbox",\n\
+      "--js-flags=--max-old-space-size=512"\n\
+    ]\n\
+  }\n\
+}\n\
+EOF\n\
+sed -i "s/GATEWAY_PASSWORD_PLACEHOLDER/${GATEWAY_PASSWORD}/g" /home/node/.openclaw/openclaw.json\n\
+echo "[entrypoint] Configuration file initialized."\n\
+exec node openclaw.mjs gateway --allow-unconfigured\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+USER node
+
+EXPOSE 7860
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/bin/sh", "/entrypoint.sh"]

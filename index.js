@@ -2965,44 +2965,8 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
   } catch (error) {
     console.error('Error in generateImageWithGemini (Gemini failed):', error.message);
 
-    // Fallback 1: Try OpenAI DALL-E if CHATGPT_API_KEYS are available
-    if (CHATGPT_API_KEYS && CHATGPT_API_KEYS.length > 0) {
-      console.log('Gemini image generation failed. Attempting fallback to OpenAI DALL-E...');
-      try {
-        const OpenAI = (await import('openai')).default;
-        const openaiKey = CHATGPT_API_KEYS[currentChatGPTKeyIndex];
-        const openai = new OpenAI({ apiKey: openaiKey });
-
-        let finalPrompt = prompt;
-        if (imageUrl) {
-          finalPrompt = `Based on the reference image at ${imageUrl}, ${prompt}`;
-        }
-
-        console.log('Calling OpenAI DALL-E API...');
-        const response = await openai.images.generate({
-          model: "dall-e-3",
-          prompt: finalPrompt,
-          n: 1,
-          size: "1024x1024",
-          response_format: "b64_json"
-        });
-
-        const b64Data = response.data[0].b64_json;
-        if (b64Data) {
-          console.log('Successfully generated image using OpenAI DALL-E!');
-          return {
-            imageData: b64Data,
-            mimeType: 'image/png',
-            responseText: '這是使用 OpenAI DALL-E 生成的圖片'
-          };
-        }
-      } catch (dalleError) {
-        console.error('OpenAI DALL-E fallback failed:', dalleError.message);
-      }
-    }
-
-    // Fallback 2: Try Pollinations AI (completely free, keyless, very fast)
-    console.log('Gemini and OpenAI failed/unavailable. Attempting fallback to Pollinations AI...');
+    // Fallback: Try Pollinations AI (free/keyless base with optional API key support)
+    console.log('Gemini failed/unavailable. Attempting fallback to Pollinations AI...');
     try {
       let finalPrompt = prompt;
       if (imageUrl) {
@@ -3010,10 +2974,19 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       }
       const encodedPrompt = encodeURIComponent(finalPrompt);
       const seed = Math.floor(Math.random() * 1000000);
-      const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&private=true&enhance=false&seed=${seed}`;
+      
+      const pollinationsKey = process.env.POLLINATIONS_API_KEY;
+      let url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${seed}`;
+      const headers = {};
+      
+      if (pollinationsKey) {
+        headers['Authorization'] = `Bearer ${pollinationsKey}`;
+        url += `&key=${pollinationsKey}`;
+        console.log('Using POLLINATIONS_API_KEY for request...');
+      }
 
-      console.log(`Fetching image from Pollinations AI: ${url}`);
-      const response = await fetch(url, { timeout: 30000 });
+      console.log(`Fetching image from Pollinations AI: ${url.replace(/key=[^&]+/, 'key=****')}`);
+      const response = await fetch(url, { headers, timeout: 30000 });
       if (!response.ok) {
         throw new Error(`Pollinations AI returned HTTP status ${response.status}`);
       }
@@ -3029,7 +3002,7 @@ async function generateImageWithGemini(prompt, imageUrl = null) {
       };
     } catch (pollinationsError) {
       console.error('Pollinations AI fallback failed:', pollinationsError.message);
-      throw new Error(`All image generation methods failed. Last error: ${pollinationsError.message}`);
+      throw new Error(`所有圖片生成方法皆已失敗。Gemini 密鑰為免費額度（不支援 Imagen 3），且 Pollinations AI 回傳錯誤（${pollinationsError.message}）。若是 402/rate-limit 錯誤，建議您於 Railway 後台設定 POLLINATIONS_API_KEY 環境變數以使用您的專屬金鑰，或將 Google AI Studio 專案啟用 Billing 計費方案以解鎖 Gemini Imagen。`);
     }
   }
 }
@@ -3542,7 +3515,7 @@ client.on('messageCreate', async (message) => {
             body: JSON.stringify({
               model: 'openclaw',
               messages: [
-                { role: 'user', content: message.content + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 SCREENSHOT_PATH:<檔案絕對路徑>（例如：SCREENSHOT_PATH:/home/node/.openclaw/media/browser/xxx.png）。這是必要的格式，不可省略。]' }
+                { role: 'user', content: message.content + '\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]' }
               ],
               stream: false
             })
@@ -5170,7 +5143,7 @@ if (TELEGRAM_TOKEN) {
           body: JSON.stringify({
             model: 'openclaw',
             messages: [
-              { role: 'user', content: text + '\n\n[重要系統指令：如果你拍了截圖或下載了任何檔案，請在你的回覆最後一行加上 SCREENSHOT_PATH:<檔案絕對路徑>（例如：SCREENSHOT_PATH:/home/node/.openclaw/media/browser/xxx.png）。這是必要的格式，不可省略。]' }
+              { role: 'user', content: text + '\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]' }
             ],
             stream: false
           })
