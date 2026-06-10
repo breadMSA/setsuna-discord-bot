@@ -60,6 +60,15 @@ const config = {
     localLaunchTimeoutMs: 120000,
     localCdpReadyTimeoutMs: 120000,
     actionTimeoutMs: 120000,
+    defaultProfile: 'openclaw',
+    profiles: {
+      openclaw: {
+        cdpUrl: 'http://127.0.0.1:18800',
+        cdpPort: 18800,
+        driver: 'existing-session',
+        attachOnly: true
+      }
+    },
     extraArgs: [
       '--disable-gpu',
       '--disable-dev-shm-usage',
@@ -215,4 +224,4 @@ EXPOSE 18789
 
 ENTRYPOINT []
 
-CMD sh -c 'node /home/node/init-config.js && exec tini -- node /home/node/proxy.js'
+CMD sh -c 'node /home/node/init-config.js && /usr/bin/chromium --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --no-zygote --single-process --remote-debugging-port=18800 --remote-debugging-address=127.0.0.1 > /home/node/chromium.log 2>&1 & exec tini -- node /home/node/proxy.js'
