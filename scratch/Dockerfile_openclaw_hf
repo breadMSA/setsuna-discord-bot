@@ -50,7 +50,7 @@ const config = { \
   tools: { \
     web: { \
       search: { \
-        enabled: false \
+        provider: 'gemini' \
       } \
     } \
   }, \
@@ -203,4 +203,4 @@ EXPOSE 18789
 ENTRYPOINT []
 
 # Run the node initialization script to write openclaw.json, create AGENTS.md, and start the proxy wrapper under tini
-CMD sh -c 'node /home/node/init-config.js && mkdir -p /home/node/.openclaw/workspace && printf "當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。" > /home/node/.openclaw/workspace/AGENTS.md && exec tini -- node /home/node/proxy.js'
+CMD sh -c 'node /home/node/init-config.js && mkdir -p /home/node/.openclaw/workspace && printf "當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。如果搜尋工具 (web_search) 回傳錯誤、無結果，或者回傳「搜尋服務受到限制/服務異常」等提示時，你必須改用網頁瀏覽工具 (browser) 實際造訪搜尋引擎（如 Google 或 Yahoo）進行搜尋，以獲取所需的即時資訊。" > /home/node/.openclaw/workspace/AGENTS.md && exec tini -- node /home/node/proxy.js'
