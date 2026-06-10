@@ -43,7 +43,7 @@ const config = { \
   agents: { \
     defaults: { \
       model: { \
-        primary: 'google/gemini-3.1-flash-lite' \
+        primary: 'google/gemini-2.5-flash' \
       } \
     } \
   }, \
