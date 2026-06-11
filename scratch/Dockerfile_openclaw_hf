@@ -47,7 +47,7 @@ const config = {
         config: {
           webSearch: {
             apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
-            model: 'gemini-2.5-flash'
+            model: 'gemini-3.1-flash-lite'
           }
         }
       },
@@ -71,7 +71,7 @@ const config = {
   tools: {
     web: {
       search: {
-        provider: 'gemini'
+        provider: process.env.TAVILY_API_KEY ? 'tavily' : 'gemini'
       }
     }
   },
