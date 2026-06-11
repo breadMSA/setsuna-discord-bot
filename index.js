@@ -3753,6 +3753,7 @@ client.on('messageCreate', async (message) => {
           cleanRawResult = cleanRawResult.trim();
 
           // 用 Gemini 加 Setsuna 人設包裝 OpenClaw 的原始查詢結果
+          const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
           const wrappedMessages = [
             { role: 'system', content: channelPersonality + '\n\n【重要：在回答中，請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】' },
             { role: 'user', content: `老闆問了：「${message.content}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${cleanRawResult}` }
