@@ -701,6 +701,15 @@ async function handleGeminiRequest(req, res) {
       }));
     }
 
+    let parsedBody = null;
+    try {
+      parsedBody = JSON.parse(bodyBuffer.toString());
+    } catch (e) {
+      // Ignore parse error
+    }
+
+    const hasGrounding = parsedBody && parsedBody.tools && parsedBody.tools.some(t => t.googleSearch || t.googleSearchRetrieval);
+
     const modelsToTry = [];
     const requestedModelSupportsGrounding = !requestedModel.includes('3.1-flash-lite');
 
