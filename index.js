@@ -2207,14 +2207,13 @@ async function callGeminiAPI(messages) {
       // Initialize Google GenAI with the current key
       const ai = new GoogleGenAI({ apiKey: getCurrentGeminiKey() });
 
-      // Call generateContent with native Google Search Grounding tool enabled
+      // Call generateContent with gemini-3.1-flash-lite
       const response = await ai.models.generateContent({
         model: 'gemini-3.1-flash-lite',
         contents: contents,
         config: {
           systemInstruction: systemInstruction,
-          maxOutputTokens: 1000,
-          tools: [{ googleSearch: {} }] // Natively enables Google Search Grounding!
+          maxOutputTokens: 1000
         }
       });
 
