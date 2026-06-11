@@ -2174,22 +2174,20 @@ async function callGeminiAPI(messages) {
   const initialKeyIndex = currentGeminiKeyIndex;
   let keysTriedCount = 0;
 
-  // Convert messages to Gemini format
-  const geminiContents = [];
+  // Convert messages to @google/genai format
+  const contents = [];
+  let systemInstruction = undefined;
 
-  // Add system message as a user message with [system] prefix
+  // Extract system instruction if it exists
   const systemMessage = messages.find(msg => msg.role === 'system');
   if (systemMessage && systemMessage.content?.trim()) {
-    geminiContents.push({
-      role: 'user',
-      parts: [{ text: `[system] ${systemMessage.content}` }]
-    });
+    systemInstruction = systemMessage.content;
   }
 
   // Add the rest of the messages
   for (const msg of messages) {
     if (msg.role !== 'system' && msg.content?.trim()) {
-      geminiContents.push({
+      contents.push({
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }]
       });
@@ -2197,35 +2195,31 @@ async function callGeminiAPI(messages) {
   }
 
   // Check if we have any valid messages
-  if (geminiContents.length === 0) {
+  if (contents.length === 0) {
     throw new Error('No valid messages with content to send to Gemini API');
   }
 
   while (keysTriedCount < GEMINI_API_KEYS.length) {
     try {
-      // Import Gemini API dynamically
-      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      // Import the modern Google GenAI SDK
+      const { GoogleGenAI } = await import('@google/genai');
 
-      // Initialize Gemini API
-      const genAI = new GoogleGenerativeAI(getCurrentGeminiKey());
-      const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
+      // Initialize Google GenAI with the current key
+      const ai = new GoogleGenAI({ apiKey: getCurrentGeminiKey() });
 
-      // Create chat session
-      const chat = model.startChat({
-        history: geminiContents.slice(0, -1), // All messages except the last one
-        generationConfig: {
+      // Call generateContent with native Google Search Grounding tool enabled
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite',
+        contents: contents,
+        config: {
+          systemInstruction: systemInstruction,
           maxOutputTokens: 1000,
-        },
+          tools: [{ googleSearch: {} }] // Natively enables Google Search Grounding!
+        }
       });
 
-      // Send the last message to get a response
-      const lastMessage = geminiContents[geminiContents.length - 1];
-      const result = await chat.sendMessage(lastMessage.parts[0].text);
-      const response = result.response;
-
-      // Check for empty response
-      if (!response || !response.text()) {
-        // Try next key
+      // Check for response text
+      if (!response || !response.text) {
         lastError = new Error('Empty response from Gemini API');
         getNextGeminiKey();
         keysTriedCount++;
@@ -2234,7 +2228,7 @@ async function callGeminiAPI(messages) {
       }
 
       // Success! Return the response
-      return response.text();
+      return response.text;
 
     } catch (error) {
       // Try next key
