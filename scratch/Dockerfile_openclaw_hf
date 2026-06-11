@@ -72,9 +72,10 @@ const config = {
     }
   },
   tools: {
+    profile: 'full',
     web: {
       search: {
-        provider: process.env.TAVILY_API_KEY ? 'tavily' : 'google'
+        provider: process.env.TAVILY_API_KEY ? 'tavily' : 'gemini'
       }
     }
   },
