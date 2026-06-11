@@ -16,13 +16,13 @@ const DIRS_TO_CHECK = [
 let globalKeyCounter = 0;
 
 const ALL_SEARCH_MODELS = [
-  'gemini-3.1-flash-lite',
   'gemini-2.5-flash-lite',
-  'gemini-2.5-flash',
   'gemini-3.5-flash',
   'gemini-3-flash',
+  'gemini-2.5-flash',
+  'gemini-3.1-pro',
   'gemini-2.5-pro',
-  'gemini-3.1-pro'
+  'gemini-1.5-flash'
 ];
 
 console.log('Starting OpenClaw gateway wrapper on port:', PORT);
@@ -56,7 +56,7 @@ function serveLatestScreenshot(res) {
               latestFile = fp;
             }
           } catch (e) {
-            // Ignore stat error for individual file
+            // Ignore stat error
           }
         }
       }
@@ -118,15 +118,17 @@ function makeGoogleRequest(apiVersion, model, action, queryParams, bodyBuffer, o
     const headers = { ...originalHeaders };
     delete headers['host'];
     delete headers['content-length'];
+    delete headers['authorization'];
     headers['content-type'] = headers['content-type'] || 'application/json';
     headers['accept'] = 'application/json';
 
-    const path = `${apiVersion}/models/${model}${action}?${querystring.stringify(queryParams)}`;
+    // Always use v1beta — newer models (gemini-3.1-flash-lite etc.) don't exist on v1
+    const effectivePath = `/v1beta/models/${model}${action}?${querystring.stringify(queryParams)}`;
 
     const reqOpts = {
       hostname: 'generativelanguage.googleapis.com',
       port: 443,
-      path: path,
+      path: effectivePath,
       method: method || 'POST',
       headers: headers,
       timeout: 15000
@@ -159,6 +161,291 @@ function makeGoogleRequest(apiVersion, model, action, queryParams, bodyBuffer, o
   });
 }
 
+function mapOpenAiMessagesToGemini(messages) {
+  let systemInstruction = "";
+  const contents = [];
+  
+  for (const msg of messages) {
+    if (!msg.content) continue;
+    if (msg.role === 'system') {
+      const contentStr = Array.isArray(msg.content) 
+        ? msg.content.map(p => p.text || '').join('\n')
+        : msg.content;
+      systemInstruction += (systemInstruction ? "\n" : "") + contentStr;
+      continue;
+    }
+    
+    const role = msg.role === 'assistant' ? 'model' : 'user';
+    const parts = [];
+    
+    if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part.type === 'text') {
+          parts.push({ text: part.text });
+        } else if (part.type === 'image_url') {
+          const url = part.image_url.url;
+          if (url && url.startsWith('data:')) {
+            const match = url.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              parts.push({
+                inlineData: {
+                  mimeType: match[1],
+                  data: match[2]
+                }
+              });
+            }
+          }
+        }
+      }
+    } else if (typeof msg.content === 'string') {
+      parts.push({ text: msg.content });
+    }
+    
+    if (parts.length > 0) {
+      contents.push({ role, parts });
+    }
+  }
+  
+  const result = { contents };
+  if (systemInstruction) {
+    result.systemInstruction = {
+      parts: [{ text: systemInstruction }]
+    };
+  }
+  return result;
+}
+
+function mapGeminiResponseToOpenAi(geminiBody, modelName) {
+  const gemini = typeof geminiBody === 'string' ? JSON.parse(geminiBody) : geminiBody;
+  const text = gemini.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  
+  const promptTokens = gemini.usageMetadata?.promptTokenCount || 0;
+  const completionTokens = gemini.usageMetadata?.candidatesTokenCount || 0;
+  const totalTokens = promptTokens + completionTokens;
+
+  return {
+    id: `chatcmpl-${Math.random().toString(36).substring(2, 15)}`,
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model: modelName,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: text
+        },
+        finish_reason: 'stop'
+      }
+    ],
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: totalTokens
+    }
+  };
+}
+
+async function handleOpenAiGeminiRequest(req, res) {
+  if (req.url.endsWith('/models')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      object: 'list',
+      data: ALL_SEARCH_MODELS.map(m => ({
+        id: m,
+        object: 'model',
+        created: Math.floor(Date.now() / 1000),
+        owned_by: 'google'
+      }))
+    }));
+  }
+
+  if (!req.url.includes('/chat/completions')) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: { message: 'Not Found' } }));
+  }
+
+  let bodyChunks = [];
+  req.on('data', chunk => bodyChunks.push(chunk));
+  req.on('end', async () => {
+    const bodyBuffer = Buffer.concat(bodyChunks);
+    let reqBody;
+    try {
+      reqBody = JSON.parse(bodyBuffer.toString());
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: { message: 'Invalid JSON body' } }));
+    }
+
+    const requestedModel = reqBody.model || 'gemini-3.1-flash-lite';
+    const isStream = reqBody.stream === true;
+
+    const keys = getApiKeys();
+    if (keys.length === 0) {
+      console.error('[Proxy] OpenAI Gemini request failed: No API keys configured.');
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        error: {
+          code: 401,
+          message: 'No Gemini API keys configured in GEMINI_API_KEYS.',
+          status: 'UNAUTHENTICATED'
+        }
+      }));
+    }
+
+    const modelsToTry = [requestedModel];
+    for (const m of ALL_SEARCH_MODELS) {
+      if (!modelsToTry.includes(m)) {
+        modelsToTry.push(m);
+      }
+    }
+
+    console.log(`[Proxy] Intercepted OpenAI-compatible Gemini request for model: ${requestedModel}. Available keys: ${keys.length}. Models to try: ${modelsToTry.join(', ')}`);
+
+    let lastResult = null;
+    let success = false;
+    let attemptCount = 0;
+
+    const geminiPayload = mapOpenAiMessagesToGemini(reqBody.messages || []);
+    
+    geminiPayload.generationConfig = {
+      temperature: reqBody.temperature !== undefined ? reqBody.temperature : 0.7,
+      maxOutputTokens: reqBody.max_tokens !== undefined ? reqBody.max_tokens : 8192
+    };
+
+    for (const model of modelsToTry) {
+      if (success) break;
+
+      const modelSupportsGrounding = !model.includes('3.1-flash-lite');
+      const configurations = [];
+      if (modelSupportsGrounding) {
+        configurations.push({ useGrounding: true });
+      }
+      configurations.push({ useGrounding: false });
+
+      for (const config of configurations) {
+        if (success) break;
+
+        const payload = { ...geminiPayload };
+        if (config.useGrounding) {
+          payload.tools = [{ googleSearch: {} }];
+        } else {
+          delete payload.tools;
+        }
+
+        const payloadBuffer = Buffer.from(JSON.stringify(payload));
+
+        for (let i = 0; i < keys.length; i++) {
+          attemptCount++;
+          if (attemptCount > 20) {
+            console.warn('[Proxy] Maximum retry attempts (20) reached.');
+            break;
+          }
+
+          const keyIndex = (globalKeyCounter + i) % keys.length;
+          const key = keys[keyIndex];
+          const maskedKey = key.substring(0, 6) + '...' + key.substring(key.length - 4);
+
+          console.log(`[Proxy] [Attempt ${attemptCount}] Trying model "${model}" (grounding=${config.useGrounding}) with key "${maskedKey}"`);
+
+          const params = { key: key };
+
+          try {
+            const result = await makeGoogleRequest('/v1beta', model, ':generateContent', params, payloadBuffer, {
+              'content-type': 'application/json'
+            }, 'POST');
+            
+            lastResult = result;
+
+            if (result.statusCode === 200) {
+              console.log(`[Proxy] [Success] Model "${model}" (grounding=${config.useGrounding}) succeeded with key "${maskedKey}"`);
+              globalKeyCounter = (keyIndex + 1) % keys.length;
+              success = true;
+
+              const openAiResp = mapGeminiResponseToOpenAi(result.body, model);
+
+              if (isStream) {
+                res.writeHead(200, {
+                  'Content-Type': 'text/event-stream',
+                  'Cache-Control': 'no-cache',
+                  'Connection': 'keep-alive'
+                });
+                const chunk = {
+                  id: openAiResp.id,
+                  object: 'chat.completion.chunk',
+                  created: openAiResp.created,
+                  model: openAiResp.model,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        content: openAiResp.choices[0].message.content
+                      },
+                      finish_reason: 'stop'
+                    }
+                  ]
+                };
+                res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                res.write('data: [DONE]\n\n');
+                res.end();
+              } else {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(openAiResp));
+              }
+              break;
+            } else {
+              let errorMsg = '';
+              try {
+                const errObj = JSON.parse(result.body.toString());
+                errorMsg = errObj.error?.message || result.body.toString().substring(0, 100);
+              } catch (e) {
+                errorMsg = result.body.toString().substring(0, 100);
+              }
+              console.warn(`[Proxy] [Failed] Model "${model}" (grounding=${config.useGrounding}) failed with status ${result.statusCode}: ${errorMsg}`);
+            }
+          } catch (err) {
+            console.error(`[Proxy] [Error] Network error during request: ${err.message}`);
+            lastResult = {
+              statusCode: 502,
+              headers: { 'Content-Type': 'application/json' },
+              body: Buffer.from(JSON.stringify({
+                error: {
+                  code: 502,
+                  message: `Network error: ${err.message}`,
+                  status: 'BAD_GATEWAY'
+                }
+              }))
+            };
+          }
+        }
+      }
+    }
+
+    if (!success) {
+      console.error(`[Proxy] [All Attempts Failed] Could not complete the OpenAI-compatible request.`);
+      if (lastResult) {
+        let errorObj = { message: 'Failed to call Gemini API' };
+        try {
+          const rawErr = JSON.parse(lastResult.body.toString());
+          errorObj = rawErr.error || errorObj;
+        } catch (e) {
+          errorObj.message = lastResult.body.toString();
+        }
+        res.writeHead(lastResult.statusCode, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: errorObj }));
+      } else {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: {
+            message: 'All Gemini API keys and models exhausted.',
+            type: 'internal_error'
+          }
+        }));
+      }
+    }
+  });
+}
+
 function handleDirectGoogleProxy(req, res) {
   const urlMatch = req.url.match(/^(\/(?:v1beta|v1)\/[^?]+)(?:\?(.*))?$/);
   const pathPart = urlMatch ? urlMatch[1] : req.url.split('?')[0];
@@ -188,11 +475,16 @@ function handleDirectGoogleProxy(req, res) {
       const keyIndex = (globalKeyCounter + i) % keys.length;
       const key = keys[keyIndex];
       const params = { ...queryParams, key: key };
-      const pathWithKey = `${pathPart}?${querystring.stringify(params)}`;
+      let fixedPath = pathPart;
+      if (!fixedPath.startsWith('/v1beta/') && !fixedPath.startsWith('/v1/')) {
+        fixedPath = '/v1beta' + fixedPath;
+      }
+      const pathWithKey = `${fixedPath}?${querystring.stringify(params)}`;
 
       const headers = { ...req.headers };
       delete headers['host'];
       delete headers['content-length'];
+      delete headers['authorization'];
 
       const reqOpts = {
         hostname: 'generativelanguage.googleapis.com',
@@ -242,13 +534,13 @@ function handleDirectGoogleProxy(req, res) {
 }
 
 async function handleGeminiRequest(req, res) {
-  const urlMatch = req.url.match(/^(\/v1beta|\/v1)\/models\/(.+?)(:[^?]+)?(?:\?(.*))?$/);
+  const urlMatch = req.url.match(/^(\/v1beta|\/v1)?\/models\/(.+?)(:[^?]+)?(?:\?(.*))?$/);
   if (!urlMatch) {
     handleDirectGoogleProxy(req, res);
     return;
   }
 
-  const apiVersion = urlMatch[1];
+  const apiVersion = urlMatch[1] || '/v1beta';
   let requestedModel = urlMatch[2];
   if (requestedModel.includes('/')) {
     requestedModel = requestedModel.split('/').pop();
@@ -281,14 +573,46 @@ async function handleGeminiRequest(req, res) {
       }));
     }
 
-    const modelsToTry = [requestedModel];
-    for (const m of ALL_SEARCH_MODELS) {
-      if (!modelsToTry.includes(m)) {
-        modelsToTry.push(m);
+    let parsedBody = null;
+    try {
+      parsedBody = JSON.parse(bodyBuffer.toString());
+    } catch (e) {
+      // Ignore parse error
+    }
+
+    const hasGrounding = parsedBody && parsedBody.tools && parsedBody.tools.some(t => t.googleSearch || t.googleSearchRetrieval);
+
+    const modelsToTry = [];
+    const requestedModelSupportsGrounding = !requestedModel.includes('3.1-flash-lite');
+
+    if (hasGrounding) {
+      if (requestedModelSupportsGrounding) {
+        modelsToTry.push(requestedModel);
+      }
+      for (const m of ALL_SEARCH_MODELS) {
+        const mSupportsGrounding = !m.includes('3.1-flash-lite');
+        if (mSupportsGrounding && !modelsToTry.includes(m)) {
+          modelsToTry.push(m);
+        }
+      }
+      if (!requestedModelSupportsGrounding && !modelsToTry.includes(requestedModel)) {
+        modelsToTry.push(requestedModel);
+      }
+      for (const m of ALL_SEARCH_MODELS) {
+        if (!modelsToTry.includes(m)) {
+          modelsToTry.push(m);
+        }
+      }
+    } else {
+      modelsToTry.push(requestedModel);
+      for (const m of ALL_SEARCH_MODELS) {
+        if (!modelsToTry.includes(m)) {
+          modelsToTry.push(m);
+        }
       }
     }
 
-    console.log(`[Proxy] Intercepted Gemini request for model: ${requestedModel}. Available keys: ${keys.length}. Models to try: ${modelsToTry.join(', ')}`);
+    console.log(`[Proxy] Intercepted Gemini request for model: ${requestedModel}. Has grounding: ${!!hasGrounding}. Available keys: ${keys.length}. Models to try: ${modelsToTry.join(', ')}`);
 
     let lastResult = null;
     let success = false;
@@ -297,56 +621,77 @@ async function handleGeminiRequest(req, res) {
     for (const model of modelsToTry) {
       if (success) break;
 
-      for (let i = 0; i < keys.length; i++) {
-        attemptCount++;
-        if (attemptCount > 15) {
-          console.warn('[Proxy] Maximum retry attempts (15) reached.');
-          break;
+      const modelSupportsGrounding = !model.includes('3.1-flash-lite');
+      const configs = [];
+      if (hasGrounding && modelSupportsGrounding) {
+        configs.push({ useGrounding: true });
+      }
+      configs.push({ useGrounding: false });
+
+      for (const config of configs) {
+        if (success) break;
+
+        let activeBodyBuffer = bodyBuffer;
+        if (parsedBody && hasGrounding && !config.useGrounding) {
+          const strippedBody = { ...parsedBody };
+          strippedBody.tools = strippedBody.tools.filter(t => !t.googleSearch && !t.googleSearchRetrieval);
+          if (strippedBody.tools.length === 0) {
+            delete strippedBody.tools;
+          }
+          activeBodyBuffer = Buffer.from(JSON.stringify(strippedBody));
         }
 
-        const keyIndex = (globalKeyCounter + i) % keys.length;
-        const key = keys[keyIndex];
-        const maskedKey = key.substring(0, 6) + '...' + key.substring(key.length - 4);
-
-        console.log(`[Proxy] [Attempt ${attemptCount}] Trying model "${model}" with key "${maskedKey}"`);
-
-        const params = { ...queryParams, key: key };
-
-        try {
-          const result = await makeGoogleRequest(apiVersion, model, action, params, bodyBuffer, req.headers, req.method);
-          lastResult = result;
-
-          if (result.statusCode === 200) {
-            console.log(`[Proxy] [Success] Model "${model}" succeeded with key "${maskedKey}"`);
-            globalKeyCounter = (keyIndex + 1) % keys.length;
-            success = true;
-            
-            res.writeHead(result.statusCode, result.headers);
-            res.end(result.body);
+        for (let i = 0; i < keys.length; i++) {
+          attemptCount++;
+          if (attemptCount > 20) {
+            console.warn('[Proxy] Maximum retry attempts (20) reached.');
             break;
-          } else {
-            let errorMsg = '';
-            try {
-              const errObj = JSON.parse(result.body.toString());
-              errorMsg = errObj.error?.message || result.body.toString().substring(0, 100);
-            } catch (e) {
-              errorMsg = result.body.toString().substring(0, 100);
-            }
-            console.warn(`[Proxy] [Failed] Model "${model}" failed with status ${result.statusCode}: ${errorMsg}`);
           }
-        } catch (err) {
-          console.error(`[Proxy] [Error] Network error during request: ${err.message}`);
-          lastResult = {
-            statusCode: 502,
-            headers: { 'Content-Type': 'application/json' },
-            body: Buffer.from(JSON.stringify({
-              error: {
-                code: 502,
-                message: `Network error: ${err.message}`,
-                status: 'BAD_GATEWAY'
+
+          const keyIndex = (globalKeyCounter + i) % keys.length;
+          const key = keys[keyIndex];
+          const maskedKey = key.substring(0, 6) + '...' + key.substring(key.length - 4);
+
+          console.log(`[Proxy] [Attempt ${attemptCount}] Trying model "${model}" (grounding=${config.useGrounding}) with key "${maskedKey}"`);
+
+          const params = { ...queryParams, key: key };
+
+          try {
+            const result = await makeGoogleRequest(apiVersion, model, action, params, activeBodyBuffer, req.headers, req.method);
+            lastResult = result;
+
+            if (result.statusCode === 200) {
+              console.log(`[Proxy] [Success] Model "${model}" (grounding=${config.useGrounding}) succeeded with key "${maskedKey}"`);
+              globalKeyCounter = (keyIndex + 1) % keys.length;
+              success = true;
+              
+              res.writeHead(result.statusCode, result.headers);
+              res.end(result.body);
+              break;
+            } else {
+              let errorMsg = '';
+              try {
+                const errObj = JSON.parse(result.body.toString());
+                errorMsg = errObj.error?.message || result.body.toString().substring(0, 100);
+              } catch (e) {
+                errorMsg = result.body.toString().substring(0, 100);
               }
-            }))
-          };
+              console.warn(`[Proxy] [Failed] Model "${model}" (grounding=${config.useGrounding}) failed with status ${result.statusCode}: ${errorMsg}`);
+            }
+          } catch (err) {
+            console.error(`[Proxy] [Error] Network error during request: ${err.message}`);
+            lastResult = {
+              statusCode: 502,
+              headers: { 'Content-Type': 'application/json' },
+              body: Buffer.from(JSON.stringify({
+                error: {
+                  code: 502,
+                  message: `Network error: ${err.message}`,
+                  status: 'BAD_GATEWAY'
+                }
+              }))
+            };
+          }
         }
       }
     }
@@ -372,6 +717,11 @@ async function handleGeminiRequest(req, res) {
 
 // Proxy server
 const server = http.createServer((req, res) => {
+  if (req.url.startsWith('/custom-gemini/')) {
+    handleOpenAiGeminiRequest(req, res);
+    return;
+  }
+
   if (req.url === '/chromium-log') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     if (fs.existsSync('/home/node/chromium.log')) {
@@ -383,7 +733,10 @@ const server = http.createServer((req, res) => {
 
   if (req.url === '/openclaw-log') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    const logDir = '/home/node/.openclaw';
+    let logDir = '/tmp/openclaw';
+    if (!fs.existsSync(logDir)) {
+      logDir = '/home/node/.openclaw';
+    }
     if (fs.existsSync(logDir)) {
       const files = fs.readdirSync(logDir).filter(f => f.endsWith('.log'));
       if (files.length > 0) {
@@ -400,7 +753,6 @@ const server = http.createServer((req, res) => {
     const { execSync } = require('child_process');
     const http = require('http');
     
-    // Check if Chromium port is reachable and query it
     http.get('http://127.0.0.1:18800/json/version', (res2) => {
       let data = '';
       res2.on('data', (chunk) => data += chunk);
@@ -424,6 +776,7 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  
   if (req.url === '/test-network') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     const https = require('https');
@@ -459,103 +812,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.url === '/test-browser') {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    const http = require('http');
-    
-    // 1. Create a new tab (requires PUT method in newer Chromium)
-    const reqTab = http.request('http://127.0.0.1:18800/json/new', { method: 'PUT' }, (jsonRes) => {
-      let body = '';
-      jsonRes.on('data', chunk => body += chunk);
-      jsonRes.on('end', () => {
-        try {
-          const tabInfo = JSON.parse(body);
-          const wsUrl = tabInfo.webSocketDebuggerUrl;
-          if (!wsUrl) {
-            return res.end(`Failed to get webSocketDebuggerUrl from tabInfo: ${body}`);
-          }
-          
-          res.write(`New tab created. WebSocket URL: ${wsUrl}\nConnecting...\n`);
-          
-          // 2. Connect to WebSocket
-          const ws = new WebSocket(wsUrl);
-          
-          ws.onopen = () => {
-            res.write(`Connected! Sending Page.enable and Page.navigate...\n`);
-            // Enable Page domain to receive lifecycle events
-            ws.send(JSON.stringify({
-              id: 1,
-              method: 'Page.enable'
-            }));
-            // Navigate
-            ws.send(JSON.stringify({
-              id: 2,
-              method: 'Page.navigate',
-              params: { url: 'https://www.google.com/' }
-            }));
-          };
-          
-          let hasResponded = false;
-          const timeout = setTimeout(() => {
-            if (!hasResponded) {
-              hasResponded = true;
-              ws.close();
-              res.end(`\nTimeout after 10 seconds waiting for navigation.`);
-            }
-          }, 10000);
-          
-          ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            res.write(`Received CDP event/response: ${JSON.stringify(msg).substring(0, 200)}\n`);
-            
-            // If page reports loadEventFired or navigate response is received
-            if (msg.method === 'Page.loadEventFired' || (msg.id === 2 && msg.result)) {
-              clearTimeout(timeout);
-              if (!hasResponded) {
-                hasResponded = true;
-                ws.close();
-                res.end(`\nNavigation completed successfully!`);
-              }
-            }
-          };
-          
-          ws.onerror = (err) => {
-            clearTimeout(timeout);
-            if (!hasResponded) {
-              hasResponded = true;
-              res.end(`\nWebSocket error: ${err.message}`);
-            }
-          };
-          
-          ws.onclose = () => {
-            clearTimeout(timeout);
-            if (!hasResponded) {
-              hasResponded = true;
-              res.end(`\nWebSocket closed early.`);
-            }
-          };
-          
-        } catch (e) {
-          res.end(`Error parsing JSON new tab response: ${e.message}\nBody: ${body}`);
-        }
-      });
-    });
-    
-    reqTab.on('error', (err) => {
-      res.end(`Failed to create new tab: ${err.message}`);
-    });
-    
-    reqTab.end();
-    return;
-  }
-
-  // Intercept Gemini API calls (only /models/... or /v1beta/..., keeping OpenClaw's completions clean)
   if (req.url.includes('/models/') || req.url.startsWith('/v1beta/')) {
     handleGeminiRequest(req, res);
     return;
   }
 
-  // Check if it is a GET request to a media file path (potential screenshot download)
   const isMediaRequest = req.method === 'GET' && (
     req.url.includes('/media/') ||
     req.url.includes('/assistant-media/') ||
@@ -563,7 +824,6 @@ const server = http.createServer((req, res) => {
   );
 
   if (isMediaRequest) {
-    // Check if the requested file exists on disk (if it's a direct filename match)
     const filename = req.url.split('/').pop().split('?')[0];
     let exists = false;
     for (const dir of DIRS_TO_CHECK) {
@@ -579,7 +839,6 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  // Set up proxy request to the OpenClaw gateway process
   const options = {
     hostname: 'localhost',
     port: TARGET_PORT,
@@ -589,7 +848,6 @@ const server = http.createServer((req, res) => {
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
-    // If OpenClaw gateway returns 404 for a GET request to a media directory, intercept it
     if (isMediaRequest && proxyRes.statusCode === 404) {
       console.log(`[Proxy] OpenClaw gateway returned 404 for media request: ${req.url}. Attempting fallback to the latest screenshot.`);
       return serveLatestScreenshot(res);
