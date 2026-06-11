@@ -717,12 +717,14 @@ async function handleGeminiRequest(req, res) {
 
 // Proxy server
 const server = http.createServer((req, res) => {
-  if (req.url.startsWith('/custom-gemini/')) {
+  const urlPath = req.url.split('?')[0];
+
+  if (urlPath.startsWith('/custom-gemini/')) {
     handleOpenAiGeminiRequest(req, res);
     return;
   }
 
-  if (req.url === '/chromium-log') {
+  if (urlPath === '/chromium-log') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     if (fs.existsSync('/home/node/chromium.log')) {
       return res.end(fs.readFileSync('/home/node/chromium.log'));
@@ -731,7 +733,7 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  if (req.url === '/openclaw-log') {
+  if (urlPath === '/openclaw-log') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     let logDir = '/tmp/openclaw';
     if (!fs.existsSync(logDir)) {
@@ -748,7 +750,7 @@ const server = http.createServer((req, res) => {
     return res.end('No openclaw log files found.');
   }
 
-  if (req.url === '/process-status') {
+  if (urlPath === '/process-status') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     const { execSync } = require('child_process');
     const http = require('http');
@@ -777,7 +779,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   
-  if (req.url === '/test-network') {
+  if (urlPath === '/test-network') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     const https = require('https');
     
