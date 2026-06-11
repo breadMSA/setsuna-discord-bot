@@ -19,9 +19,6 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV OPENCLAW_BROWSER_NO_SANDBOX=1
 ENV NODE_OPTIONS="--max-old-space-size=1024"
 ENV TINI_SUBREAPER=1
-ENV OPENCLAW_CONFIG_PATH=/tmp/openclaw/openclaw.json
-ENV OPENCLAW_WORKSPACE_DIR=/tmp/openclaw/workspace
-ENV OPENCLAW_STATE_DIR=/tmp/openclaw
 
 USER node
 
@@ -44,13 +41,23 @@ const config = {
       }
     }
   },
+  models: {
+    providers: {
+      google: {
+        baseUrl: 'http://localhost:18789',
+        apiKey: 'DUMMY_KEY'
+      }
+    }
+  },
   plugins: {
     entries: {
       google: {
+        enabled: true,
         config: {
           webSearch: {
-            apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
-            model: 'gemini-2.5-flash'
+            apiKey: 'DUMMY_KEY',
+            baseUrl: 'http://localhost:18789',
+            model: 'gemini-2.5-flash-lite'
           }
         }
       },
@@ -94,14 +101,14 @@ const config = {
     ]
   }
 };
-const openclawPath = '/tmp/openclaw';
+const openclawPath = '/home/node/.openclaw';
 fs.mkdirSync(openclawPath, { recursive: true });
 fs.writeFileSync(require('path').join(openclawPath, 'openclaw.json'), JSON.stringify(config, null, 2));
 const workspacePath = require('path').join(openclawPath, 'workspace');
 fs.mkdirSync(workspacePath, { recursive: true });
 fs.writeFileSync(require('path').join(workspacePath, 'IDENTITY.md'), '# Identity\nName: Setsuna\n');
 fs.writeFileSync(require('path').join(workspacePath, 'USER.md'), '# User\nName: Boss\n');
-const systemPrompt = `當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/tmp/openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。你優先且主要使用內建的網頁搜尋工具 (web_search) 進行任何網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊），這能避免被防機器人機制阻擋。只有當需要對特定網頁進行截圖、下載檔案或與頁面進行複雜點擊/輸入互動時，你才必須調用網頁瀏覽工具 (browser)！在使用網頁瀏覽工具 (browser) 時，如果用戶明確指定要造訪、瀏覽或對特定網域/首頁（例如 Yahoo 首頁 https://tw.yahoo.com/、Google 首頁 https://www.google.com/ 等）進行截圖，你必須直接造訪並對其進行截圖，這是完全允許的。只有當你需要進行「關鍵字搜尋」且必須使用瀏覽器網頁時，才造訪 DuckDuckGo (https://html.duckduckgo.com/)，請絕對不要使用 Google 或 Yahoo 的搜尋引擎進行關鍵字搜尋，因為它們的搜尋 WAF 機制會阻擋你的瀏覽器訪問並回傳錯誤。在使用網頁瀏覽工具 (browser) 時，【請嚴格遵守以下規則：1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://html.duckduckgo.com/"}。2. 所有操作（click、type、press）都必須使用從頁面快照取得的 ref 值（元素參考編號，請作為字串傳入），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。3. 輸入文字時，請絕對不要使用 kind: "fill" 或 fields 參數，你必須完全使用 kind: "type" 動作，並在最外層同時提供 ref 和 text 欄位。例如：{"action":"act","kind":"type","ref":"12","text":"要輸入的文字"}。4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":"12","key":"Enter"}。5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":"12"}。6. 絕對不要使用 CSS 選擇器 (selector 參數)。7. 在回覆中請絕對不要將 任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將 "1" 寫成 "一"）。請完全保留原本的阿拉伯數字、英文以及格式！】`;
+const systemPrompt = `當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。你優先且主要使用內建的網頁搜尋工具 (web_search) 進行 any 網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊），這能避免被防機器人機制阻擋。只有當需要對特定網頁進行截圖、下載檔案或與頁面進行複雜點擊/輸入互動時，你才必須調用網頁瀏覽工具 (browser)！在使用網頁瀏覽工具 (browser) 時，如果用戶明確指定要造訪、瀏覽或對特定網域/首頁（例如 Yahoo 首頁 https://tw.yahoo.com/、Google 首頁 https://www.google.com/ 等）進行截圖，你必須直接造訪並對其進行截圖，這是完全允許的。只有當你需要進行「關鍵字搜尋」且必須使用瀏覽器網頁時，才造訪 DuckDuckGo (https://html.duckduckgo.com/)，請絕對不要使用 Google 或 Yahoo 的搜尋引擎進行關鍵字搜尋，因為它們的搜尋 WAF 機制會阻擋你的瀏覽器訪問並回傳錯誤。在使用網頁瀏覽工具 (browser) 時，【請嚴格遵守以下規則：1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://html.duckduckgo.com/"}。2. 所有操作（click、type、press）都必須使用從頁面快照取得的 ref 值（元素參考編號，請作為字串傳入），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。3. 輸入文字時，請絕對不要使用 kind: "fill" 或 fields 參數，你必須完全使用 kind: "type" 動作，並在最外層同時提供 ref 和 text 欄位。例如：{"action":"act","kind":"type","ref":"12","text":"要輸入的文字"}。4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":"12","key":"Enter"}。5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":"12"}。6. 絕對不要使用 CSS 選擇器 (selector 參數)。7. 在回覆中請絕對不要將 任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將 "1" 寫成 "一"）。請完全保留原本的阿拉伯數字、英文以及格式！】`;
 fs.writeFileSync(require('path').join(workspacePath, 'SYSTEM.md'), systemPrompt);
 fs.writeFileSync(require('path').join(workspacePath, 'AGENTS.md'), systemPrompt);
 EOF
@@ -111,13 +118,27 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const https = require('https');
+const querystring = require('querystring');
 
 const PORT = 18789;
 const TARGET_PORT = 18790;
 const DIRS_TO_CHECK = [
-  '/tmp/openclaw/media/browser',
-  '/tmp/openclaw/workspace/media',
-  '/tmp/openclaw/media'
+  '/home/node/.openclaw/media/browser',
+  '/home/node/.openclaw/workspace/media',
+  '/home/node/.openclaw/media'
+];
+
+let globalKeyCounter = 0;
+
+const ALL_SEARCH_MODELS = [
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-3.5-flash',
+  'gemini-3-flash',
+  'gemini-2.5-pro',
+  'gemini-3.1-pro'
 ];
 
 console.log('Starting OpenClaw gateway wrapper on port:', PORT);
@@ -177,6 +198,294 @@ function serveLatestScreenshot(res) {
   }
 }
 
+function getApiKeys() {
+  const keys = [];
+  
+  if (process.env.GEMINI_API_KEYS) {
+    const split = process.env.GEMINI_API_KEYS.split(',');
+    for (const k of split) {
+      const trimmed = k.trim();
+      if (trimmed && trimmed !== 'DUMMY_KEY' && !keys.includes(trimmed)) {
+        keys.push(trimmed);
+      }
+    }
+  }
+
+  for (const envName of Object.keys(process.env)) {
+    if (/^(GEMINI_API_KEY|GOOGLE_API_KEY)/i.test(envName)) {
+      const val = process.env[envName];
+      if (val) {
+        const split = val.split(',');
+        for (const k of split) {
+          const trimmed = k.trim();
+          if (trimmed && trimmed !== 'DUMMY_KEY' && !keys.includes(trimmed)) {
+            keys.push(trimmed);
+          }
+        }
+      }
+    }
+  }
+
+  return keys;
+}
+
+function makeGoogleRequest(apiVersion, model, action, queryParams, bodyBuffer, originalHeaders, method) {
+  return new Promise((resolve, reject) => {
+    const headers = { ...originalHeaders };
+    delete headers['host'];
+    delete headers['content-length'];
+    headers['content-type'] = headers['content-type'] || 'application/json';
+    headers['accept'] = 'application/json';
+
+    const path = `${apiVersion}/models/${model}${action}?${querystring.stringify(queryParams)}`;
+
+    const reqOpts = {
+      hostname: 'generativelanguage.googleapis.com',
+      port: 443,
+      path: path,
+      method: method || 'POST',
+      headers: headers,
+      timeout: 15000
+    };
+
+    const apiReq = https.request(reqOpts, (apiRes) => {
+      let resChunks = [];
+      apiRes.on('data', chunk => resChunks.push(chunk));
+      apiRes.on('end', () => {
+        resolve({
+          statusCode: apiRes.statusCode,
+          headers: apiRes.headers,
+          body: Buffer.concat(resChunks)
+        });
+      });
+    });
+
+    apiReq.on('error', (err) => {
+      reject(err);
+    });
+
+    apiReq.on('timeout', () => {
+      apiReq.destroy(new Error('Gateway Timeout to Google API'));
+    });
+
+    if (reqOpts.method !== 'GET' && reqOpts.method !== 'HEAD' && bodyBuffer && bodyBuffer.length > 0) {
+      apiReq.write(bodyBuffer);
+    }
+    apiReq.end();
+  });
+}
+
+function handleDirectGoogleProxy(req, res) {
+  const urlMatch = req.url.match(/^(\/(?:v1beta|v1)\/[^?]+)(?:\?(.*))?$/);
+  const pathPart = urlMatch ? urlMatch[1] : req.url.split('?')[0];
+  const queryString = urlMatch ? (urlMatch[2] || '') : (req.url.split('?')[1] || '');
+  const queryParams = querystring.parse(queryString);
+
+  let bodyChunks = [];
+  req.on('data', chunk => bodyChunks.push(chunk));
+  req.on('end', async () => {
+    const bodyBuffer = Buffer.concat(bodyChunks);
+
+    const keys = getApiKeys();
+    const requestKey = queryParams.key;
+    if (requestKey && requestKey !== 'DUMMY_KEY' && !keys.includes(requestKey)) {
+      keys.unshift(requestKey);
+    }
+
+    if (keys.length === 0) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: { message: 'No API keys configured' } }));
+    }
+
+    let lastResult = null;
+    let success = false;
+
+    for (let i = 0; i < keys.length; i++) {
+      const keyIndex = (globalKeyCounter + i) % keys.length;
+      const key = keys[keyIndex];
+      const params = { ...queryParams, key: key };
+      const pathWithKey = `${pathPart}?${querystring.stringify(params)}`;
+
+      const headers = { ...req.headers };
+      delete headers['host'];
+      delete headers['content-length'];
+
+      const reqOpts = {
+        hostname: 'generativelanguage.googleapis.com',
+        port: 443,
+        path: pathWithKey,
+        method: req.method || 'POST',
+        headers: headers,
+        timeout: 15000
+      };
+
+      try {
+        const result = await new Promise((resolve, reject) => {
+          const apiReq = https.request(reqOpts, (apiRes) => {
+            let chunks = [];
+            apiRes.on('data', c => chunks.push(c));
+            apiRes.on('end', () => resolve({
+              statusCode: apiRes.statusCode,
+              headers: apiRes.headers,
+              body: Buffer.concat(chunks)
+            }));
+          });
+          apiReq.on('error', reject);
+          if (reqOpts.method !== 'GET' && reqOpts.method !== 'HEAD' && bodyBuffer.length > 0) {
+            apiReq.write(bodyBuffer);
+          }
+          apiReq.end();
+        });
+
+        lastResult = result;
+        if (result.statusCode === 200) {
+          globalKeyCounter = (keyIndex + 1) % keys.length;
+          success = true;
+          res.writeHead(result.statusCode, result.headers);
+          res.end(result.body);
+          break;
+        }
+      } catch (e) {
+        lastResult = { statusCode: 502, headers: {}, body: Buffer.from(e.message) };
+      }
+    }
+
+    if (!success && lastResult) {
+      res.writeHead(lastResult.statusCode, lastResult.headers);
+      res.end(lastResult.body);
+    }
+  });
+}
+
+async function handleGeminiRequest(req, res) {
+  const urlMatch = req.url.match(/^(\/v1beta|\/v1)\/models\/(.+?)(:[^?]+)?(?:\?(.*))?$/);
+  if (!urlMatch) {
+    handleDirectGoogleProxy(req, res);
+    return;
+  }
+
+  const apiVersion = urlMatch[1];
+  let requestedModel = urlMatch[2];
+  if (requestedModel.includes('/')) {
+    requestedModel = requestedModel.split('/').pop();
+  }
+
+  const action = urlMatch[3] || '';
+  const queryString = urlMatch[4] || '';
+  const queryParams = querystring.parse(queryString);
+
+  let bodyChunks = [];
+  req.on('data', chunk => bodyChunks.push(chunk));
+  req.on('end', async () => {
+    const bodyBuffer = Buffer.concat(bodyChunks);
+
+    const keys = getApiKeys();
+    const requestKey = queryParams.key;
+    if (requestKey && requestKey !== 'DUMMY_KEY' && !keys.includes(requestKey)) {
+      keys.unshift(requestKey);
+    }
+
+    if (keys.length === 0) {
+      console.error('[Proxy] Gemini request failed: No API keys configured.');
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        error: {
+          code: 401,
+          message: 'No Gemini API keys configured in GEMINI_API_KEYS.',
+          status: 'UNAUTHENTICATED'
+        }
+      }));
+    }
+
+    const modelsToTry = [requestedModel];
+    for (const m of ALL_SEARCH_MODELS) {
+      if (!modelsToTry.includes(m)) {
+        modelsToTry.push(m);
+      }
+    }
+
+    console.log(`[Proxy] Intercepted Gemini request for model: ${requestedModel}. Available keys: ${keys.length}. Models to try: ${modelsToTry.join(', ')}`);
+
+    let lastResult = null;
+    let success = false;
+    let attemptCount = 0;
+
+    for (const model of modelsToTry) {
+      if (success) break;
+
+      for (let i = 0; i < keys.length; i++) {
+        attemptCount++;
+        if (attemptCount > 15) {
+          console.warn('[Proxy] Maximum retry attempts (15) reached.');
+          break;
+        }
+
+        const keyIndex = (globalKeyCounter + i) % keys.length;
+        const key = keys[keyIndex];
+        const maskedKey = key.substring(0, 6) + '...' + key.substring(key.length - 4);
+
+        console.log(`[Proxy] [Attempt ${attemptCount}] Trying model "${model}" with key "${maskedKey}"`);
+
+        const params = { ...queryParams, key: key };
+
+        try {
+          const result = await makeGoogleRequest(apiVersion, model, action, params, bodyBuffer, req.headers, req.method);
+          lastResult = result;
+
+          if (result.statusCode === 200) {
+            console.log(`[Proxy] [Success] Model "${model}" succeeded with key "${maskedKey}"`);
+            globalKeyCounter = (keyIndex + 1) % keys.length;
+            success = true;
+            
+            res.writeHead(result.statusCode, result.headers);
+            res.end(result.body);
+            break;
+          } else {
+            let errorMsg = '';
+            try {
+              const errObj = JSON.parse(result.body.toString());
+              errorMsg = errObj.error?.message || result.body.toString().substring(0, 100);
+            } catch (e) {
+              errorMsg = result.body.toString().substring(0, 100);
+            }
+            console.warn(`[Proxy] [Failed] Model "${model}" failed with status ${result.statusCode}: ${errorMsg}`);
+          }
+        } catch (err) {
+          console.error(`[Proxy] [Error] Network error during request: ${err.message}`);
+          lastResult = {
+            statusCode: 502,
+            headers: { 'Content-Type': 'application/json' },
+            body: Buffer.from(JSON.stringify({
+              error: {
+                code: 502,
+                message: `Network error: ${err.message}`,
+                status: 'BAD_GATEWAY'
+              }
+            }))
+          };
+        }
+      }
+    }
+
+    if (!success) {
+      console.error(`[Proxy] [All Attempts Failed] Could not complete the request.`);
+      if (lastResult) {
+        res.writeHead(lastResult.statusCode, lastResult.headers);
+        res.end(lastResult.body);
+      } else {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: {
+            code: 500,
+            message: 'All Gemini API keys and models exhausted.',
+            status: 'INTERNAL'
+          }
+        }));
+      }
+    }
+  });
+}
+
 // Proxy server
 const server = http.createServer((req, res) => {
   if (req.url === '/chromium-log') {
@@ -190,7 +499,7 @@ const server = http.createServer((req, res) => {
 
   if (req.url === '/openclaw-log') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    const logDir = '/tmp/openclaw';
+    const logDir = '/home/node/.openclaw';
     if (fs.existsSync(logDir)) {
       const files = fs.readdirSync(logDir).filter(f => f.endsWith('.log'));
       if (files.length > 0) {
@@ -353,6 +662,12 @@ const server = http.createServer((req, res) => {
     });
     
     reqTab.end();
+    return;
+  }
+
+  // Intercept Gemini API calls (only /models/... or /v1beta/..., keeping OpenClaw's completions clean)
+  if (req.url.includes('/models/') || req.url.startsWith('/v1beta/')) {
+    handleGeminiRequest(req, res);
     return;
   }
 
