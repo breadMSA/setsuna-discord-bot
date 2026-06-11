@@ -47,7 +47,7 @@ const config = {
         config: {
           webSearch: {
             apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
-            model: 'gemini-2.5-flash'
+            model: 'gemini-1.5-flash'
           }
         }
       },
@@ -64,7 +64,7 @@ const config = {
   agents: {
     defaults: {
       model: {
-        primary: 'google/gemini-2.5-flash'
+        primary: 'google/gemini-1.5-flash'
       }
     }
   },
