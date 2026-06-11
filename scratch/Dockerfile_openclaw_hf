@@ -44,7 +44,7 @@ const config = {
   agents: {
     defaults: {
       model: {
-        primary: 'google/gemini-3.1-flash-lite'
+        primary: 'google/gemini-2.5-flash'
       }
     }
   },
@@ -60,16 +60,6 @@ const config = {
     localLaunchTimeoutMs: 120000,
     localCdpReadyTimeoutMs: 120000,
     actionTimeoutMs: 120000,
-    defaultProfile: 'openclaw',
-    profiles: {
-      openclaw: {
-        cdpUrl: 'http://127.0.0.1:18800',
-        cdpPort: 18800,
-        driver: 'openclaw',
-        attachOnly: true,
-        color: '#FF6B00'
-      }
-    },
     extraArgs: [
       '--disable-gpu',
       '--disable-dev-shm-usage',
@@ -84,7 +74,7 @@ fs.writeFileSync('/home/node/.openclaw/openclaw.json', JSON.stringify(config, nu
 fs.mkdirSync('/home/node/.openclaw/workspace', { recursive: true });
 fs.writeFileSync('/home/node/.openclaw/workspace/IDENTITY.md', '# Identity\nName: Setsuna\n');
 fs.writeFileSync('/home/node/.openclaw/workspace/USER.md', '# User\nName: Boss\n');
-const systemPrompt = '當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。如果搜尋工具 (web_search) 回傳錯誤、無結果，或者回傳「搜尋服務受到限制/服務異常」等提示時，你必須改用網頁瀏覽工具 (browser) 實際造訪搜尋引擎（如 Google 或 Yahoo）進行搜尋，以獲取所需的即時資訊。在使用網頁瀏覽工具 (browser) 時，【請注意：瀏覽器預設開啟在 about:blank。你必須先執行 action: "navigate" 造訪網頁（例如 Yahoo 搜尋或 DuckDuckGo），在取得網頁內容與元素參考後，才能使用 action: "act" 進行輸入或點擊。絕對不可憑空捏造元素 ID（如 e8 等）來操作！】請絕對不要使用 CSS 選擇器 (selector 參數)，你必須完全使用元素參考或目標 ID (targetId 或 ref 參數) 來操作定位！';
+const systemPrompt = '當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。如果搜尋工具 (web_search) 回傳錯誤、無結果，或者回傳「搜尋服務受到限制/服務異常」等提示時，你必須改用網頁瀏覽工具 (browser) 實際造訪搜尋引擎（如 Google 或 Yahoo）進行搜尋，以獲取所需的即時資訊。在使用網頁瀏覽工具 (browser) 時，【請嚴格遵守以下規則：1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://tw.search.yahoo.com/"}。2. 所有操作（click、fill、press）都必須使用從頁面快照取得的數字型 ref 值（元素參考編號），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。3. 使用 kind: "fill" 時，必須使用 fields 欄位來提供輸入的參考與值，例如 {"action":"act","kind":"fill","fields":[{"ref":12,"value":"要輸入的文字"}]}，絕對不可直接將 ref 或 value 放在最外層。4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":12,"key":"Enter"}。5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":12}。6. 絕對不要使用 CSS 選擇器 (selector 參數)。7. 在回覆中請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】';
 fs.writeFileSync('/home/node/.openclaw/workspace/SYSTEM.md', systemPrompt);
 fs.writeFileSync('/home/node/.openclaw/workspace/AGENTS.md', systemPrompt);
 EOF
@@ -387,4 +377,5 @@ EXPOSE 18789
 
 ENTRYPOINT []
 
-CMD sh -c 'node /home/node/init-config.js && /usr/bin/chromium --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --no-zygote --user-data-dir=/tmp/chromium-profile --remote-debugging-port=18800 --remote-debugging-address=127.0.0.1 --disable-blink-features=AutomationControlled --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" --window-size=1280,720 about:blank > /home/node/chromium.log 2>&1 & sleep 10 && exec tini -- node /home/node/proxy.js'
+CMD sh -c 'node /home/node/init-config.js && exec tini -- node /home/node/proxy.js'
+

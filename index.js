@@ -1885,6 +1885,7 @@ English Style (Default):
 - 【極其重要】檢測用戶輸入的語言：如果包含繁體中文特有的字（如「個」「學」「國」「後」「來」「時」「實」「樣」「點」「過」等），則判定為繁體中文，必須用繁體中文回覆
 - 【極其重要】禁止在回覆中混用繁簡體，必須全部使用繁體中文字符
 - 【極其重要】如果不確定某個字的繁體寫法，選擇使用其他詞彙替代，但絕對不能使用簡體字
+- 【極其重要】請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！
 - 用網路用語和適量髒話但不能過度，盡量不要每句都罵髒話（像 靠北 笑死 幹 喵的 很頂 6）
 - 用簡單標點 不要加太多標點符號
 - 語氣要像在跟朋友聊天一樣自然
@@ -3560,8 +3561,7 @@ client.on('messageCreate', async (message) => {
         console.log(`[OpenClaw] 老闆特權驗證成功，發送請求至: ${OPENCLAW_URL}/v1/chat/completions`);
         try {
           const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
-          // 截圖/瀏覽任務可能需要較長時間，設定 120 秒 timeout
-          const browserPrompt = message.content + '\n\n【系統指令：你必須直接且唯一使用網頁瀏覽工具 (browser) 實際造訪 Yahoo 搜尋 (https://tw.search.yahoo.com/) 或 DuckDuckGo (https://html.duckduckgo.com/) 進行搜尋以獲取即時資訊。請絕對不要造訪 Google 搜尋，因為 Google 的防機器人機制會阻擋你的瀏覽器訪問。請絕對不要調用或使用內建的 web_search 或 search grounding 工具！】【重要系統指令：瀏覽器預設開啟在 about:blank。你必須先執行 action: "navigate" 造訪網頁（例如 Yahoo 搜尋或 DuckDuckGo），在取得網頁內容與元素參考後，才能使用 action: "act" 進行輸入或點擊。絕對不可憑空捏造元素 ID（如 e8 等）來操作！在使用網頁瀏覽工具 (browser) 時，請絕對不要使用 CSS 選擇器 (selector 參數) 來定位元素，你必須完全使用元素參考或目標 ID (targetId 或 ref 參數) 來操作輸入框或點擊按鈕！否則瀏覽器會回傳錯誤。】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]';
+          const browserPrompt = message.content + '\n\n【系統指令：你必須直接且唯一使用網頁瀏覽工具 (browser) 實際造訪 Yahoo 搜尋 (https://tw.search.yahoo.com/) 或 DuckDuckGo (https://html.duckduckgo.com/) 進行搜尋以獲取即時資訊。請絕對不要造訪 Google 搜尋，因為 Google 的防機器人機制會阻擋你的瀏覽器訪問。請絕對不要調用或使用內建的 web_search 或 search grounding 工具！】\n\n【重要系統指令：在使用網頁瀏覽工具 (browser) 時，請嚴格遵守以下規則：\n1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://tw.search.yahoo.com/"}。\n2. 所有操作（click、fill、press）都必須使用從頁面快照取得的數字型 ref 值（元素參考編號），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。\n3. 使用 kind: "fill" 時，必須使用 fields 欄位來提供輸入的參考與值，例如 {"action":"act","kind":"fill","fields":[{"ref":12,"value":"要輸入的文字"}]}，絕對不可直接將 ref 或 value 放在最外層。\n4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":12,"key":"Enter"}。\n5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":12}。\n6. 絕對不要使用 CSS 選擇器 (selector 參數)。\n7. 在回覆中請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]';
 
           const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
             method: 'POST',
@@ -3757,7 +3757,7 @@ client.on('messageCreate', async (message) => {
 
           // 用 Gemini 加 Setsuna 人設包裝 OpenClaw 的原始查詢結果
           const wrappedMessages = [
-            { role: 'system', content: channelPersonality },
+            { role: 'system', content: channelPersonality + '\n\n【重要：在回答中，請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】' },
             { role: 'user', content: `老闆問了：「${message.content}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${cleanRawResult}` }
           ];
           const finalReply = await callGeminiAPI(wrappedMessages);
@@ -5249,7 +5249,7 @@ if (TELEGRAM_TOKEN) {
           body: JSON.stringify({
             model: 'openclaw',
             messages: [
-              { role: 'user', content: text + '\n\n【重要系統指令：在使用網頁瀏覽工具 (browser) 時，請絕對不要使用 CSS 選擇器 (selector 參數) 來定位元素，你必須完全使用元素參考或目標 ID (targetId 或 ref 參數) 來操作輸入框或點擊按鈕！否則瀏覽器會回傳錯誤。】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]' }
+              { role: 'user', content: text + '\n\n【系統指令：你必須直接且唯一使用網頁瀏覽工具 (browser) 實際造訪 Yahoo 搜尋 (https://tw.search.yahoo.com/) 或 DuckDuckGo (https://html.duckduckgo.com/) 進行搜尋以獲取即時資訊。請絕對不要造訪 Google 搜尋，因為 Google 的防機器人機制會阻擋你的瀏覽器訪問。請絕對不要調用或使用內建的 web_search 或 search grounding 工具！】\n\n【重要系統指令：在使用網頁瀏覽工具 (browser) 時，請嚴格遵守以下規則：\n1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://tw.search.yahoo.com/"}。\n2. 所有操作（click、fill、press）都必須使用從頁面快照取得的數字型 ref 值（元素參考編號），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。\n3. 使用 kind: "fill" 時，必須使用 fields 欄位來提供輸入的參考與值，例如 {"action":"act","kind":"fill","fields":[{"ref":12,"value":"要輸入的文字"}]}，絕對不可直接將 ref 或 value 放在最外層。\n4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":12,"key":"Enter"}。\n5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":12}。\n6. 絕對不要使用 CSS 選擇器 (selector 參數)。\n7. 在回覆中請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]' }
             ],
             stream: false
           })
@@ -5324,7 +5324,7 @@ if (TELEGRAM_TOKEN) {
 
         // 用 Gemini 包裝 OpenClaw 結果，加上 Setsuna 人設語氣
         const wrappedMessages = [
-          { role: 'system', content: setsunaPersonality },
+          { role: 'system', content: setsunaPersonality + '\n\n【重要：在回答中，請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】' },
           { role: 'user', content: `老闆問了：「${text}」\n\n以下是你用工具查到的資料，請用你自己的語氣（Setsuna）回覆老闆，不要改動查到的事實：\n\n${cleanRawResult}` }
         ];
         const finalReply = await callGeminiAPI(wrappedMessages);
