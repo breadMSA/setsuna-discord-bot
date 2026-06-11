@@ -3647,6 +3647,10 @@ client.on('messageCreate', async (message) => {
           }
 
           const uniqueAttachments = [...new Set(attachments)].filter(Boolean);
+          if (uniqueAttachments.length === 0 && (message.content.includes('截圖') || message.content.includes('截') || message.content.includes('圖') || message.content.includes('看'))) {
+            console.log('[OpenClaw] 用戶要求截圖但未偵測到附件，自動添加最新截圖占位符');
+            uniqueAttachments.push(`${OPENCLAW_URL}/media/latest.png`);
+          }
           console.log('[OpenClaw] 偵測到附件列表:', uniqueAttachments);
 
           const discordFiles = [];
@@ -5311,6 +5315,10 @@ if (TELEGRAM_TOKEN) {
         }
 
         const tgUniqueAttachments = [...new Set(tgAttachments)].filter(Boolean);
+        if (tgUniqueAttachments.length === 0 && (text.includes('截圖') || text.includes('截') || text.includes('圖') || text.includes('看'))) {
+          console.log('[Telegram] 用戶要求截圖但未偵測到附件，自動添加最新截圖占位符');
+          tgUniqueAttachments.push(`${OPENCLAW_URL}/media/latest.png`);
+        }
         console.log('[Telegram] OpenClaw 偵測到附件列表:', tgUniqueAttachments);
 
         // 清理 rawResult，再交給 Gemini 包裝人設
