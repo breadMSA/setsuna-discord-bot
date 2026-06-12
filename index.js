@@ -5742,3 +5742,5 @@ client.login(DISCORD_TOKEN).catch(error => {
   console.error('Failed to login to Discord:', error);
   process.exit(1);
 });
+
+// Sync trigger: 2026-06-13
