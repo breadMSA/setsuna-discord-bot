@@ -584,6 +584,9 @@ async function handleGeminiRequest(req, res) {
     let parsedBody = null;
     try {
       parsedBody = JSON.parse(bodyBuffer.toString());
+      if (parsedBody && parsedBody.tools) {
+        console.log(`[Proxy] Tools passed to model: ${JSON.stringify(parsedBody.tools)}`);
+      }
     } catch (e) {
       // Ignore parse error
     }
