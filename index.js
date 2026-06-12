@@ -3620,7 +3620,7 @@ client.on('messageCreate', async (message) => {
         console.log(`[OpenClaw] 老闆特權驗證成功，發送請求至: ${OPENCLAW_URL}/v1/chat/completions`);
         try {
           const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-          const browserPrompt = message.content + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}。請你根據此 UTC 時間點，結合用戶提及的城市、地理位置或意圖，自動判斷並轉換為該地對應時區的當地時間，來提供最精確的行程安排、即時資訊回覆或搜尋。【極重要強制指令：對於任何涉及即時資訊（如天氣、公車到站時間、飛機航班、股價、新聞、最新時間等）或需要精準數據的用戶提問，你必須立即且無條件調用搜尋工具 (web_search) 或網頁瀏覽工具 (browser) 進行查詢。絕對不允許不查資料就憑藉你自身的靜態知識或猜測直接回覆，也絕對不允許直接建議用戶自己去官網查。你必須幫用戶查到最新數據並呈現出來，否則即視為嚴重錯誤！】你優先且主要使用內建的網頁搜尋工具 (web_search) 進行任何網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊），這能避免被防機器人機制阻擋。只有當用戶明確要求對特定網頁進行截圖、下載檔案或與頁面進行複雜點擊/輸入互動時，你才必須調用網頁瀏覽工具 (browser)！在使用網頁瀏覽工具 (browser) 時，如果用戶明確指定要造訪、瀏覽或對特定網域/首頁（例如 Yahoo 首頁 https://tw.yahoo.com/、Google 首頁 https://www.google.com/ 等）進行截圖，你必須直接造訪並對其進行截圖，這是完全允許的。只有當你需要進行「關鍵字搜尋」且必須使用瀏覽器網頁時，才造訪 DuckDuckGo (https://html.duckduckgo.com/)，請絕對不要使用 Google 或 Yahoo 的搜尋引擎進行關鍵字搜尋，因為它們的搜尋 WAF 機制會阻擋你的瀏覽器訪問並回傳錯誤。在使用網頁瀏覽工具 (browser) 時，請嚴格遵守以下規則：\n1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://html.duckduckgo.com/"}。\n2. 所有操作（click、type、press）都必須使用從頁面快照取得的 ref 值（元素參考編號，請作為字串傳入），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。\n3. 輸入文字時，請絕對不要使用 kind: "fill" 或 fields 參數，你必須完全使用 kind: "type" 動作，並在最外層同時提供 ref 和 text 欄位。例如：{"action":"act","kind":"type","ref":"12","text":"要輸入的文字"}。\n4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":"12","key":"Enter"}。\n5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":"12"}。\n6. 絕對不要使用 CSS 選擇器 (selector 參數)。\n7. 在回覆中請絕對不要將 any 數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]`;
+          const browserPrompt = message.content + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}。請你根據此 UTC 時間點，結合用戶提及的城市、地理位置或意圖，自動判斷並轉換為該地對應時區的當地時間，來提供最精確的行程安排、即時資訊回覆或搜尋。【極重要強制指令：對於任何涉及即時資訊（如天氣、公車到站時間、飛機航班、股價、新聞、最新時間等）或需要精準數據的用戶提問，你必須立即且無條件調用搜尋工具 (web_search) 或網頁瀏覽工具 (browser) 進行查詢。絕對不允許不查資料就憑藉你自身的靜態知識或猜測直接回覆，也絕對不允許直接建議用戶自己去官網查。你必須幫用戶查到最新數據並呈現出來，否則即視為嚴重錯誤！】你優先且主要使用內建的網頁搜尋工具 (web_search) 進行任何網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊）。如果 web_search 的結果不理想、不夠精確或沒有即時數據，你完全可以並且應該主動調用網頁瀏覽工具 (browser) 直接瀏覽相關網頁來獲取精確資訊！只有當你需要進行「關鍵字搜尋」且必須使用瀏覽器網頁時，才造訪 DuckDuckGo (https://html.duckduckgo.com/)，請絕對不要使用 Google 或 Yahoo 的搜尋引擎進行關鍵字搜尋，因為它們的搜尋 WAF 機制會阻擋你的瀏覽器訪問並回傳錯誤。在使用網頁瀏覽工具 (browser) 時，請嚴格遵守以下規則：\n1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://html.duckduckgo.com/"}。\n2. 所有操作（click、type、press）都必須使用從頁面快照取得的 ref 值（元素參考編號，請作為字串傳入），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。\n3. 輸入文字時，請絕對不要使用 kind: "fill" 或 fields 參數，你必須完全使用 kind: "type" 動作，並在最外層同時提供 ref 和 text 欄位。例如：{"action":"act","kind":"type","ref":"12","text":"要輸入的文字"}。\n4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":"12","key":"Enter"}。\n5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":"12"}。\n6. 絕對不要使用 CSS 選擇器 (selector 參數)。\n7. 在回覆中請絕對不要將 any 數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]`;
 
           const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
             method: 'POST',
@@ -4671,6 +4671,7 @@ client.on('messageCreate', async (message) => {
             if (channelConfig && channelConfig.messageHistory) {
               let foundUserMessage = false;
               for (let i = 0; i < channelConfig.messageHistory.length; i++) {
+                
                 if (
                   channelConfig.messageHistory[i].role === 'user' &&
                   channelConfig.messageHistory[i].author === message.author.username
@@ -5341,7 +5342,7 @@ if (TELEGRAM_TOKEN) {
 
     try {
       const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-      const queryText = "請用 web_search 查詢台北市公車 647 和 915 下一班以及下下一班到達「消防局（松仁）」站牌還要多久，並用繁體中文簡潔明瞭地回報。不要長篇大論，直接列出公車路線與預估時間即可。";
+      const queryText = `請查詢台北市公車 647 和 915 下一班以及下下一班到達「消防局（松仁）」站牌還要多久，並用繁體中文簡潔明瞭地回報。不要長篇大論，直接列出公車路線與預估時間即可。`;
       
       const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
         method: 'POST',
@@ -5355,7 +5356,7 @@ if (TELEGRAM_TOKEN) {
           messages: [
             {
               role: 'user',
-              content: queryText + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}。請你根據此 UTC 時間點，自動判斷並轉換為該地對應時區的當地時間，來提供最精確的行程安排、即時資訊回覆或搜尋。【極重要強制指令：對於任何涉及即時資訊（如天氣、公車到站時間、飛機航班、股價、新聞、最新時間等）或需要精準數據的用戶提問，你必須立即且無條件調用搜尋工具 (web_search) 或網頁瀏覽工具 (browser) 進行查詢。絕對不允許不查資料就憑藉你自身的靜態知識或猜測直接回覆，也絕對不允許直接建議用戶自己去官網查。你必須幫用戶查到最新數據並呈現出來，否則即視為嚴重錯誤！】你優先且主要使用內建的網頁搜尋工具 (web_search) 進行任何網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊），這能避免被防機器人機制阻擋。在使用網頁瀏覽工具 (browser) 時，請嚴格遵守規則，在回覆中請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫。請完全保留原本的阿拉伯數字、英文以及格式！】`
+              content: queryText + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}（台北時間 = UTC+8，請自行換算）。你必須使用內建的網頁搜尋工具 (web_search) 查詢台北市公車即時到站資訊，這樣才能取得真實即時數據。絕對不允許憑自身靜態知識猜測或編造公車時間，否則即視為嚴重錯誤。在回覆中請完全保留阿拉伯數字格式，不要轉換成中文數字。】`
             }
           ],
           stream: false
@@ -5451,7 +5452,7 @@ if (TELEGRAM_TOKEN) {
           body: JSON.stringify({
             model: 'openclaw',
             messages: [
-              { role: 'user', content: text + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}。請你根據此 UTC 時間點，結合用戶提及的城市、地理位置或意圖，自動判斷並轉換為該地對應時區的當地時間，來提供最精確的行程安排、即時資訊回覆或搜尋。你優先且主要使用內建的網頁搜尋工具 (web_search) 進行任何網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊），這能避免被防機器人機制阻擋。只有當用戶明確要求對特定網頁進行截圖、下載檔案或與頁面進行複雜點擊/輸入互動時，你才必須調用網頁瀏覽工具 (browser)！在使用網頁瀏覽工具 (browser) 時，如果用戶明確指定要造訪、瀏覽或對特定網域/首頁（例如 Yahoo 首頁 https://tw.yahoo.com/、Google 首頁 https://www.google.com/ 等）進行截圖，你必須直接造訪並對其進行截圖，這是完全允許的。只有當你需要進行「關鍵字搜尋」且必須使用瀏覽器網頁時，才造訪 DuckDuckGo (https://html.duckduckgo.com/)，請絕對不要使用 Google 或 Yahoo 的搜尋引擎進行關鍵字搜尋，因為它們的搜尋 WAF 機制會阻擋你的瀏覽器訪問並回傳錯誤。在使用網頁瀏覽工具 (browser) 時，請嚴格遵守以下規則：\n1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://html.duckduckgo.com/"}。\n2. 所有操作（click、type、press）都必須使用從頁面快照取得的 ref 值（元素參考編號，請作為字串傳入），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。\n3. 輸入文字時，請絕對不要使用 kind: "fill" 或 fields 參數，你必須完全使用 kind: "type" 動作，並在最外層同時提供 ref 和 text 欄位。例如：{"action":"act","kind":"type","ref":"12","text":"要輸入的文字"}。\n4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":"12","key":"Enter"}。\n5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":"12"}。\n6. 絕對不要使用 CSS 選擇器 (selector 參數)。\n7. 在回覆中請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]` }
+              { role: 'user', content: text + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}。請你根據此 UTC 時間點，結合用戶提及的城市、地理位置或意圖，自動判斷並轉換為該地對應時區的當地時間，來提供最精確的行程安排、即時資訊回覆或搜尋。【極重要強制指令：對於任何涉及即時資訊（如天氣、公車到站時間、飛機航班、股價、新聞、最新時間等）或需要精準數據的用戶提問，你必須立即且無條件調用搜尋工具 (web_search) 或網頁瀏覽工具 (browser) 進行查詢。絕對不允許不查資料就憑藉你自身的靜態知識或猜測直接回覆，也絕對不允許直接建議用戶自己去官網查。你必須幫用戶查到最新數據並呈現出來，否則即視為嚴重錯誤！】你優先且主要使用內建的網頁搜尋工具 (web_search) 進行任何網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊）。如果 web_search 的結果不理想、不夠精確或沒有即時數據，你完全可以並且應該主動調用網頁瀏覽工具 (browser) 直接瀏覽相關網頁來獲取精確資訊！只有當你需要進行「關鍵字搜尋」且必須使用瀏覽器網頁時，才造訪 DuckDuckGo (https://html.duckduckgo.com/)，請絕對不要使用 Google 或 Yahoo 的搜尋引擎進行關鍵字搜尋，因為它們的搜尋 WAF 機制會阻擋你的瀏覽器訪問並回傳錯誤。在使用網頁瀏覽工具 (browser) 時，請嚴格遵守以下規則：\n1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://html.duckduckgo.com/"}。\n2. 所有操作（click、type、press）都必須使用從頁面快照取得的 ref 值（元素參考編號，請作為字串傳入），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。\n3. 輸入文字時，請絕對不要使用 kind: "fill" 或 fields 參數，你必須完全使用 kind: "type" 動作，並在最外層同時提供 ref 和 text 欄位。例如：{"action":"act","kind":"type","ref":"12","text":"要輸入的文字"}。\n4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":"12","key":"Enter"}。\n5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":"12"}。\n6. 絕對不要使用 CSS 選擇器 (selector 參數)。\n7. 在回覆中請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]` }
             ],
             stream: false
           })
