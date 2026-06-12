@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const OpenCC = require('opencc-js');
 const path = require('path');
 const { exec } = require('child_process');
+const db = require('./db');
 
 // Music System
 const { MusicPlayer, parseTime } = require('./music/MusicPlayer');
@@ -358,7 +359,56 @@ async function loadActiveChannels() {
       }
     };
 
-    // Set up GitHub client
+    // 1. 優先從 MongoDB 載入設定
+    if (process.env.MONGODB_URI) {
+      console.log('[DB] 嘗試從 MongoDB 載入頻道設定...');
+      try {
+        const mongoData = await db.loadAllChannelConfigs();
+        if (mongoData && Object.keys(mongoData).length > 0) {
+          for (const [channelId, config] of Object.entries(mongoData)) {
+            initializeChannel(channelId);
+            if (config.model) {
+              channelModelPreferences.set(channelId, config.model);
+              activeChannels.get(channelId).model = config.model;
+            }
+            if (config.groqModel) {
+              channelGroqModelPreferences.set(channelId, config.groqModel);
+              activeChannels.get(channelId).groqModel = config.groqModel;
+            }
+            if (config.cerebrasModel) {
+              channelCerebrasModelPreferences.set(channelId, config.cerebrasModel);
+              activeChannels.get(channelId).cerebrasModel = config.cerebrasModel;
+            }
+            if (config.customInstructions) {
+              activeChannels.get(channelId).customInstructions = config.customInstructions;
+            }
+            if (config.customRole) {
+              activeChannels.get(channelId).customRole = config.customRole;
+            }
+            if (config.customSpeakingStyle) {
+              activeChannels.get(channelId).customSpeakingStyle = config.customSpeakingStyle;
+            }
+            if (config.customTextStructure) {
+              activeChannels.get(channelId).customTextStructure = config.customTextStructure;
+            }
+            if (config.useAIToDetectImageRequest) {
+              activeChannels.get(channelId).useAIToDetectImageRequest = config.useAIToDetectImageRequest;
+            }
+            if (config.caiChatId) {
+              activeChannels.get(channelId).caiChatId = config.caiChatId;
+            }
+          }
+          console.log(`[DB] 成功從 MongoDB 載入 ${Object.keys(mongoData).length} 個頻道設定。`);
+          return; // 成功從 DB 載入，直接結束
+        } else {
+          console.log('[DB] MongoDB 中尚無設定資料，將使用 GitHub / 本地備份作為備用來源並進行初始化。');
+        }
+      } catch (dbError) {
+        console.error('[DB] 從 MongoDB 載入頻道設定出錯，將改用備用來源:', dbError.message);
+      }
+    }
+
+    // 2. 備份方案：從 GitHub 載入設定
     const githubClient = await setupGitHub();
     if (!githubClient) {
       console.error('Failed to set up GitHub client, cannot load active channels');
@@ -477,6 +527,19 @@ async function saveActiveChannels() {
     }
 
     // Prepare simplified active channels for saving
+
+    // 1. 同步儲存至 MongoDB
+    if (process.env.MONGODB_URI) {
+      console.log('[DB] 正在將頻道設定儲存至 MongoDB...');
+      try {
+        for (const [channelId, config] of Object.entries(simplifiedActiveChannels)) {
+          await db.saveChannelConfig(channelId, config);
+        }
+        console.log('[DB] 頻道設定已成功同步至 MongoDB。');
+      } catch (dbError) {
+        console.error('[DB] 儲存頻道設定至 MongoDB 失敗:', dbError.message);
+      }
+    }
 
     // Set up GitHub client
     const githubClient = await setupGitHub();
@@ -5180,6 +5243,38 @@ if (TELEGRAM_TOKEN) {
   let lastUpdateId = 0;
   let telegramInitialized = false; // 啟動時先跳過舊訊息
 
+  // --- 每日公車報時排程與 Chat ID 持久化功能 ---
+  let savedChatId = process.env.TELEGRAM_CHAT_ID || null;
+  const CHAT_ID_FILE = path.join(__dirname, 'telegram_chat_id.json');
+
+  const loadInitialTelegramChatId = async () => {
+    // 優先從 MongoDB 讀取
+    if (process.env.MONGODB_URI) {
+      try {
+        const mongoChatId = await db.loadTelegramChatId();
+        if (mongoChatId) {
+          savedChatId = mongoChatId;
+          console.log(`[Telegram/DB] 已從 MongoDB 載入 Chat ID: ${savedChatId}`);
+          return;
+        }
+      } catch (e) {
+        console.error('[Telegram/DB] 從 MongoDB 載入 Chat ID 失敗:', e);
+      }
+    }
+    // 本地檔案備份
+    try {
+      if (fs.existsSync(CHAT_ID_FILE)) {
+        const data = JSON.parse(fs.readFileSync(CHAT_ID_FILE, 'utf8'));
+        savedChatId = data.chatId || savedChatId;
+        console.log(`[Telegram/Local] 已從本地檔案載入 Chat ID: ${savedChatId}`);
+      }
+    } catch (e) {
+      console.error('[Telegram/Local] 載入 Chat ID 失敗:', e);
+    }
+  };
+
+  loadInitialTelegramChatId();
+
   const sendTelegramMessage = async (chatId, text) => {
     try {
       const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
@@ -5227,9 +5322,112 @@ if (TELEGRAM_TOKEN) {
     }
   };
 
+  const runDailyBusReport = async (chatId) => {
+    if (!chatId) return;
+    console.log('[Telegram] 開始執行每日公車到站報時任務...');
+    await sendTelegramMessage(chatId, '🔔 正在為您查詢公車 647 和 915 到達「消防局（松仁）」的動態資訊，請稍候...');
+    await sendTelegramChatAction(chatId, 'typing');
+
+    const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
+    const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
+
+    if (!OPENCLAW_URL || !OPENCLAW_PASS) {
+      await sendTelegramMessage(chatId, '❌ 無法執行報時：未設定 OpenClaw API 網址或密碼。');
+      return;
+    }
+
+    try {
+      const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const queryText = "請用 web_search 查詢台北市公車 647 和 915 下一班以及下下一班到達「消防局（松仁）」站牌還要多久，並用繁體中文簡潔明瞭地回報。不要長篇大論，直接列出公車路線與預估時間即可。";
+      
+      const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
+        method: 'POST',
+        timeout: 120000,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENCLAW_PASS}`
+        },
+        body: JSON.stringify({
+          model: 'openclaw',
+          messages: [
+            {
+              role: 'user',
+              content: queryText + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}。請你根據此 UTC 時間點，自動判斷並轉換為該地對應時區的當地時間，來提供最精確的行程安排、即時資訊回覆或搜尋。你優先且主要使用內建的網頁搜尋工具 (web_search) 進行任何網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊），這能避免被防機器人機制阻擋。在使用網頁瀏覽工具 (browser) 時，請嚴格遵守規則，在回覆中請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫。請完全保留原本的阿拉伯數字、英文以及格式！】`
+            }
+          ],
+          stream: false
+        })
+      });
+
+      if (!openclawResponse.ok) {
+        const errBody = await openclawResponse.text();
+        throw new Error(`OpenClaw HTTP ${openclawResponse.status}: ${errBody.substring(0, 200)}`);
+      }
+
+      const openclawData = await openclawResponse.json();
+      const rawResult = openclawData?.choices?.[0]?.message?.content
+        || openclawData.reply || openclawData.message || openclawData.content
+        || null;
+
+      if (!rawResult) {
+        await sendTelegramMessage(chatId, '❌ 查詢失敗：OpenClaw 沒有回傳結果。');
+        return;
+      }
+
+      await sendTelegramMessage(chatId, rawResult);
+      console.log('[Telegram] 每日公車報時發送成功！');
+    } catch (err) {
+      console.error('[Telegram] 每日公車報時執行錯誤:', err);
+      await sendTelegramMessage(chatId, `❌ 每日公車報時查詢出錯：${err.message}`);
+    }
+  };
+
+  // 設置每日台北時間早上 9:00 的排程
+  let lastRunDate = null;
+  setInterval(() => {
+    const now = new Date();
+    // 轉成台北時間 (UTC+8)
+    const taipeiTime = new Date(now.getTime() + (8 * 60 * 60 * 1000) + (now.getTimezoneOffset() * 60 * 1000));
+    const currentHour = taipeiTime.getHours();
+    const currentMin = taipeiTime.getMinutes();
+    const todayDateStr = `${taipeiTime.getFullYear()}-${taipeiTime.getMonth() + 1}-${taipeiTime.getDate()}`;
+
+    if (currentHour === 9 && currentMin === 0 && lastRunDate !== todayDateStr) {
+      lastRunDate = todayDateStr;
+      if (savedChatId) {
+        runDailyBusReport(savedChatId).catch(console.error);
+      } else {
+        console.warn('[Telegram] 到了早上 9:00，但尚未取得任何使用者的 Chat ID，無法傳送公車報時資訊。');
+      }
+    }
+  }, 30000); // 每 30 秒檢查一次
+
   const handleTelegramMessage = async (chatId, text, username) => {
     console.log(`[Telegram] 收到訊息 from ${username}: ${text}`);
     await sendTelegramChatAction(chatId, 'typing');
+
+    // 儲存或更新 Chat ID
+    if (!savedChatId || savedChatId !== chatId) {
+      savedChatId = chatId;
+      // 同步儲存至 MongoDB
+      if (process.env.MONGODB_URI) {
+        db.saveTelegramChatId(chatId).then(success => {
+          if (success) console.log(`[Telegram/DB] 已成功將 Chat ID ${chatId} 同步至 MongoDB`);
+        }).catch(e => console.error('[Telegram/DB] 同步 Chat ID 至 MongoDB 出錯:', e));
+      }
+      try {
+        fs.writeFileSync(CHAT_ID_FILE, JSON.stringify({ chatId }), 'utf8');
+        console.log(`[Telegram/Local] 已更新並儲存使用者的 Chat ID: ${chatId}`);
+      } catch (e) {
+        console.error('[Telegram/Local] 儲存 Chat ID 失敗:', e);
+      }
+    }
+
+    // 支援手動觸發公車報時
+    if (text.trim() === '/bus_report') {
+      await runDailyBusReport(chatId);
+      return;
+    }
 
     const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
     const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
