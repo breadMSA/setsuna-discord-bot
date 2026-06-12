@@ -946,10 +946,11 @@ function detectIntentWithRegex(content) {
   // 判斷是否為網頁查詢
   const webKeywords = /(天氣|新聞|公車|路況|股票|股價|截圖|網頁|連結|上網查|查一下)/i;
   if (webKeywords.test(content)) {
-    return { intent: 'BROWSE_WEB', musicQuery: null };
+    const screenshotKeywords = /(截圖|截屏|看螢幕|看畫面|看截圖)/i;
+    return { intent: 'BROWSE_WEB', musicQuery: null, requireScreenshot: screenshotKeywords.test(content) };
   }
 
-  return { intent: 'CHAT', musicQuery: null };
+  return { intent: 'CHAT', musicQuery: null, requireScreenshot: false };
 }
 
 async function detectIntentWithAI(content) {
@@ -971,7 +972,8 @@ async function detectIntentWithAI(content) {
 請務必只返回以下 JSON 格式（不要包含任何 markdown 標記或額外文字）：
 {
   "intent": "意圖代碼",
-  "musicQuery": "如果是 PLAY_MUSIC，提取出想播放的歌曲/音樂名稱或搜尋關鍵字；否則為 null"
+  "musicQuery": "如果是 PLAY_MUSIC，提取出想播放的歌曲/音樂名稱或搜尋關鍵字；否則為 null",
+  "requireScreenshot": true/false (布林值，如果是 BROWSE_WEB 且用戶明確要求「對網頁/網站進行截圖、看圖、看螢幕畫面、畫圖」則為 true，如果只是單純查詢即時資料/天氣/公車/新聞等則為 false；其他意圖下皆為 false)
 }`;
 
     const completion = await groq.chat.completions.create({
@@ -985,7 +987,8 @@ async function detectIntentWithAI(content) {
     const parsed = JSON.parse(completion.choices[0].message.content.trim());
     return {
       intent: parsed.intent || 'CHAT',
-      musicQuery: parsed.musicQuery || null
+      musicQuery: parsed.musicQuery || null,
+      requireScreenshot: parsed.requireScreenshot === true
     };
   } catch (e) {
     console.error('[Intent detection error, falling back to regex]', e);
@@ -3640,7 +3643,7 @@ client.on('messageCreate', async (message) => {
           }
 
           const uniqueAttachments = [...new Set(attachments)].filter(Boolean);
-          if (uniqueAttachments.length === 0 && (message.content.includes('截圖') || message.content.includes('截屏') || message.content.includes('看螢幕') || message.content.includes('看畫面') || message.content.includes('看截圖'))) {
+          if (uniqueAttachments.length === 0 && analysis.requireScreenshot) {
             console.log('[OpenClaw] 用戶要求截圖但未偵測到附件，自動添加最新截圖占位符');
             uniqueAttachments.push(`${OPENCLAW_URL}/media/latest.png`);
           }
@@ -5309,7 +5312,7 @@ if (TELEGRAM_TOKEN) {
         }
 
         const tgUniqueAttachments = [...new Set(tgAttachments)].filter(Boolean);
-        if (tgUniqueAttachments.length === 0 && (text.includes('截圖') || text.includes('截屏') || text.includes('看螢幕') || text.includes('看畫面') || text.includes('看截圖'))) {
+        if (tgUniqueAttachments.length === 0 && analysis.requireScreenshot) {
           console.log('[Telegram] 用戶要求截圖但未偵測到附件，自動添加最新截圖占位符');
           tgUniqueAttachments.push(`${OPENCLAW_URL}/media/latest.png`);
         }
