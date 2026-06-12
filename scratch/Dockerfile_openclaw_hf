@@ -99,6 +99,7 @@ const config = {
     profile: 'full',
     web: {
       search: {
+        enabled: true,
         provider: process.env.TAVILY_API_KEY ? 'tavily' : 'gemini'
       }
     }
