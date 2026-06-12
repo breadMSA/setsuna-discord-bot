@@ -19,7 +19,6 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV OPENCLAW_BROWSER_NO_SANDBOX=1
 ENV NODE_OPTIONS="--max-old-space-size=1024"
 ENV TINI_SUBREAPER=1
-ENV BROWSER_TIMEOUT_MS=120000
 
 USER node
 
@@ -114,7 +113,6 @@ const config = {
       '--no-sandbox',
       '--no-zygote',
       '--js-flags=--max-old-space-size=512',
-      '--disable-http2',
       '--host-resolver-rules=MAP *doubleclick.net ~NOTFOUND, MAP *googlesyndication.com ~NOTFOUND, MAP *adtrafficquality.google ~NOTFOUND, MAP *criteo.com ~NOTFOUND, MAP *taboola.com ~NOTFOUND, MAP *adnxs.com ~NOTFOUND, MAP *openx.net ~NOTFOUND, MAP *casalemedia.com ~NOTFOUND, MAP *media.net ~NOTFOUND, MAP *gumgum.com ~NOTFOUND, MAP *everesttech.net ~NOTFOUND, MAP *lijit.com ~NOTFOUND, MAP *outbrain.com ~NOTFOUND, MAP *mathtag.com ~NOTFOUND, MAP *socdm.com ~NOTFOUND, MAP *semasio.net ~NOTFOUND, MAP *bidswitch.net ~NOTFOUND, MAP *rubiconproject.com ~NOTFOUND, MAP *creativecdn.com ~NOTFOUND, MAP *pippio.com ~NOTFOUND, MAP *disqus.com ~NOTFOUND, MAP *ipredictive.com ~NOTFOUND, MAP *mgid.com ~NOTFOUND, MAP *kueezrtb.com ~NOTFOUND, MAP *deepintent.com ~NOTFOUND, MAP *adform.net ~NOTFOUND, MAP *sharethrough.com ~NOTFOUND, MAP *rfihub.com ~NOTFOUND, MAP *turn.com ~NOTFOUND, MAP *boltdns.net ~NOTFOUND, MAP *media6degrees.com ~NOTFOUND, MAP *a-mo.net ~NOTFOUND, MAP *cootlogix.com ~NOTFOUND, MAP *yieldmo.com ~NOTFOUND, MAP *admanmedia.com ~NOTFOUND, MAP *3lift.com ~NOTFOUND, MAP *pubmatic.com ~NOTFOUND, MAP *tsdtocl.com ~NOTFOUND, MAP *indexww.com ~NOTFOUND, MAP *tapad.com ~NOTFOUND, MAP *fwmrm.net ~NOTFOUND, MAP *onetag-sys.com ~NOTFOUND, MAP *dotomi.com ~NOTFOUND, MAP *33across.com ~NOTFOUND, MAP *adsrvr.org ~NOTFOUND, MAP *temu.com ~NOTFOUND, MAP *hcaptcha.com ~NOTFOUND, MAP *recaptcha.net ~NOTFOUND, MAP accounts.google.com ~NOTFOUND, MAP *moovitapp.com ~NOTFOUND'
     ]
   }

@@ -3640,7 +3640,7 @@ client.on('messageCreate', async (message) => {
           }
 
           const uniqueAttachments = [...new Set(attachments)].filter(Boolean);
-          if (uniqueAttachments.length === 0 && (message.content.includes('截圖') || message.content.includes('截') || message.content.includes('圖') || message.content.includes('看'))) {
+          if (uniqueAttachments.length === 0 && (message.content.includes('截圖') || message.content.includes('截屏') || message.content.includes('看螢幕') || message.content.includes('看畫面') || message.content.includes('看截圖'))) {
             console.log('[OpenClaw] 用戶要求截圖但未偵測到附件，自動添加最新截圖占位符');
             uniqueAttachments.push(`${OPENCLAW_URL}/media/latest.png`);
           }
@@ -5309,7 +5309,7 @@ if (TELEGRAM_TOKEN) {
         }
 
         const tgUniqueAttachments = [...new Set(tgAttachments)].filter(Boolean);
-        if (tgUniqueAttachments.length === 0 && (text.includes('截圖') || text.includes('截') || text.includes('圖') || text.includes('看'))) {
+        if (tgUniqueAttachments.length === 0 && (text.includes('截圖') || text.includes('截屏') || text.includes('看螢幕') || text.includes('看畫面') || text.includes('看截圖'))) {
           console.log('[Telegram] 用戶要求截圖但未偵測到附件，自動添加最新截圖占位符');
           tgUniqueAttachments.push(`${OPENCLAW_URL}/media/latest.png`);
         }
