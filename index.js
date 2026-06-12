@@ -3616,7 +3616,7 @@ client.on('messageCreate', async (message) => {
   // =================================================================
   // 🌐 主人專屬：雲端 OpenClaw 視覺網頁操作攔截器
   // =================================================================
-  const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
+  const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
   const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
   if (OPENCLAW_URL && analysis.intent === 'BROWSE_WEB') {
@@ -5336,7 +5336,7 @@ if (TELEGRAM_TOKEN) {
     await sendTelegramMessage(chatId, '🔔 正在為您查詢公車 647 和 915 到達「消防局（松仁）」的動態資訊，請稍候...');
     await sendTelegramChatAction(chatId, 'typing');
 
-    const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
+    const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
     const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
     if (!OPENCLAW_URL || !OPENCLAW_PASS) {
@@ -5437,7 +5437,7 @@ if (TELEGRAM_TOKEN) {
       return;
     }
 
-    const OPENCLAW_URL = process.env.OPENCLAW_API_URL;
+    const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
     const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
     const analysis = await detectIntentWithAI(text);
@@ -5736,11 +5736,38 @@ process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
 });
 
+// Hugging Face Space keep-alive ping to prevent auto-sleeping
+const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
+const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
+
+if (OPENCLAW_URL) {
+  console.log(`[Keep-Alive] Initializing Hugging Face Space ping for URL: ${OPENCLAW_URL}`);
+  
+  const pingSpace = async () => {
+    try {
+      const headers = {};
+      if (OPENCLAW_PASS) {
+        headers['Authorization'] = `Bearer ${OPENCLAW_PASS}`;
+      }
+      
+      const res = await fetch(`${OPENCLAW_URL}/ping`, {
+        headers,
+        timeout: 15000
+      });
+      
+      console.log(`[Keep-Alive] Space ping response: ${res.status} (${res.statusText})`);
+    } catch (err) {
+      console.warn(`[Keep-Alive] Space ping failed: ${err.message}`);
+    }
+  };
+
+  // Ping immediately on startup, then every 10 minutes (600,000 ms)
+  pingSpace();
+  setInterval(pingSpace, 600000);
+}
 // Connect to Discord
 console.log('Connecting to Discord...');
 client.login(DISCORD_TOKEN).catch(error => {
   console.error('Failed to login to Discord:', error);
   process.exit(1);
 });
-
-// Sync trigger: 2026-06-13
