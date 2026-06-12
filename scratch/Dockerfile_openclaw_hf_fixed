@@ -101,9 +101,6 @@ const config = {
       search: {
         provider: process.env.TAVILY_API_KEY ? 'tavily' : 'gemini'
       }
-    },
-    browser: {
-      wait_for_load_state: 'domcontentloaded'
     }
   },
   browser: {
@@ -111,7 +108,6 @@ const config = {
     localLaunchTimeoutMs: 120000,
     localCdpReadyTimeoutMs: 120000,
     actionTimeoutMs: 120000,
-    navigationTimeoutMs: 120000,
     extraArgs: [
       '--disable-gpu',
       '--disable-dev-shm-usage',
