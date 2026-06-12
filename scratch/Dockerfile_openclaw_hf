@@ -72,9 +72,8 @@ const config = {
         enabled: true,
         config: {
           webSearch: {
-            apiKey: 'DUMMY_KEY',
-            baseUrl: 'http://localhost:18789',
-            model: 'gemini-2.5-flash'
+            apiKey: getFirstApiKey(),
+            model: 'gemini-2.5-flash-lite'
           }
         }
       },
@@ -99,7 +98,6 @@ const config = {
     profile: 'full',
     web: {
       search: {
-        enabled: true,
         provider: process.env.TAVILY_API_KEY ? 'tavily' : 'gemini'
       }
     }
