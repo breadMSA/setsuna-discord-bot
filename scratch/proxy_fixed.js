@@ -324,7 +324,7 @@ async function handleOpenAiGeminiRequest(req, res) {
     for (const model of modelsToTry) {
       if (success) break;
 
-      const modelSupportsGrounding = !model.includes('gemini-1.0');
+      const modelSupportsGrounding = !model.includes('3.1-flash-lite');
       const configurations = [];
       if (modelSupportsGrounding) {
         configurations.push({ useGrounding: true });
@@ -601,14 +601,14 @@ async function handleGeminiRequest(req, res) {
     const hasGrounding = parsedBody && parsedBody.tools && parsedBody.tools.some(t => t.googleSearch || t.googleSearchRetrieval);
 
     const modelsToTry = [];
-    const requestedModelSupportsGrounding = !requestedModel.includes('gemini-1.0');
+    const requestedModelSupportsGrounding = !requestedModel.includes('3.1-flash-lite');
 
     if (hasGrounding) {
       if (requestedModelSupportsGrounding) {
         modelsToTry.push(requestedModel);
       }
       for (const m of ALL_SEARCH_MODELS) {
-        const mSupportsGrounding = !m.includes('gemini-1.0');
+        const mSupportsGrounding = !m.includes('3.1-flash-lite');
         if (mSupportsGrounding && !modelsToTry.includes(m)) {
           modelsToTry.push(m);
         }
@@ -631,7 +631,7 @@ async function handleGeminiRequest(req, res) {
     for (const model of modelsToTry) {
       if (success) break;
 
-      const modelSupportsGrounding = !model.includes('gemini-1.0');
+      const modelSupportsGrounding = !model.includes('3.1-flash-lite');
       const configs = [];
       if (hasGrounding && modelSupportsGrounding) {
         configs.push({ useGrounding: true });
