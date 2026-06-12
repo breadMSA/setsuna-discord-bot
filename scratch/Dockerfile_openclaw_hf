@@ -17,7 +17,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV OPENCLAW_BROWSER_NO_SANDBOX=1
-ENV NODE_OPTIONS="--max-old-space-size=1024"
+ENV NODE_OPTIONS="--max-old-space-size=1024 --unhandled-rejections=warn"
 ENV TINI_SUBREAPER=1
 
 USER node
@@ -160,7 +160,7 @@ const ALL_SEARCH_MODELS = [
 console.log('Starting OpenClaw gateway wrapper on port:', PORT);
 
 // Start OpenClaw gateway on TARGET_PORT
-const openclaw = spawn('node', ['openclaw.mjs', 'gateway', '--allow-unconfigured', '--port', String(TARGET_PORT)], {
+const openclaw = spawn('node', ['--unhandled-rejections=warn', 'openclaw.mjs', 'gateway', '--allow-unconfigured', '--port', String(TARGET_PORT)], {
   stdio: 'inherit'
 });
 
