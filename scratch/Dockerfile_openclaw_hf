@@ -54,7 +54,7 @@ const config = {
         api: 'google-generative-ai'
       },
       "google-proxy": {
-        baseUrl: 'http://localhost:18789',
+        baseUrl: 'http://localhost:7860',
         api: 'google-generative-ai',
         apiKey: 'DUMMY_KEY',
         models: [
@@ -137,7 +137,7 @@ const { spawn } = require('child_process');
 const https = require('https');
 const querystring = require('querystring');
 
-const PORT = 18789;
+const PORT = 7860;
 const TARGET_PORT = 18790;
 const DIRS_TO_CHECK = [
   '/home/node/.openclaw/media/browser',
@@ -1028,7 +1028,7 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 EOF
 
-EXPOSE 18789
+EXPOSE 7860
 
 ENTRYPOINT []
 
