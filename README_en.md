@@ -35,11 +35,20 @@ A Discord AI chatbot that connects to multiple LLM APIs to chat with users in sp
 - **Style Manipulation**: Transforms styles (e.g. oil painting, pixel style) or adds/removes elements based on instruction.
 - **AI Auto-detection**: Automatically detects drawing or editing requests (can be toggled with `/setsuna aidetect`).
 
+<p align="center">
+  <img src="media/image_generation.png" width="45%" alt="Image Generation Example" />
+  <img src="media/image_understanding.png" width="45%" alt="Image Understanding Example" />
+</p>
+
 ### 🎵 Smart Music Playback
 - **Full-featured Music Player**: Supports playing music, albums, or playlists from **YouTube**, **Spotify**, and **SoundCloud**.
 - **Natural Language Triggering**: Simply type phrases like "Play [song name]", "幫我播 [song name]", etc., in active channels. The AI/regex parser automatically detects music intent, joins your voice channel, and starts playing!
 - **Voice Commands via Chat**: Control the player naturally with phrases like "skip", "pause", "resume", "stop music".
 - **Rich Music Commands**: Complete set of subcommands under `/music` (see [Music Subcommands](#music-subcommands)).
+
+<p align="center">
+  <img src="media/music_playback.png" width="60%" alt="Smart Music Playback Example" />
+</p>
 
 ### 🌐 Cloud Visual Web Operations (OpenClaw Integration)
 - **Smart Web Search**: When a user asks for real-time information (e.g. weather, news, stock prices, bus schedules), the AI automatically detects the intent (`BROWSE_WEB`).
@@ -47,6 +56,11 @@ A Discord AI chatbot that connects to multiple LLM APIs to chat with users in sp
 - **Web Screenshots & Downloads**: Supports requests like "Take a screenshot of Google" or "Download file from [URL]".
 - **Free Cloud Deployment (Hugging Face)**: OpenClaw can be hosted on **Hugging Face Spaces** for free, requiring **no credit card**.
 - **Perfect Anti-Ban Mechanism**: Uses a custom-designed routing mechanism (prioritizing internal `web_search` to avoid bot detection and using DuckDuckGo to bypass Google/Yahoo search engine WAF blocks) to avoid Hugging Face account suspensions.
+
+<p align="center">
+  <img src="media/openclaw_search.png" width="48%" alt="Web Search and Browsing Example" />
+  <img src="media/openclaw_screenshot.png" width="48%" alt="Web Screenshot Operation Example" />
+</p>
 
 ### 📝 OCR Image Text Extraction (Tesseract.js)
 - **Image-to-Text**: Extract text content directly from uploaded images.

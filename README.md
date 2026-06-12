@@ -35,11 +35,20 @@
 - **圖片風格轉換**：支援圖片風格轉換（如：油畫風格、像素風格、增加/減少畫面上的物件等）。
 - **AI 智能判定**：支援 AI 智慧判定畫圖請求（可透過 `/setsuna aidetect` 指令開啟/關閉）。
 
+<p align="center">
+  <img src="media/image_generation.png" width="45%" alt="圖片生成範例" />
+  <img src="media/image_understanding.png" width="45%" alt="圖片理解範例" />
+</p>
+
 ### 🎵 智慧音樂播放
 - **全功能播放器**：支援播放來自 **YouTube**、**Spotify** 與 **SoundCloud** 的音樂、專輯或播放清單。
 - **智慧語意觸發**：在已啟用的聊天頻道中，只要直接輸入「幫我播 [歌名]」、「播放 [歌名]」、「play [song]」等自然語言，AI 或內建正則會自動判定播歌意圖，讓 Bot 自動加入您所在的語音頻道並播放歌曲！
 - **語意切歌與暫停**：支援透過聊天對話要求「切歌/跳過」、「暫停」、「繼續」、「停止播放」。
 - **豐富的控制指令**：提供完整的音樂控制指令（詳見 [音樂控制指令](#音樂控制指令)）。
+
+<p align="center">
+  <img src="media/music_playback.png" width="60%" alt="智慧音樂播放範例" />
+</p>
 
 ### 🌐 雲端視覺網頁操作 (OpenClaw 整合)
 - **智慧網頁瀏覽**：當用戶詢問需要上網查詢即時資料（如天氣、最新新聞、今天股價、公車到站等），AI 會自動判定為上網意圖 (`BROWSE_WEB`)。
@@ -47,6 +56,11 @@
 - **網頁截圖與下載**：支援用戶明確要求對特定網頁進行截圖或下載檔案（例如：「幫我截圖 Google 首頁」）。
 - **免費雲端部署 (Hugging Face)**：OpenClaw 可以部署於 **Hugging Face Spaces**，完全免費且**無需信用卡**。
 - **完美防 Ban 機制**：採用精心設計的規避機制（優先使用內建 `web_search` 搜尋以避免被防機器人機制阻擋；搜尋時造訪 DuckDuckGo 規避 Google/Yahoo 的 WAF 阻擋等），完美避免 HF 帳號被 Ban 的風險，確保服務持久穩定。
+
+<p align="center">
+  <img src="media/openclaw_search.png" width="48%" alt="雲端視覺網頁查詢範例" />
+  <img src="media/openclaw_screenshot.png" width="48%" alt="雲端網頁截圖操作範例" />
+</p>
 
 ### 📝 OCR 圖片文字識別 (Tesseract.js)
 - **圖片轉文字**：支援直接從用戶上傳的圖片中提取文字。
