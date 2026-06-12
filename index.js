@@ -3705,8 +3705,11 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          const uniqueAttachments = [...new Set(attachments)].filter(Boolean);
-          if (uniqueAttachments.length === 0 && analysis.requireScreenshot) {
+          let uniqueAttachments = [...new Set(attachments)].filter(Boolean);
+          if (!analysis.requireScreenshot) {
+            // 用戶未要求截圖，清空所有可能由瀏覽器工具產生的自動附件
+            uniqueAttachments = [];
+          } else if (uniqueAttachments.length === 0) {
             console.log('[OpenClaw] 用戶要求截圖但未偵測到附件，自動添加最新截圖占位符');
             uniqueAttachments.push(`${OPENCLAW_URL}/media/latest.png`);
           }
@@ -5509,8 +5512,11 @@ if (TELEGRAM_TOKEN) {
           tgAttachments.push(tgMatch[1]);
         }
 
-        const tgUniqueAttachments = [...new Set(tgAttachments)].filter(Boolean);
-        if (tgUniqueAttachments.length === 0 && analysis.requireScreenshot) {
+        let tgUniqueAttachments = [...new Set(tgAttachments)].filter(Boolean);
+        if (!analysis.requireScreenshot) {
+          // 用戶未要求截圖，清空所有可能由瀏覽器工具產生的自動附件
+          tgUniqueAttachments = [];
+        } else if (tgUniqueAttachments.length === 0) {
           console.log('[Telegram] 用戶要求截圖但未偵測到附件，自動添加最新截圖占位符');
           tgUniqueAttachments.push(`${OPENCLAW_URL}/media/latest.png`);
         }
