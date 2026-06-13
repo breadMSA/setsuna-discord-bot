@@ -1000,7 +1000,7 @@ function detectIntentWithRegex(content) {
     const match = content.match(pattern);
     if (match) {
       const query = match[1].trim();
-      // 避免 "wanna play minecraft" 這種非音樂的 "play" 誤判
+      // 避免 "wanna play minecraft" 這種非音樂 of "play" 誤判
       if (/play/i.test(content) && !/(?:播放|播歌|點歌|放)/.test(content)) {
         if (/(?:minecraft|mc|game|basketball|csgo|lol|league|game|apex|valorant|fortnite|pubg)/i.test(content)) {
           break;
@@ -1026,22 +1026,38 @@ function detectIntentWithRegex(content) {
   }
 
   // 判斷是否為網頁查詢 (正則表達式處理，僅供 AI 連線失敗時的降級防護)
-  // 為避免誤判導致頻繁開啟瀏覽器被封鎖，正則判斷應極其保守，預設均使用 safe grounding (useBrowser: false)
   const webKeywords = /(天氣|新聞|公車|路況|股票|股價|截圖|網頁|連結|上網查|查一下|打開|造訪|進入|網址|http|\.com|\.org|\.net|\.tw|ptt|minecraftmaps|爬蟲|爬取)/i;
   if (webKeywords.test(content)) {
     const screenshotKeywords = /(截圖|截屏|看螢幕|看畫面|看截圖)/i;
-    // 只有當明確提及爬蟲或截圖時，正則降級才開啟瀏覽器
-    const browserKeywords = /(爬蟲|爬取|網頁截圖)/i;
-    const requireScreenshot = screenshotKeywords.test(content);
+    const crawlerKeywords = /(爬蟲|爬取)/i;
+    
+    let requireScreenshot = false;
+    let useBrowser = false;
+    let browseType = 'precise_data';
+    
+    if (screenshotKeywords.test(content)) {
+      requireScreenshot = true;
+      useBrowser = true;
+      browseType = 'screenshot';
+    } else if (crawlerKeywords.test(content)) {
+      requireScreenshot = false;
+      useBrowser = true;
+      browseType = 'crawler';
+    } else {
+      requireScreenshot = false;
+      useBrowser = false;
+    }
+
     return {
       intent: 'BROWSE_WEB',
       musicQuery: null,
       requireScreenshot: requireScreenshot,
-      useBrowser: requireScreenshot || browserKeywords.test(content)
+      useBrowser: useBrowser,
+      browseType: browseType
     };
   }
 
-  return { intent: 'CHAT', musicQuery: null, requireScreenshot: false, useBrowser: false };
+  return { intent: 'CHAT', musicQuery: null, requireScreenshot: false, useBrowser: false, browseType: null };
 }
 
 async function detectIntentWithAI(content) {
@@ -1061,21 +1077,20 @@ async function detectIntentWithAI(content) {
 3. "PAUSE_MUSIC": 用戶明確要求「暫停播放」。
 4. "RESUME_MUSIC": 用戶明確要求「繼續播放」。
 5. "STOP_MUSIC": 用戶明確要求「停止播放」、「關掉音樂」、「不要播了」、「離開語音頻道」。
-6. "BROWSE_WEB": 用戶明確要求「上網網頁查詢/尋找即時資訊」、「打開/造訪/上某個特定網站或網頁看看/瀏覽內容」、「對特定網站進行搜尋」、「進行網頁爬蟲/爬取特定網站內容」或「對網頁/網站/螢幕進行截圖/看畫面」。
-   - 例如：「幫我上 minecraftmaps 看看現在有什麼好玩地圖」、「查一下今天台北天氣」、「去看一下 PTT 八卦版今天在熱議什麼」、「打開 google.com 幫我截圖」、「 CI100 飛機起飛了沒」等。
-   - 只要有明確的「去某個網站看看/查資料」、「查詢動態資料」、「截圖網頁」等需要透過瀏覽器或網路搜尋的行為，皆屬於此類。
+6. "BROWSE_WEB": 用戶需要「查詢即時資訊/天氣/公車/新聞/股價」、「截圖網頁畫面」、「對網頁進行爬蟲、爬取、讀取特定網址內容」或「上網搜尋資料」。
 7. "CHAT": 其他所有一般的對話、閒聊、打招呼、問題回答等不需要上網即時查資料或看網頁的行為。
-   - 例如：「你好」、「自我介紹一下」、「你最喜歡的 Minecraft 地圖是什麼？」、「什麼是光合作用？」、「1+1等於多少？」等。
-   - 注意：如果用戶詢問「你的意見/你喜歡什麼地圖」是 CHAT；但如果用戶說「幫我上某網站看看有什麼地圖」則是 BROWSE_WEB。
 
 用戶消息: "${content}"
 
 請務必只返回以下 JSON 格式（不要包含任何 markdown 標記或額外文字）：
 {
-  "intent": "意圖代碼",
+  "intent": "意圖代碼 (PLAY_MUSIC, SKIP_MUSIC, PAUSE_MUSIC, RESUME_MUSIC, STOP_MUSIC, BROWSE_WEB, CHAT)",
   "musicQuery": "如果是 PLAY_MUSIC，提取出想播放的歌曲/音樂名稱或搜尋關鍵字；否則為 null",
-  "requireScreenshot": true/false (布林值，如果是 BROWSE_WEB 且用戶明確要求「對網頁/網站進行截圖、看圖、看螢幕畫面、畫圖」則為 true，如果只是單純查詢即時資料/天氣/公車/新聞等則為 false；其他意圖下皆為 false),
-  "useBrowser": true/false (布林值，如果是 BROWSE_WEB 且用戶要求「打開特定網址/網域、瀏覽特定網站、造訪某個特定頁面、進行網頁爬蟲/爬取特定網站內容」則為 true，此時必須啟動網頁瀏覽器進行網頁操作；但如果只是「查詢一般即時資訊、天氣、公車到站、股票股價、最新時間」等不需要造訪特定 URL 或進行特定網站爬蟲的通用查詢，則為 false)
+  "browseType": "如果是 BROWSE_WEB，必須進一步分類為以下三者之一：
+    - 'screenshot': 用戶明確要求「對網頁/網站/螢幕進行截圖、看畫面、看螢幕畫面、畫網頁」；
+    - 'crawler': 用戶明確要求「進行網頁爬蟲/爬取特定網站內容、讀取/獲取/分析特定網址(URL)的內容」；
+    - 'precise_data': 用戶要求的是「查詢一般即時資訊、天氣、公車到站、股票股價、最新時間、即時新聞」等不需要造訪特定 URL 或進行特定網站爬蟲/截圖的通用查詢。
+    若非 BROWSE_WEB，則此欄位填 null"
 }`;
 
     const completion = await groq.chat.completions.create({
@@ -1110,15 +1125,28 @@ async function detectIntentWithAI(content) {
     const intent = parsed.intent || parsed.Intent || 'CHAT';
     const musicQuery = parsed.musicQuery || parsed.music_query || parsed.musicquery || null;
     
-    const requireScreenshotVal = parsed.requireScreenshot !== undefined ? parsed.requireScreenshot :
-                                 parsed.require_screenshot !== undefined ? parsed.require_screenshot :
-                                 parsed.requirescreenshot;
-    const requireScreenshot = requireScreenshotVal === true || String(requireScreenshotVal).toLowerCase() === 'true';
+    const browseTypeVal = parsed.browseType !== undefined ? parsed.browseType :
+                          parsed.browse_type !== undefined ? parsed.browse_type :
+                          parsed.browsetype || null;
+    
+    let requireScreenshot = false;
+    let useBrowser = false;
+    let browseType = null;
 
-    const useBrowserVal = parsed.useBrowser !== undefined ? parsed.useBrowser :
-                          parsed.use_browser !== undefined ? parsed.use_browser :
-                          parsed.usebrowser;
-    const useBrowser = useBrowserVal === true || String(useBrowserVal).toLowerCase() === 'true' || requireScreenshot;
+    if (intent === 'BROWSE_WEB') {
+      browseType = browseTypeVal ? String(browseTypeVal).toLowerCase().trim() : 'precise_data';
+      if (browseType === 'screenshot') {
+        requireScreenshot = true;
+        useBrowser = true;
+      } else if (browseType === 'crawler') {
+        requireScreenshot = false;
+        useBrowser = true;
+      } else {
+        // 預設 (包括 'precise_data') 不啟用瀏覽器，直接用 Grounding 查詢
+        requireScreenshot = false;
+        useBrowser = false;
+      }
+    }
 
     return {
       intent,
