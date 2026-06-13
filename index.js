@@ -1160,6 +1160,119 @@ async function detectIntentWithAI(content) {
   }
 }
 
+// =================================================================
+// 🌐 Hugging Face Space 自動喚醒與狀態管理功能
+// =================================================================
+function getSpaceDetails() {
+  const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
+  if (process.env.HF_SPACE_ID) {
+    const parts = process.env.HF_SPACE_ID.split('/');
+    if (parts.length === 2) {
+      return { namespace: parts[0].trim(), spaceName: parts[1].trim() };
+    }
+  }
+  
+  if (OPENCLAW_URL) {
+    // 格式 1: https://huggingface.co/spaces/namespace/spaceName
+    const directMatch = OPENCLAW_URL.match(/huggingface\.co\/spaces\/([^/]+)\/([^/]+)/i);
+    if (directMatch) {
+      return { namespace: directMatch[1], spaceName: directMatch[2] };
+    }
+    
+    // 格式 2: https://namespace-spaceName.hf.space
+    const subMatch = OPENCLAW_URL.match(/https?:\/\/([^.]+)\.hf\.space/i);
+    if (subMatch) {
+      const sub = subMatch[1];
+      const lastHyphen = sub.lastIndexOf('-');
+      if (lastHyphen !== -1) {
+        return {
+          namespace: sub.substring(0, lastHyphen),
+          spaceName: sub.substring(lastHyphen + 1)
+        };
+      }
+    }
+  }
+  return null;
+}
+
+async function ensureSpaceIsRunning() {
+  const spaceDetails = getSpaceDetails();
+  if (!spaceDetails) return { success: false, reason: '無法解析 Space ID' };
+  
+  const { namespace, spaceName } = spaceDetails;
+  const hfToken = getCurrentHFToken();
+  if (!hfToken) {
+    return { success: false, reason: '未設定 Hugging Face Token' };
+  }
+  
+  console.log(`[HF Space Manager] 正在檢查 Space 狀態: ${namespace}/${spaceName}`);
+  
+  try {
+    const statusRes = await fetch(`https://huggingface.co/api/spaces/${namespace}/${spaceName}/runtime`, {
+      headers: {
+        'Authorization': `Bearer ${hfToken}`
+      },
+      timeout: 10000
+    });
+    
+    if (!statusRes.ok) {
+      const errText = await statusRes.text();
+      return { success: false, reason: `獲取狀態失敗 (${statusRes.status}): ${errText}` };
+    }
+    
+    const statusData = await statusRes.json();
+    const stage = statusData.stage;
+    console.log(`[HF Space Manager] 當前狀態: ${stage}`);
+    
+    if (stage === 'RUNNING') {
+      return { success: true, stage: 'RUNNING' };
+    }
+    
+    // 如果是 PAUSED、SLEEPING 或停用狀態，則發送喚醒指令 (POST)
+    if (stage === 'PAUSED' || stage === 'SLEEPING' || stage === 'STOPPED') {
+      console.log(`[HF Space Manager] Space 處於 ${stage}。正在發送 POST 重啟/喚醒請求...`);
+      const restartRes = await fetch(`https://huggingface.co/api/spaces/${namespace}/${spaceName}/restart`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${hfToken}`
+        },
+        timeout: 10000
+      });
+      
+      if (!restartRes.ok) {
+        const errText = await restartRes.text();
+        return { success: false, reason: `發送重啟請求失敗 (${restartRes.status}): ${errText}` };
+      }
+      
+      console.log(`[HF Space Manager] 喚醒請求發送成功，開始輪詢狀態...`);
+      
+      // 輪詢 Space 狀態直到 RUNNING 或 APP_STARTING 等可用狀態 (最多輪詢 10 次，每次間隔 3 秒)
+      for (let attempt = 1; attempt <= 10; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const pollRes = await fetch(`https://huggingface.co/api/spaces/${namespace}/${spaceName}/runtime`, {
+          headers: {
+            'Authorization': `Bearer ${hfToken}`
+          },
+          timeout: 10000
+        });
+        if (pollRes.ok) {
+          const pollData = await pollRes.json();
+          console.log(`[HF Space Manager] 輪詢 (${attempt}/10) 狀態: ${pollData.stage}`);
+          if (pollData.stage === 'RUNNING' || pollData.stage === 'BUILDING' || pollData.stage === 'RUNNING_BUILDING' || pollData.stage === 'APP_STARTING') {
+            return { success: true, stage: pollData.stage, wokeUp: true };
+          }
+        }
+      }
+      return { success: true, stage: 'WAKING_UP', wokeUp: true };
+    }
+    
+    return { success: true, stage: stage };
+  } catch (err) {
+    console.error('[HF Space Manager] 確保 Space 運行時發生錯誤:', err);
+    return { success: false, reason: err.message };
+  }
+}
+
 // 初始化YouTube API
 const { google } = require('googleapis');
 if (!process.env.YOUTUBE_API_KEY) {
@@ -3796,6 +3909,16 @@ client.on('messageCreate', async (message) => {
       if (OPENCLAW_URL && isBotOwner(message.author.id)) {
         console.log(`[OpenClaw] 老闆特權驗證成功，發送請求至: ${OPENCLAW_URL}/v1/chat/completions`);
         try {
+          // 在發送請求前，自動檢查並喚醒 Hugging Face Space
+          const spaceCheck = await ensureSpaceIsRunning();
+          if (spaceCheck.success && spaceCheck.wokeUp) {
+            await message.channel.send('🔔 偵測到雲端瀏覽器服務處於休眠/暫停狀態，已為您自動發送喚醒指令，正在啟動中，請稍候...');
+            // 多等待 5 秒以確保 container 順利啟動
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          } else if (!spaceCheck.success) {
+            console.warn(`[HF Space Manager] 喚醒檢查失敗但繼續嘗試: ${spaceCheck.reason}`);
+          }
+
           const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
           const browserPrompt = message.content + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}。請你根據此 UTC 時間點，結合用戶提及的城市、地理位置或意圖，自動判斷並轉換為該地對應時區的當地時間，來提供最精確的行程安排、即時資訊回覆或搜尋。【極重要強制指令：對於任何涉及即時資訊（如天氣、公車到站時間、飛機航班、股價、新聞、最新時間等）或需要精準數據的用戶提問，你必須立即且無條件調用搜尋工具 (web_search) 或網頁瀏覽工具 (browser) 進行查詢。絕對不允許不查資料就憑藉你自身的靜態知識或猜測直接回覆，也絕對不允許直接建議用戶自己去官網查。你必須幫用戶查到最新數據並呈現出來，否則即視為嚴重錯誤！】你優先且主要使用內建的網頁搜尋工具 (web_search) 進行任何網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊）。如果 web_search 的結果不理想、不夠精確或沒有即時數據，你完全可以並且應該主動調用網頁瀏覽工具 (browser) 直接瀏覽相關網頁來獲取精確資訊！只有當你需要進行「關鍵字搜尋」且必須使用瀏覽器網頁時，才造訪 DuckDuckGo (https://html.duckduckgo.com/)，請絕對不要使用 Google 或 Yahoo 的搜尋引擎進行關鍵字搜尋，因為它們的搜尋 WAF 機制會阻擋你的瀏覽器訪問並回傳錯誤。在使用網頁瀏覽工具 (browser) 時，請嚴格遵守以下規則：\n1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://html.duckduckgo.com/"}。\n2. 所有操作（click、type、press）都必須使用從頁面快照取得的 ref 值（元素參考編號，請作為字串傳入），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8、e9 等都是無效的）。\n3. 輸入文字時，請絕對不要使用 kind: "fill" 或 fields 參數，你必須完全使用 kind: "type" 動作，並在最外層同時提供 ref 和 text 欄位。例如：{"action":"act","kind":"type","ref":"12","text":"要輸入的文字"}。\n4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":"12","key":"Enter"}。\n5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":"12"}。\n6. 絕對不要使用 CSS 選擇器 (selector 參數)。\n7. 在回覆中請絕對不要將 any 數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】\n\n[【系統指令】僅當你實際使用瀏覽器工具成功拍下網頁截圖或下載檔案時，才必須在回覆的最後一行加上 SCREENSHOT_PATH:<工具回傳的實際絕對路徑>。如果你沒有使用瀏覽器工具、沒有截圖或截圖失敗，請絕對不要加上 SCREENSHOT_PATH。禁止自行捏造、猜測或使用範例中不存在的路徑。]`;
 
@@ -5689,6 +5812,16 @@ if (TELEGRAM_TOKEN) {
       if (analysis.useBrowser) {
         if (OPENCLAW_URL && OPENCLAW_PASS) {
       try {
+        // 在發送請求前，自動檢查並喚醒 Hugging Face Space
+        const spaceCheck = await ensureSpaceIsRunning();
+        if (spaceCheck.success && spaceCheck.wokeUp) {
+          await sendTelegramMessage(chatId, '🔔 偵測到雲端瀏覽器服務處於休眠/暫停狀態，已為您自動發送喚醒指令，正在啟動中，請稍候...');
+          // 多等待 5 秒以確保 container 順利啟動
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        } else if (!spaceCheck.success) {
+          console.warn(`[HF Space Manager] 喚醒檢查失敗但繼續嘗試: ${spaceCheck.reason}`);
+        }
+
         const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
         const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
           method: 'POST',
