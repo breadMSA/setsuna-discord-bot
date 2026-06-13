@@ -6,6 +6,9 @@ const path = require('path');
 const { exec } = require('child_process');
 const db = require('./db');
 
+// Start keep-alive and Gemini proxy server
+require('./server');
+
 // Music System
 const { MusicPlayer, parseTime } = require('./music/MusicPlayer');
 const { musicCommand } = require('./commands/musicCommands');
