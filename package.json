@@ -18,6 +18,7 @@
     "author": "",
     "license": "MIT",
     "dependencies": {
+        "express": "^4.19.2",
         "mongodb": "^6.5.0",
         "@cerebras/cerebras_cloud_sdk": "^1.35.0",
         "@google/genai": "^1.0.1",
