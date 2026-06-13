@@ -59,56 +59,33 @@ if (!DISCORD_TOKEN) {
   process.exit(1);
 }
 
+// Helper function to parse multiple keys from env variables (supporting single keys, numbered keys, or comma-separated lists)
+function parseKeysFromEnv(envNames) {
+  const keys = [];
+  for (const name of envNames) {
+    const val = process.env[name];
+    if (val) {
+      const split = val.split(',');
+      for (const k of split) {
+        const trimmed = k.trim();
+        if (trimmed && trimmed !== 'DUMMY_KEY' && !keys.includes(trimmed)) {
+          keys.push(trimmed);
+        }
+      }
+    }
+  }
+  return keys;
+}
+
 // Load all API keys for different models
-const DEEPSEEK_API_KEYS = [
-  process.env.DEEPSEEK_API_KEY,
-  process.env.DEEPSEEK_API_KEY_2,
-  process.env.DEEPSEEK_API_KEY_3
-].filter(key => key); // Filter out undefined/null keys
-
-const GEMINI_API_KEYS = [
-  process.env.GEMINI_API_KEY,
-  process.env.GEMINI_API_KEY_2,
-  process.env.GEMINI_API_KEY_3
-].filter(key => key); // Filter out undefined/null keys
-
-const CHATGPT_API_KEYS = [
-  process.env.CHATGPT_API_KEY,
-  process.env.CHATGPT_API_KEY_2,
-  process.env.CHATGPT_API_KEY_3
-].filter(key => key); // Filter out undefined/null keys
-
-// Mistral AI API keys
-const MISTRAL_API_KEYS = [
-  process.env.MISTRAL_API_KEY,
-  process.env.MISTRAL_API_KEY_2,
-  process.env.MISTRAL_API_KEY_3
-].filter(key => key); // Filter out undefined/null keys
-
-const GROQ_API_KEYS = [
-  process.env.GROQ_API_KEY,
-  process.env.GROQ_API_KEY_2,
-  process.env.GROQ_API_KEY_3
-].filter(key => key); // Filter out undefined/null keys
-
-const CEREBRAS_API_KEYS = [
-  process.env.CEREBRAS_API_KEY,
-  process.env.CEREBRAS_API_KEY_2,
-  process.env.CEREBRAS_API_KEY_3
-].filter(key => key); // Filter out undefined/null keys
-
-// Character.AI API keys
-const CHARACTERAI_TOKENS = [
-  process.env.CHARACTERAI_TOKEN,
-  process.env.CHARACTERAI_TOKEN_2,
-  process.env.CHARACTERAI_TOKEN_3
-].filter(key => key); // Filter out undefined/null keys
-
-const HF_TOKENS = [
-  process.env.HF_TOKEN,
-  process.env.HF_TOKEN_2,
-  process.env.HF_TOKEN_3
-].filter(key => key); // Filter out undefined/null keys
+const DEEPSEEK_API_KEYS = parseKeysFromEnv(['DEEPSEEK_API_KEY', 'DEEPSEEK_API_KEYS', 'DEEPSEEK_API_KEY_2', 'DEEPSEEK_API_KEY_3']);
+const GEMINI_API_KEYS = parseKeysFromEnv(['GEMINI_API_KEY', 'GEMINI_API_KEYS', 'GEMINI_API_KEY_2', 'GEMINI_API_KEY_3']);
+const CHATGPT_API_KEYS = parseKeysFromEnv(['CHATGPT_API_KEY', 'CHATGPT_API_KEYS', 'CHATGPT_API_KEY_2', 'CHATGPT_API_KEY_3']);
+const MISTRAL_API_KEYS = parseKeysFromEnv(['MISTRAL_API_KEY', 'MISTRAL_API_KEYS', 'MISTRAL_API_KEY_2', 'MISTRAL_API_KEY_3']);
+const GROQ_API_KEYS = parseKeysFromEnv(['GROQ_API_KEY', 'GROQ_API_KEYS', 'GROQ_API_KEY_2', 'GROQ_API_KEY_3']);
+const CEREBRAS_API_KEYS = parseKeysFromEnv(['CEREBRAS_API_KEY', 'CEREBRAS_API_KEYS', 'CEREBRAS_API_KEY_2', 'CEREBRAS_API_KEY_3']);
+const CHARACTERAI_TOKENS = parseKeysFromEnv(['CHARACTERAI_TOKEN', 'CHARACTERAI_TOKENS', 'CHARACTERAI_TOKEN_2', 'CHARACTERAI_TOKEN_3']);
+const HF_TOKENS = parseKeysFromEnv(['HF_TOKEN', 'HF_TOKENS', 'HF_TOKEN_2', 'HF_TOKEN_3']);
 
 let currentHFTokenIndex = 0;
 
