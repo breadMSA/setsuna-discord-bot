@@ -2331,6 +2331,81 @@ async function callGeminiAPI(messages) {
   throw lastError || new Error('All Gemini API keys failed');
 }
 
+async function callGeminiAPIWithGrounding(messages, modelName = 'gemini-2.5-flash') {
+  // Try all available Gemini keys until one works
+  let lastError = null;
+  const initialKeyIndex = currentGeminiKeyIndex;
+  let keysTriedCount = 0;
+
+  // Convert messages to @google/genai format
+  const contents = [];
+  let systemInstruction = undefined;
+
+  // Extract system instruction if it exists
+  const systemMessage = messages.find(msg => msg.role === 'system');
+  if (systemMessage && systemMessage.content?.trim()) {
+    systemInstruction = systemMessage.content;
+  }
+
+  // Add the rest of the messages
+  for (const msg of messages) {
+    if (msg.role !== 'system' && msg.content?.trim()) {
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      });
+    }
+  }
+
+  // Check if we have any valid messages
+  if (contents.length === 0) {
+    throw new Error('No valid messages with content to send to Gemini API');
+  }
+
+  while (keysTriedCount < GEMINI_API_KEYS.length) {
+    try {
+      // Import the modern Google GenAI SDK
+      const { GoogleGenAI } = await import('@google/genai');
+
+      // Initialize Google GenAI with the current key
+      const ai = new GoogleGenAI({ apiKey: getCurrentGeminiKey() });
+
+      // Call generateContent with googleSearch tool enabled
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: contents,
+        config: {
+          systemInstruction: systemInstruction,
+          maxOutputTokens: 2048,
+          tools: [{ googleSearch: {} }]
+        }
+      });
+
+      // Check for response text
+      if (!response || !response.text) {
+        lastError = new Error('Empty response from Gemini API');
+        getNextGeminiKey();
+        keysTriedCount++;
+        console.log(`Gemini API key ${currentGeminiKeyIndex + 1}/${GEMINI_API_KEYS.length} returned empty response`);
+        continue;
+      }
+
+      // Success! Return the response
+      return response.text;
+
+    } catch (error) {
+      // Try next key
+      lastError = error;
+      getNextGeminiKey();
+      keysTriedCount++;
+      console.log(`Gemini API key ${currentGeminiKeyIndex + 1}/${GEMINI_API_KEYS.length} error: ${error.message}`);
+    }
+  }
+
+  // If we get here, all keys failed
+  throw lastError || new Error('All Gemini API keys failed');
+}
+
 // 使用AI判定用戶是否想要生成圖片的函數
 async function detectImageGenerationWithAI(content, messageHistory = []) {
   try {
@@ -3638,8 +3713,9 @@ client.on('messageCreate', async (message) => {
   const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
   const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
-  if (OPENCLAW_URL && analysis.intent === 'BROWSE_WEB') {
-    if (isBotOwner(message.author.id)) {
+  if (analysis.intent === 'BROWSE_WEB') {
+    if (analysis.requireScreenshot) {
+      if (OPENCLAW_URL && isBotOwner(message.author.id)) {
         console.log(`[OpenClaw] 老闆特權驗證成功，發送請求至: ${OPENCLAW_URL}/v1/chat/completions`);
         try {
           const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -3924,10 +4000,70 @@ client.on('messageCreate', async (message) => {
           return;
         }
       } else {
-        await message.channel.send('靠北，本小姐上網查資料很累耶，這功能只有我老闆可以用！');
+        await message.channel.send('靠北，本小姐上網查資料（截圖）很累耶，這功能只有我老闆可以用！');
+        return;
+      }
+    } else {
+      // 不需要截圖，純粹是需要精確即時資料的網頁查詢：直接調用 Gemini Grounding API (使用 gemini-2.5-flash)
+      console.log(`[Gemini Grounding] 開始使用 gemini-2.5-flash 執行 Grounding 查詢...`);
+      try {
+        const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+        const channelPersonality = channelPersonalityPreferences.get(message.channelId) || setsunaPersonality;
+        
+        // 獲取最近的消息 (16條) 以獲取對話上下文
+        const recentMessages = await message.channel.messages.fetch({ limit: 16 });
+        const channelHistory = Array.from(recentMessages.values())
+          .reverse()
+          .map(msg => ({
+            content: msg.content,
+            author: msg.author,
+            attachments: msg.attachments
+          }));
+
+        // 過濾掉當前用戶的最新消息
+        const historyWithoutCurrent = channelHistory.slice(0, -1);
+        const formattedHistory = [];
+        for (const msg of historyWithoutCurrent) {
+          const role = msg.author.id === client.user.id ? 'assistant' : 'user';
+          const authorName = msg.author.username;
+          const content = role === 'user' ? `[${authorName}]: ${msg.content}` : msg.content;
+          if (content && content.trim()) {
+            formattedHistory.push({
+              role: role,
+              content: content
+            });
+          }
+        }
+
+        const wrappedMessages = [
+          {
+            role: 'system',
+            content: channelPersonality + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}（台北時間 = UTC+8，請自行換算）。請你根據此 UTC 時間點，結合用戶提及的城市、地理位置或意圖，自動判斷並轉換為該地對應時區的當地時間，來提供最精確的行程安排、即時資訊回覆或搜尋。【極重要強制指令：對於任何涉及即時資訊（如天氣、公車到站時間、飛機航班、股價、新聞、最新時間等）或需要精準數據的用戶提問，你必須立即且無條件調用搜尋工具進行查詢。你必須幫用戶查到最新數據並呈現出來，否則即視為嚴重錯誤！】在回覆中請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】`
+          },
+          ...formattedHistory,
+          { role: 'user', content: message.content }
+        ];
+
+        await message.channel.sendTyping();
+        const finalReply = await callGeminiAPIWithGrounding(wrappedMessages, 'gemini-2.5-flash');
+        
+        // Discord 單則訊息上限 2000 字
+        if (finalReply.length <= 2000) {
+          await message.reply(finalReply);
+        } else {
+          const chunks = finalReply.match(/[\s\S]{1,2000}/g) || [finalReply];
+          for (const chunk of chunks) {
+            await message.reply(chunk);
+          }
+        }
+        return;
+      } catch (err) {
+        console.error('[Gemini Grounding] 查詢出錯:', err);
+        await message.reply(`❌ 查詢即時資訊時出錯：${err.message}`);
         return;
       }
     }
+  }
   // =================================================================
 
   // 獲取頻道的消息歷史用於上下文判斷
@@ -5391,49 +5527,22 @@ if (TELEGRAM_TOKEN) {
     await sendTelegramMessage(chatId, '🔔 正在為您查詢公車 647 和 915 到達「消防局（松仁）」的動態資訊，請稍候...');
     await sendTelegramChatAction(chatId, 'typing');
 
-    const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
-    const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
-
-    if (!OPENCLAW_URL || !OPENCLAW_PASS) {
-      await sendTelegramMessage(chatId, '❌ 無法執行報時：未設定 OpenClaw API 網址或密碼。');
-      return;
-    }
-
     try {
       const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
       const queryText = `請查詢台北市公車 647 和 915 下一班以及下下一班到達「消防局（松仁）」站牌還要多久，並用繁體中文簡潔明瞭地回報。不要長篇大論，直接列出公車路線與預估時間即可。`;
       
-      const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
-        method: 'POST',
-        timeout: 120000,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENCLAW_PASS}`
-        },
-        body: JSON.stringify({
-          model: 'openclaw',
-          messages: [
-            {
-              role: 'user',
-              content: queryText + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}（台北時間 = UTC+8，請自行換算）。你必須使用內建的網頁搜尋工具 (web_search) 查詢台北市公車即時到站資訊，這樣才能取得真實即時數據。絕對不允許憑自身靜態知識猜測或編造公車時間，否則即視為嚴重錯誤。在回覆中請完全保留阿拉伯數字格式，不要轉換成中文數字。】`
-            }
-          ],
-          stream: false
-        })
-      });
+      const systemPrompt = `【系統指令：現在基準時間（UTC）：${utcTimeStr}（台北時間 = UTC+8，請自行換算）。你必須使用內建的網頁搜尋工具 (web_search) 查詢台北市公車即時到站資訊，這樣才能取得真實即時數據。絕對不允許憑自身靜態知識猜測或編造公車時間，否則即視為嚴重錯誤。在回覆中請完全保留阿拉伯數字格式，不要轉換成中文數字。】`;
+      
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: queryText }
+      ];
 
-      if (!openclawResponse.ok) {
-        const errBody = await openclawResponse.text();
-        throw new Error(`OpenClaw HTTP ${openclawResponse.status}: ${errBody.substring(0, 200)}`);
-      }
-
-      const openclawData = await openclawResponse.json();
-      const rawResult = openclawData?.choices?.[0]?.message?.content
-        || openclawData.reply || openclawData.message || openclawData.content
-        || null;
+      // 直接調用 Gemini Grounding API (使用 gemini-2.5-flash)
+      const rawResult = await callGeminiAPIWithGrounding(messages, 'gemini-2.5-flash');
 
       if (!rawResult) {
-        await sendTelegramMessage(chatId, '❌ 查詢失敗：OpenClaw 沒有回傳結果。');
+        await sendTelegramMessage(chatId, '❌ 查詢失敗：Gemini Grounding API 沒有回傳結果。');
         return;
       }
 
@@ -5498,7 +5607,9 @@ if (TELEGRAM_TOKEN) {
     const analysis = await detectIntentWithAI(text);
     console.log(`[Telegram] 意圖判定: ${analysis.intent}`);
 
-    if (analysis.intent === 'BROWSE_WEB' && OPENCLAW_URL && OPENCLAW_PASS) {
+    if (analysis.intent === 'BROWSE_WEB') {
+      if (analysis.requireScreenshot) {
+        if (OPENCLAW_URL && OPENCLAW_PASS) {
       try {
         const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
         const openclawResponse = await fetch(`${OPENCLAW_URL}/v1/chat/completions`, {
@@ -5742,6 +5853,30 @@ if (TELEGRAM_TOKEN) {
         console.error('[Telegram] OpenClaw error:', err);
         await sendTelegramMessage(chatId, `OpenClaw 連線失敗：${err.message}`);
         return;
+      }
+    }
+      } else {
+        // 不需要截圖，純粹是需要精確即時資料的網頁查詢：直接調用 Gemini Grounding API (使用 gemini-2.5-flash)
+        console.log(`[Telegram Gemini Grounding] 開始使用 gemini-2.5-flash 執行 Grounding 查詢...`);
+        try {
+          const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+          const messages = [
+            {
+              role: 'system',
+              content: setsunaPersonality + `\n\n【系統指令：現在基準時間（UTC）：${utcTimeStr}（台北時間 = UTC+8，請自行換算）。請你根據此 UTC 時間點，結合用戶提及的城市、地理位置或意圖，自動判斷並轉換為該地對應時區的當地時間，來提供最精確的行程安排、即時資訊回覆或搜尋。【極重要強制指令：對於任何涉及即時資訊（如天氣、公車到站時間、飛機航班、股價、新聞、最新時間等）或需要精準數據的用戶提問，你必須立即且無條件調用搜尋工具進行查詢。你必須幫用戶查到最新數據並呈現出來，否則即視為嚴重錯誤！】在回覆中請絕對不要將任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將「1」寫成「一」）。請完全保留原本的阿拉伯數字、英文以及格式！】`
+            },
+            { role: 'user', content: `[${username}]: ${text}` }
+          ];
+
+          await sendTelegramChatAction(chatId, 'typing');
+          const finalReply = await callGeminiAPIWithGrounding(messages, 'gemini-2.5-flash');
+          await sendTelegramMessage(chatId, finalReply);
+          return;
+        } catch (err) {
+          console.error('[Telegram Gemini Grounding] 查詢出錯:', err);
+          await sendTelegramMessage(chatId, `❌ 查詢即時資訊時出錯：${err.message}`);
+          return;
+        }
       }
     }
 
