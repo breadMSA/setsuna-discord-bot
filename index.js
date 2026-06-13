@@ -1025,16 +1025,19 @@ function detectIntentWithRegex(content) {
     return { intent: 'STOP_MUSIC', musicQuery: null };
   }
 
-  // 判斷是否為網頁查詢
+  // 判斷是否為網頁查詢 (正則表達式處理，僅供 AI 連線失敗時的降級防護)
+  // 為避免誤判導致頻繁開啟瀏覽器被封鎖，正則判斷應極其保守，預設均使用 safe grounding (useBrowser: false)
   const webKeywords = /(天氣|新聞|公車|路況|股票|股價|截圖|網頁|連結|上網查|查一下|打開|造訪|進入|網址|http|\.com|\.org|\.net|\.tw|ptt|minecraftmaps|爬蟲|爬取)/i;
   if (webKeywords.test(content)) {
     const screenshotKeywords = /(截圖|截屏|看螢幕|看畫面|看截圖)/i;
-    const browserKeywords = /(打開|造訪|進入|網址|http|\.com|\.org|\.net|\.tw|ptt|minecraftmaps|爬蟲|爬取)/i;
+    // 只有當明確提及爬蟲或截圖時，正則降級才開啟瀏覽器
+    const browserKeywords = /(爬蟲|爬取|網頁截圖)/i;
+    const requireScreenshot = screenshotKeywords.test(content);
     return {
       intent: 'BROWSE_WEB',
       musicQuery: null,
-      requireScreenshot: screenshotKeywords.test(content),
-      useBrowser: screenshotKeywords.test(content) || browserKeywords.test(content)
+      requireScreenshot: requireScreenshot,
+      useBrowser: requireScreenshot || browserKeywords.test(content)
     };
   }
 
@@ -1043,8 +1046,14 @@ function detectIntentWithRegex(content) {
 
 async function detectIntentWithAI(content) {
   try {
+    const groqKey = getCurrentGroqKey();
+    if (!groqKey) {
+      console.warn('[Intent detection] No Groq API Key set. Falling back to regex.');
+      return detectIntentWithRegex(content);
+    }
+
     const Groq = require('groq-sdk');
-    const groq = new Groq({ apiKey: getCurrentGroqKey() });
+    const groq = new Groq({ apiKey: groqKey });
 
     const prompt = `請分析以下用戶消息的意圖，並將其分類為以下其中一個意圖類型：
 1. "PLAY_MUSIC": 用戶想要「播放音樂」、「播歌」、「點歌」、「放歌」（例如："幫我播 blood in the water"、"來一首周杰倫的歌"、"play blood in the water"）。注意：純粹提及 play 但不是指播歌/播放音樂（例如 "wanna play Minecraft?", "play basketball", "play CSGO"）應判定為 "CHAT"。
@@ -1077,12 +1086,45 @@ async function detectIntentWithAI(content) {
       response_format: { type: 'json_object' }
     });
 
-    const parsed = JSON.parse(completion.choices[0].message.content.trim());
+    const responseContent = completion.choices[0].message.content.trim();
+    
+    // 超級強固的 JSON 提取與解析邏輯
+    let parsed;
+    try {
+      parsed = JSON.parse(responseContent);
+    } catch (parseErr) {
+      // 嘗試利用正則從 Markdown 代碼塊或文字中提取 JSON 物件
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch (innerErr) {
+          throw new Error('Failed to parse extracted JSON object from Groq response');
+        }
+      } else {
+        throw new Error('No valid JSON object found in Groq response');
+      }
+    }
+
+    // 標準化意圖與欄位名稱（兼顧大小寫與蛇形命名）
+    const intent = parsed.intent || parsed.Intent || 'CHAT';
+    const musicQuery = parsed.musicQuery || parsed.music_query || parsed.musicquery || null;
+    
+    const requireScreenshotVal = parsed.requireScreenshot !== undefined ? parsed.requireScreenshot :
+                                 parsed.require_screenshot !== undefined ? parsed.require_screenshot :
+                                 parsed.requirescreenshot;
+    const requireScreenshot = requireScreenshotVal === true || String(requireScreenshotVal).toLowerCase() === 'true';
+
+    const useBrowserVal = parsed.useBrowser !== undefined ? parsed.useBrowser :
+                          parsed.use_browser !== undefined ? parsed.use_browser :
+                          parsed.usebrowser;
+    const useBrowser = useBrowserVal === true || String(useBrowserVal).toLowerCase() === 'true' || requireScreenshot;
+
     return {
-      intent: parsed.intent || 'CHAT',
-      musicQuery: parsed.musicQuery || null,
-      requireScreenshot: parsed.requireScreenshot === true,
-      useBrowser: parsed.useBrowser === true || parsed.requireScreenshot === true
+      intent,
+      musicQuery,
+      requireScreenshot,
+      useBrowser
     };
   } catch (e) {
     console.error('[Intent detection error, falling back to regex]', e);
