@@ -1122,16 +1122,28 @@ async function detectIntentWithAI(content) {
     }
 
     // 標準化意圖與欄位名稱（兼顧大小寫與蛇形命名）
-    const intent = parsed.intent || parsed.Intent || 'CHAT';
+    let intent = parsed.intent || parsed.Intent || 'CHAT';
     const musicQuery = parsed.musicQuery || parsed.music_query || parsed.musicquery || null;
     
-    const browseTypeVal = parsed.browseType !== undefined ? parsed.browseType :
+    let browseTypeVal = parsed.browseType !== undefined ? parsed.browseType :
                           parsed.browse_type !== undefined ? parsed.browse_type :
                           parsed.browsetype || null;
     
     let requireScreenshot = false;
     let useBrowser = false;
     let browseType = null;
+
+    // 強固正則覆寫：若用戶消息包含截圖或爬蟲關鍵字，強制判定為對應意圖，避免 AI (Llama-3.1-8b) 誤判
+    const screenshotKeywords = /(截圖|截屏|看螢幕|看畫面|看截圖|螢幕截圖)/i;
+    const crawlerKeywords = /(爬蟲|爬取)/i;
+
+    if (screenshotKeywords.test(content)) {
+      intent = 'BROWSE_WEB';
+      browseTypeVal = 'screenshot';
+    } else if (crawlerKeywords.test(content)) {
+      intent = 'BROWSE_WEB';
+      browseTypeVal = 'crawler';
+    }
 
     if (intent === 'BROWSE_WEB') {
       browseType = browseTypeVal ? String(browseTypeVal).toLowerCase().trim() : 'precise_data';
