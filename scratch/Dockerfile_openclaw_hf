@@ -114,7 +114,8 @@ const config = {
       '--no-sandbox',
       '--no-zygote',
       '--js-flags=--max-old-space-size=512',
-      '--disable-http2'
+      '--disable-http2',
+      '--host-resolver-rules=MAP *moovitapp.com 127.0.0.1, MAP *hcaptcha.com 127.0.0.1, MAP *recaptcha.net 127.0.0.1'
     ]
   }
 };
