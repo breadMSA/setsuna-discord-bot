@@ -5,12 +5,14 @@ const { spawn } = require('child_process');
 const https = require('https');
 const querystring = require('querystring');
 
-const PORT = 18789;
+const PORT = process.env.PORT || 18789;
 const TARGET_PORT = 18790;
+const os = require('os');
+const HOME_DIR = os.homedir();
 const DIRS_TO_CHECK = [
-  '/home/node/.openclaw/media/browser',
-  '/home/node/.openclaw/workspace/media',
-  '/home/node/.openclaw/media'
+  path.join(HOME_DIR, '.openclaw/media/browser'),
+  path.join(HOME_DIR, '.openclaw/workspace/media'),
+  path.join(HOME_DIR, '.openclaw/media')
 ];
 
 let globalKeyCounter = 0;
@@ -748,8 +750,9 @@ const server = http.createServer((req, res) => {
 
   if (urlPath === '/chromium-log') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    if (fs.existsSync('/home/node/chromium.log')) {
-      return res.end(fs.readFileSync('/home/node/chromium.log'));
+    const chromLog = path.join(HOME_DIR, 'chromium.log');
+    if (fs.existsSync(chromLog)) {
+      return res.end(fs.readFileSync(chromLog));
     } else {
       return res.end('chromium.log does not exist');
     }
@@ -759,7 +762,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     let logDir = '/tmp/openclaw';
     if (!fs.existsSync(logDir)) {
-      logDir = '/home/node/.openclaw';
+      logDir = path.join(HOME_DIR, '.openclaw');
     }
     if (fs.existsSync(logDir)) {
       const files = fs.readdirSync(logDir).filter(f => f.endsWith('.log'));

@@ -101,6 +101,25 @@ const CHARACTERAI_TOKENS = [
   process.env.CHARACTERAI_TOKEN_3
 ].filter(key => key); // Filter out undefined/null keys
 
+const HF_TOKENS = [
+  process.env.HF_TOKEN,
+  process.env.HF_TOKEN_2,
+  process.env.HF_TOKEN_3
+].filter(key => key); // Filter out undefined/null keys
+
+let currentHFTokenIndex = 0;
+
+function getCurrentHFToken() {
+  if (HF_TOKENS.length === 0) return '';
+  return HF_TOKENS[currentHFTokenIndex];
+}
+
+function getNextHFToken() {
+  if (HF_TOKENS.length === 0) return '';
+  currentHFTokenIndex = (currentHFTokenIndex + 1) % HF_TOKENS.length;
+  return HF_TOKENS[currentHFTokenIndex];
+}
+
 // Character.AI character ID
 const CHARACTERAI_CHARACTER_ID = process.env.CHARACTERAI_CHARACTER_ID;
 
@@ -3703,7 +3722,7 @@ client.on('messageCreate', async (message) => {
             }
 
             // 通用絕對路徑匹配兜底
-            const absolutePathRegex = /(\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+)/gi;
+            const absolutePathRegex = /(\/home\/[^/]+\/\.openclaw\/[^\s"'>\(\)\[\]]+)/gi;
             while ((match = absolutePathRegex.exec(rawResult)) !== null) {
               attachments.push(match[1]);
             }
@@ -3729,13 +3748,30 @@ client.on('messageCreate', async (message) => {
             if (attPath.startsWith('http://') || attPath.startsWith('https://')) {
               finalFileUrl = attPath;
               try {
+                const headers = { 'Authorization': `Bearer ${OPENCLAW_PASS}` };
+                const isHfSpace = finalFileUrl.includes('hf.space') || finalFileUrl.includes('huggingface.co');
+                const hfToken = getCurrentHFToken();
+                if (isHfSpace && hfToken) {
+                  headers['Authorization'] = `Bearer ${hfToken}`;
+                }
                 const fileRes = await fetch(finalFileUrl, {
-                  headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
+                  headers,
                   timeout: 30000
                 });
                 if (fileRes.ok) {
-                  buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
-                  success = true;
+                  const contentType = fileRes.headers.get('content-type') || '';
+                  if (contentType.includes('text/html') || contentType.includes('application/json')) {
+                    const text = await fileRes.text();
+                    if (text.includes('Preparing Space') || text.includes('This Space has been paused') || text.includes('Restart this Space') || text.includes('huggingface.co')) {
+                      console.warn(`[OpenClaw] 偵測到 Hugging Face 喚醒/暫停或 HTML 頁面，跳過該直接下載。`);
+                    } else {
+                      buffer = Buffer.from(text);
+                      success = true;
+                    }
+                  } else {
+                    buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
+                    success = true;
+                  }
                 }
               } catch (e) {
                 console.error(`[OpenClaw] 下載直接網址失敗: ${e.message}`);
@@ -3789,11 +3825,30 @@ client.on('messageCreate', async (message) => {
                   if (candidate.useHeader && OPENCLAW_PASS) {
                     headers['Authorization'] = `Bearer ${OPENCLAW_PASS}`;
                   }
+                  // 如果是 Hugging Face Space (hf.space)，必須帶上 HF_TOKEN 作為 Authorization (會覆蓋 OpenClaw Authorization)
+                  // 或者如果 Space 是私有的，需要帶上 HF 閘道所需要的 token
+                  const isHfSpace = candidate.url.includes('hf.space') || candidate.url.includes('huggingface.co');
+                  const hfToken = getCurrentHFToken();
+                  if (isHfSpace && hfToken) {
+                    headers['Authorization'] = `Bearer ${hfToken}`;
+                  }
+                  
                   const fileRes = await fetch(candidate.url, {
                     headers,
                     timeout: 10000
                   });
+                  
                   if (fileRes.ok) {
+                    const contentType = fileRes.headers.get('content-type') || '';
+                    // 確保回傳不是 Hugging Face 登入/喚醒 HTML 網頁
+                    if (contentType.includes('text/html') || contentType.includes('application/json')) {
+                      const text = await fileRes.text();
+                      if (text.includes('Preparing Space') || text.includes('This Space has been paused') || text.includes('Restart this Space') || text.includes('huggingface.co')) {
+                        console.warn(`[OpenClaw] 偵測到 Hugging Face 喚醒/暫停或 HTML 頁面，跳過該候選網址。`);
+                        continue;
+                      }
+                    }
+                    
                     buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
                     finalFileUrl = candidate.url;
                     success = true;
@@ -3821,7 +3876,7 @@ client.on('messageCreate', async (message) => {
           cleanRawResult = cleanRawResult.replace(/SCREENSHOT_PATH:[^\r\n\s]+/gi, '');
           cleanRawResult = cleanRawResult.replace(/MEDIA:[^\r\n\s]+/gi, '');
           cleanRawResult = cleanRawResult.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
-          cleanRawResult = cleanRawResult.replace(/\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
+          cleanRawResult = cleanRawResult.replace(/\/home\/[^/]+\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
           cleanRawResult = cleanRawResult.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
           cleanRawResult = cleanRawResult.trim();
 
@@ -3838,7 +3893,7 @@ client.on('messageCreate', async (message) => {
           cleanedReply = cleanedReply.replace(/SCREENSHOT_PATH:[^\r\n\s]+/gi, '');
           cleanedReply = cleanedReply.replace(/MEDIA:[^\r\n\s]+/gi, '');
           cleanedReply = cleanedReply.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
-          cleanedReply = cleanedReply.replace(/\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
+          cleanedReply = cleanedReply.replace(/\/home\/[^/]+\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
           cleanedReply = cleanedReply.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
           cleanedReply = cleanedReply.trim();
 
@@ -5512,7 +5567,7 @@ if (TELEGRAM_TOKEN) {
           tgAttachments.push(tgMatch[1]);
         }
         // 通用絕對路徑匹配兜底
-        const tgAbsolutePathRegex = /(\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+)/gi;
+        const tgAbsolutePathRegex = /(\/home\/[^/]+\/\.openclaw\/[^\s"'>\(\)\[\]]+)/gi;
         while ((tgMatch = tgAbsolutePathRegex.exec(rawResult)) !== null) {
           tgAttachments.push(tgMatch[1]);
         }
@@ -5532,7 +5587,7 @@ if (TELEGRAM_TOKEN) {
         cleanRawResult = cleanRawResult.replace(/SCREENSHOT_PATH:[^\r\n\s]+/gi, '');
         cleanRawResult = cleanRawResult.replace(/MEDIA:[^\r\n\s]+/gi, '');
         cleanRawResult = cleanRawResult.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
-        cleanRawResult = cleanRawResult.replace(/\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
+        cleanRawResult = cleanRawResult.replace(/\/home\/[^/]+\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
         cleanRawResult = cleanRawResult.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
         cleanRawResult = cleanRawResult.trim();
 
@@ -5548,7 +5603,7 @@ if (TELEGRAM_TOKEN) {
         cleanedTgReply = cleanedTgReply.replace(/SCREENSHOT_PATH:[^\r\n\s]+/gi, '');
         cleanedTgReply = cleanedTgReply.replace(/MEDIA:[^\r\n\s]+/gi, '');
         cleanedTgReply = cleanedTgReply.replace(/\[IMAGE SHARED BY [^\]]+\]/gi, '');
-        cleanedTgReply = cleanedTgReply.replace(/\/home\/node\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
+        cleanedTgReply = cleanedTgReply.replace(/\/home\/[^/]+\/\.openclaw\/[^\s"'>\(\)\[\]]+/gi, '');
         cleanedTgReply = cleanedTgReply.replace(/!\[[^\]]*\]\([^\)]+\)/g, '');
         cleanedTgReply = cleanedTgReply.trim();
 
@@ -5564,13 +5619,30 @@ if (TELEGRAM_TOKEN) {
           if (attPath.startsWith('http://') || attPath.startsWith('https://')) {
             finalFileUrl = attPath;
             try {
+              const headers = { 'Authorization': `Bearer ${OPENCLAW_PASS}` };
+              const isHfSpace = finalFileUrl.includes('hf.space') || finalFileUrl.includes('huggingface.co');
+              const hfToken = getCurrentHFToken();
+              if (isHfSpace && hfToken) {
+                headers['Authorization'] = `Bearer ${hfToken}`;
+              }
               const fileRes = await fetch(finalFileUrl, {
-                headers: { 'Authorization': `Bearer ${OPENCLAW_PASS}` },
+                headers,
                 timeout: 30000
               });
               if (fileRes.ok) {
-                buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
-                success = true;
+                const contentType = fileRes.headers.get('content-type') || '';
+                if (contentType.includes('text/html') || contentType.includes('application/json')) {
+                  const text = await fileRes.text();
+                  if (text.includes('Preparing Space') || text.includes('This Space has been paused') || text.includes('Restart this Space') || text.includes('huggingface.co')) {
+                    console.warn(`[Telegram] 偵測到 Hugging Face 喚醒/暫停或 HTML 頁面，跳過該直接下載。`);
+                  } else {
+                    buffer = Buffer.from(text);
+                    success = true;
+                  }
+                } else {
+                  buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
+                  success = true;
+                }
               }
             } catch (e) {
               console.error(`[Telegram] 下載直接網址失敗: ${e.message}`);
@@ -5624,11 +5696,28 @@ if (TELEGRAM_TOKEN) {
                 if (candidate.useHeader && OPENCLAW_PASS) {
                   headers['Authorization'] = `Bearer ${OPENCLAW_PASS}`;
                 }
+                // 如果是 Hugging Face Space (hf.space)，必須帶上 HF_TOKEN 作為 Authorization
+                const isHfSpace = candidate.url.includes('hf.space') || candidate.url.includes('huggingface.co');
+                const hfToken = getCurrentHFToken();
+                if (isHfSpace && hfToken) {
+                  headers['Authorization'] = `Bearer ${hfToken}`;
+                }
+
                 const fileRes = await fetch(candidate.url, {
                   headers,
                   timeout: 10000
                 });
+
                 if (fileRes.ok) {
+                  const contentType = fileRes.headers.get('content-type') || '';
+                  if (contentType.includes('text/html') || contentType.includes('application/json')) {
+                    const text = await fileRes.text();
+                    if (text.includes('Preparing Space') || text.includes('This Space has been paused') || text.includes('Restart this Space') || text.includes('huggingface.co')) {
+                      console.warn(`[Telegram] 偵測到 Hugging Face 喚醒/暫停或 HTML 頁面，跳過該候選網址。`);
+                      continue;
+                    }
+                  }
+
                   buffer = typeof fileRes.buffer === 'function' ? await fileRes.buffer() : Buffer.from(await fileRes.arrayBuffer());
                   finalFileUrl = candidate.url;
                   success = true;
@@ -5748,6 +5837,12 @@ if (OPENCLAW_URL) {
       const headers = {};
       if (OPENCLAW_PASS) {
         headers['Authorization'] = `Bearer ${OPENCLAW_PASS}`;
+      }
+      
+      const isHfSpace = OPENCLAW_URL.includes('hf.space') || OPENCLAW_URL.includes('huggingface.co');
+      const hfToken = getCurrentHFToken();
+      if (isHfSpace && hfToken) {
+        headers['Authorization'] = `Bearer ${hfToken}`;
       }
       
       const res = await fetch(`${OPENCLAW_URL}/ping`, {

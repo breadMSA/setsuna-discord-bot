@@ -19,6 +19,7 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV OPENCLAW_BROWSER_NO_SANDBOX=1
 ENV NODE_OPTIONS="--max-old-space-size=1024 --unhandled-rejections=warn"
 ENV TINI_SUBREAPER=1
+ENV BROWSER_TIMEOUT_MS=120000
 
 USER node
 
@@ -54,7 +55,7 @@ const config = {
         api: 'google-generative-ai'
       },
       "google-proxy": {
-        baseUrl: 'http://localhost:18789',
+        baseUrl: `http://localhost:${process.env.PORT || 18789}`,
         api: 'google-generative-ai',
         apiKey: 'DUMMY_KEY',
         models: [
@@ -112,18 +113,21 @@ const config = {
       '--disable-dev-shm-usage',
       '--no-sandbox',
       '--no-zygote',
-      '--js-flags=--max-old-space-size=512'
+      '--js-flags=--max-old-space-size=512',
+      '--disable-http2'
     ]
   }
 };
-const openclawPath = '/home/node/.openclaw';
+const os = require('os');
+const HOME_DIR = os.homedir();
+const openclawPath = require('path').join(HOME_DIR, '.openclaw');
 fs.mkdirSync(openclawPath, { recursive: true });
 fs.writeFileSync(require('path').join(openclawPath, 'openclaw.json'), JSON.stringify(config, null, 2));
 const workspacePath = require('path').join(openclawPath, 'workspace');
 fs.mkdirSync(workspacePath, { recursive: true });
 fs.writeFileSync(require('path').join(workspacePath, 'IDENTITY.md'), '# Identity\nName: Setsuna\n');
 fs.writeFileSync(require('path').join(workspacePath, 'USER.md'), '# User\nName: Boss\n');
-const systemPrompt = `當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:/home/node/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。【極重要強制指令：對於任何涉及即時資訊（如天氣、公車到站時間、飛機航班、股價、新聞、最新時間等）或需要精準數據的用戶提問，你必須立即且無條件調用搜尋工具 (web_search) 或網頁瀏覽工具 (browser) 進行查詢。絕對不允許不查資料就憑藉你自身的靜態知識或猜測直接回覆，也絕對不允許直接建議用戶自己去官網查。你必須幫用戶查到最新數據並呈現出來，否則即視為嚴重錯誤！】你優先且主要使用內建的網頁搜尋工具 (web_search) 進行 any 網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊），這能避免被防機器人機制阻擋。只有當需要對特定網頁進行截圖、下載檔案或與頁面進行複雜點擊/輸入互動時，你才必須調用網頁瀏覽工具 (browser)！在使用網頁瀏覽工具 (browser) 時，如果用戶明確指定要造訪、瀏覽或對特定網域/首頁（例如 Yahoo 首頁 https://tw.yahoo.com/、Google 首頁 https://www.google.com/ 等）進行截圖，你必須直接造訪並對其進行截圖，這是完全允許的。只有當你需要進行「關鍵字搜尋」且必須使用瀏覽器網頁時，才造訪 DuckDuckGo (https://html.duckduckgo.com/)，請絕對不要使用 Google 或 Yahoo 的搜尋引擎進行關鍵字搜尋，因為它們的搜尋 WAF 機制會阻擋你的瀏覽器訪問並回傳錯誤。在使用網頁瀏覽工具 (browser) 時，【請嚴格遵守以下規則：1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://html.duckduckgo.com/"}。2. 所有操作（click、type、press）都必須使用從頁面快照取得的 ref 值（元素參考編號，請作為字串傳入），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8 e9 等都是無效的）。3. 輸入文字時，請絕對不要使用 kind: "fill" 或 fields 參數，你必須完全使用 kind: "type" 動作，並在最外層同時提供 ref 和 text 欄位。例如：{"action":"act","kind":"type","ref":"12","text":"要輸入的文字"}。4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":"12","key":"Enter"}。5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":"12"}。6. 絕對不要使用 CSS 選擇器 (selector 參數)。7. 在回覆中請絕對不要將 任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將 "1" 寫成 "一"）。請完全保留原本的阿拉伯數字、英文以及格式！】`;
+const systemPrompt = `當你使用網頁瀏覽或截圖工具產生截圖或檔案時，你必須在回覆的最後一行加上 MEDIA:<檔案絕對路徑>（例如：MEDIA:${HOME_DIR}/.openclaw/media/browser/xxx.png），以便系統處理圖片。不要省略或自行修改此格式。【極重要強制指令：對於任何涉及即時資訊（如天氣、公車到站時間、飛機航班、股價、新聞、最新時間等）或需要精準數據的用戶提問，你必須立即且無條件調用搜尋工具 (web_search) 或網頁瀏覽工具 (browser) 進行查詢。絕對不允許不查資料就憑藉你自身的靜態知識或猜測直接回覆，也絕對不允許直接建議用戶自己去官網查。你必須幫用戶查到最新數據並呈現出來，否則即視為嚴重錯誤！】你優先且主要使用內建的網頁搜尋工具 (web_search) 進行 any 網頁搜尋與資訊查詢（如查詢台北時間、天氣、公車班次、新聞等即時資訊），這能避免被防機器人機制阻擋。只有當需要對特定網頁進行截圖、下載檔案或與頁面進行複雜點擊/輸入互動時，你才必須調用網頁瀏覽工具 (browser)！在使用網頁瀏覽工具 (browser) 時，如果用戶明確指定要造訪、瀏覽或對特定網域/首頁（例如 Yahoo 首頁 https://tw.yahoo.com/、Google 首頁 https://www.google.com/ 等）進行截圖，你必須直接造訪並對其進行截圖，這是完全允許的。只有當你需要進行「關鍵字搜尋」且必須使用瀏覽器網頁時，才造訪 DuckDuckGo (https://html.duckduckgo.com/)，請絕對不要使用 Google 或 Yahoo 的搜尋引擎進行關鍵字搜尋，因為它們的搜尋 WAF 機制會阻擋你的瀏覽器訪問並回傳錯誤。在使用網頁瀏覽工具 (browser) 時，【請嚴格遵守以下規則：1. 瀏覽器預設開啟在 about:blank，你必須先執行 action: "navigate" 造訪網頁，取得頁面快照與元素列表後，才能進行後續操作。例如：{"action":"navigate","url":"https://html.duckduckgo.com/"}。2. 所有操作（click、type、press）都必須使用從頁面快照取得的 ref 值（元素參考編號，請作為字串傳入），絕對不可以使用 targetId 欄位，也不可憑空捏造無效的 ref（例如 e8 e9 等都是無效的）。3. 輸入文字時，請絕對不要使用 kind: "fill" 或 fields 參數，你必須完全使用 kind: "type" 動作，並在最外層同時提供 ref and text 欄位。例如：{"action":"act","kind":"type","ref":"12","text":"要輸入的文字"}。4. 使用 kind: "press" 時，必須同時提供 ref 和 key 欄位，例如 {"action":"act","kind":"press","ref":"12","key":"Enter"}。5. 使用 kind: "click" 時，必須提供 ref 欄位，例如 {"action":"act","kind":"click","ref":"12"}。6. 絕對不要使用 CSS 選擇器 (selector 參數)。7. 在回覆中請絕對不要將 任何數字、時間、日期、代號、規格等轉換成中文數字或中文大寫（例如，絕對不可以將「14:30」寫成「十四點三十分」，絕對不要將 "1" 寫成 "一"）。請完全保留原本的阿拉伯數字、英文以及格式！】`;
 fs.writeFileSync(require('path').join(workspacePath, 'SYSTEM.md'), systemPrompt);
 fs.writeFileSync(require('path').join(workspacePath, 'AGENTS.md'), systemPrompt);
 EOF
@@ -136,12 +140,14 @@ const { spawn } = require('child_process');
 const https = require('https');
 const querystring = require('querystring');
 
-const PORT = 18789;
+const PORT = process.env.PORT || 18789;
 const TARGET_PORT = 18790;
+const os = require('os');
+const HOME_DIR = os.homedir();
 const DIRS_TO_CHECK = [
-  '/home/node/.openclaw/media/browser',
-  '/home/node/.openclaw/workspace/media',
-  '/home/node/.openclaw/media'
+  path.join(HOME_DIR, '.openclaw/media/browser'),
+  path.join(HOME_DIR, '.openclaw/workspace/media'),
+  path.join(HOME_DIR, '.openclaw/media')
 ];
 
 let globalKeyCounter = 0;
@@ -879,8 +885,9 @@ const server = http.createServer((req, res) => {
 
   if (urlPath === '/chromium-log') {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    if (fs.existsSync('/home/node/chromium.log')) {
-      return res.end(fs.readFileSync('/home/node/chromium.log'));
+    const chromLog = path.join(HOME_DIR, 'chromium.log');
+    if (fs.existsSync(chromLog)) {
+      return res.end(fs.readFileSync(chromLog));
     } else {
       return res.end('chromium.log does not exist');
     }
@@ -890,7 +897,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     let logDir = '/tmp/openclaw';
     if (!fs.existsSync(logDir)) {
-      logDir = '/home/node/.openclaw';
+      logDir = path.join(HOME_DIR, '.openclaw');
     }
     if (fs.existsSync(logDir)) {
       const files = fs.readdirSync(logDir).filter(f => f.endsWith('.log'));
@@ -980,18 +987,40 @@ const server = http.createServer((req, res) => {
 
   if (isMediaRequest) {
     const filename = req.url.split('/').pop().split('?')[0];
-    let exists = false;
+    let foundPath = null;
     for (const dir of DIRS_TO_CHECK) {
-      if (fs.existsSync(path.join(dir, filename))) {
-        exists = true;
+      const fullPath = path.join(dir, filename);
+      if (fs.existsSync(fullPath)) {
+        foundPath = fullPath;
         break;
       }
     }
 
-    if (!exists) {
-      console.log(`[Proxy] Requested media filename "${filename}" not found on disk. Attempting fallback to the latest screenshot.`);
+    if (foundPath) {
+      console.log(`[Proxy] Serving media "${filename}" directly from disk: ${foundPath}`);
+      try {
+        const stat = fs.statSync(foundPath);
+        res.writeHead(200, {
+          'Content-Type': 'image/png',
+          'Content-Length': stat.size
+        });
+        fs.createReadStream(foundPath).pipe(res);
+        return;
+      } catch (e) {
+        console.error(`[Proxy] Error serving media directly: ${e.message}`);
+      }
+    } else {
+      console.log(`[Proxy] Requested media filename "${filename}" not found on disk. Serving latest screenshot.`);
       return serveLatestScreenshot(res);
     }
+  }
+
+  // Rewrite Authorization header for non-media forwarded requests:
+  // If the request passes Hugging Face's gatekeeper with a bearer token,
+  // we must rewrite it to GATEWAY_PASSWORD so the inner OpenClaw gateway accepts it.
+  const forwardedHeaders = { ...req.headers };
+  if (process.env.GATEWAY_PASSWORD) {
+    forwardedHeaders['authorization'] = `Bearer ${process.env.GATEWAY_PASSWORD}`;
   }
 
   const options = {
@@ -999,16 +1028,10 @@ const server = http.createServer((req, res) => {
     port: TARGET_PORT,
     path: req.url,
     method: req.method,
-    headers: req.headers
+    headers: forwardedHeaders
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
-    // If OpenClaw gateway returns 404 for a GET request to a media directory, intercept it
-    if (isMediaRequest && proxyRes.statusCode === 404) {
-      console.log(`[Proxy] OpenClaw gateway returned 404 for media request: ${req.url}. Attempting fallback to the latest screenshot.`);
-      return serveLatestScreenshot(res);
-    }
-
     res.writeHead(proxyRes.statusCode, proxyRes.headers);
     proxyRes.pipe(res);
   });
