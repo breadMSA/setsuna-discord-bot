@@ -1026,13 +1026,19 @@ function detectIntentWithRegex(content) {
   }
 
   // 判斷是否為網頁查詢
-  const webKeywords = /(天氣|新聞|公車|路況|股票|股價|截圖|網頁|連結|上網查|查一下)/i;
+  const webKeywords = /(天氣|新聞|公車|路況|股票|股價|截圖|網頁|連結|上網查|查一下|打開|造訪|進入|網址|http|\.com|\.org|\.net|\.tw|ptt|minecraftmaps|爬蟲|爬取)/i;
   if (webKeywords.test(content)) {
     const screenshotKeywords = /(截圖|截屏|看螢幕|看畫面|看截圖)/i;
-    return { intent: 'BROWSE_WEB', musicQuery: null, requireScreenshot: screenshotKeywords.test(content) };
+    const browserKeywords = /(打開|造訪|進入|網址|http|\.com|\.org|\.net|\.tw|ptt|minecraftmaps|爬蟲|爬取)/i;
+    return {
+      intent: 'BROWSE_WEB',
+      musicQuery: null,
+      requireScreenshot: screenshotKeywords.test(content),
+      useBrowser: screenshotKeywords.test(content) || browserKeywords.test(content)
+    };
   }
 
-  return { intent: 'CHAT', musicQuery: null, requireScreenshot: false };
+  return { intent: 'CHAT', musicQuery: null, requireScreenshot: false, useBrowser: false };
 }
 
 async function detectIntentWithAI(content) {
@@ -1046,7 +1052,7 @@ async function detectIntentWithAI(content) {
 3. "PAUSE_MUSIC": 用戶明確要求「暫停播放」。
 4. "RESUME_MUSIC": 用戶明確要求「繼續播放」。
 5. "STOP_MUSIC": 用戶明確要求「停止播放」、「關掉音樂」、「不要播了」、「離開語音頻道」。
-6. "BROWSE_WEB": 用戶明確要求「上網網頁查詢/尋找即時資訊」、「打開/造訪/上某個特定網站或網頁看看/瀏覽內容」、「對特定網站進行搜尋」或「對網頁/網站/螢幕進行截圖/看畫面」。
+6. "BROWSE_WEB": 用戶明確要求「上網網頁查詢/尋找即時資訊」、「打開/造訪/上某個特定網站或網頁看看/瀏覽內容」、「對特定網站進行搜尋」、「進行網頁爬蟲/爬取特定網站內容」或「對網頁/網站/螢幕進行截圖/看畫面」。
    - 例如：「幫我上 minecraftmaps 看看現在有什麼好玩地圖」、「查一下今天台北天氣」、「去看一下 PTT 八卦版今天在熱議什麼」、「打開 google.com 幫我截圖」、「 CI100 飛機起飛了沒」等。
    - 只要有明確的「去某個網站看看/查資料」、「查詢動態資料」、「截圖網頁」等需要透過瀏覽器或網路搜尋的行為，皆屬於此類。
 7. "CHAT": 其他所有一般的對話、閒聊、打招呼、問題回答等不需要上網即時查資料或看網頁的行為。
@@ -1059,7 +1065,8 @@ async function detectIntentWithAI(content) {
 {
   "intent": "意圖代碼",
   "musicQuery": "如果是 PLAY_MUSIC，提取出想播放的歌曲/音樂名稱或搜尋關鍵字；否則為 null",
-  "requireScreenshot": true/false (布林值，如果是 BROWSE_WEB 且用戶明確要求「對網頁/網站進行截圖、看圖、看螢幕畫面、畫圖」則為 true，如果只是單純查詢即時資料/天氣/公車/新聞等則為 false；其他意圖下皆為 false)
+  "requireScreenshot": true/false (布林值，如果是 BROWSE_WEB 且用戶明確要求「對網頁/網站進行截圖、看圖、看螢幕畫面、畫圖」則為 true，如果只是單純查詢即時資料/天氣/公車/新聞等則為 false；其他意圖下皆為 false),
+  "useBrowser": true/false (布林值，如果是 BROWSE_WEB 且用戶要求「打開特定網址/網域、瀏覽特定網站、造訪某個特定頁面、進行網頁爬蟲/爬取特定網站內容」則為 true，此時必須啟動網頁瀏覽器進行網頁操作；但如果只是「查詢一般即時資訊、天氣、公車到站、股票股價、最新時間」等不需要造訪特定 URL 或進行特定網站爬蟲的通用查詢，則為 false)
 }`;
 
     const completion = await groq.chat.completions.create({
@@ -1074,7 +1081,8 @@ async function detectIntentWithAI(content) {
     return {
       intent: parsed.intent || 'CHAT',
       musicQuery: parsed.musicQuery || null,
-      requireScreenshot: parsed.requireScreenshot === true
+      requireScreenshot: parsed.requireScreenshot === true,
+      useBrowser: parsed.useBrowser === true || parsed.requireScreenshot === true
     };
   } catch (e) {
     console.error('[Intent detection error, falling back to regex]', e);
@@ -3714,7 +3722,7 @@ client.on('messageCreate', async (message) => {
   const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
   if (analysis.intent === 'BROWSE_WEB') {
-    if (analysis.requireScreenshot) {
+    if (analysis.useBrowser) {
       if (OPENCLAW_URL && isBotOwner(message.author.id)) {
         console.log(`[OpenClaw] 老闆特權驗證成功，發送請求至: ${OPENCLAW_URL}/v1/chat/completions`);
         try {
@@ -5608,7 +5616,7 @@ if (TELEGRAM_TOKEN) {
     console.log(`[Telegram] 意圖判定: ${analysis.intent}`);
 
     if (analysis.intent === 'BROWSE_WEB') {
-      if (analysis.requireScreenshot) {
+      if (analysis.useBrowser) {
         if (OPENCLAW_URL && OPENCLAW_PASS) {
       try {
         const utcTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
