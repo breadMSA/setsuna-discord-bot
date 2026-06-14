@@ -34,8 +34,8 @@ RUN pnpm ui:build
 
 ENV NODE_ENV=production
 
-# Expose port 7860 (Hugging Face Spaces default port, Railway will bind to PORT)
-EXPOSE 7860
+# Expose port 18789 (OpenClaw default port, Railway will bind to PORT)
+EXPOSE 18789
 
 # Copy configuration setup and entrypoint files from the repository
 COPY setup-hf-config.mjs /app/setup-hf-config.mjs

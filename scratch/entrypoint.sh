@@ -12,8 +12,11 @@ fi
 # 1.5 Optimize Node.js memory footprint for low-RAM containers
 export NODE_OPTIONS="--max-old-space-size=800"
 
+# 1.6 Clear any stale Chromium SingletonLock files to prevent startup hangs
+find "$OPENCLAW_HOME/.openclaw" -name "Singleton*" -exec rm -f {} \; 2>/dev/null
+
 # 2. Run the config setup script to initialize openclaw.json with Google Proxy and auth
 node /app/setup-hf-config.mjs
 
-# 3. Start the OpenClaw gateway directly on port 7860 (exposed in Dockerfile)
-exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan --port 7860
+# 3. Start the OpenClaw gateway directly on the default port 18789
+exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan --port 18789
