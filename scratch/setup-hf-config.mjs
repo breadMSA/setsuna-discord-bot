@@ -90,7 +90,13 @@ if (setsunaUrl) {
     if (!config.models.providers) config.models.providers = {};
     config.models.providers["google-generative-ai"] = {
       apiKey: process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY,
-      api: "google-generative-ai"
+      api: "google-generative-ai",
+      models: [
+        { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite" },
+        { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+        { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite" },
+        { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" }
+      ]
     };
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
