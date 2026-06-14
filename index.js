@@ -1189,7 +1189,7 @@ function getSpaceDetails() {
 
 async function ensureSpaceIsRunning() {
   const spaceDetails = getSpaceDetails();
-  if (!spaceDetails) return { success: false, reason: '無法解析 Space ID' };
+  if (!spaceDetails) return { success: true, bypassed: true }; // Skip silently if not a Hugging Face Space (e.g. running on Railway)
   
   const { namespace, spaceName } = spaceDetails;
   const hfToken = getCurrentHFToken();

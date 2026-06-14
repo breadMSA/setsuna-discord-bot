@@ -1,26 +1,23 @@
----
-title: OpenClaw Gateway
-emoji: 🦞
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-app_port: 7860
----
+# OpenClaw Gateway on Railway
 
-# OpenClaw Gateway on Hugging Face Spaces
+This service runs the [OpenClaw](https://github.com/openclaw/openclaw) gateway with integrated Playwright browser support on Railway.
 
-This Space runs the [OpenClaw](https://github.com/openclaw/openclaw) gateway with integrated cloud browser support.
+## Deployment on Railway
 
-## Quick start
-
-1. **Create a new Space** at [huggingface.co/new-space](https://huggingface.co/new-space). Choose **Docker** as the SDK.
-2. **Copy the contents of this folder** into your Space repo:
+1. **Create a new Private Repository** on GitHub (e.g., `my-openclaw`).
+2. **Push the contents of this folder** into your repository:
    - `README.md`
    - `Dockerfile`
    - `setup-hf-config.mjs`
    - `entrypoint.sh`
-3. **Add Secrets** in your Space **Settings → Secrets**:
-   - **`SETSUNA_GATEWAY_URL`** — The public URL of your Setsuna bot on Railway. **Required.**
+   - `.gitattributes`
+3. **Link to Railway**:
+   - Go to your Railway project.
+   - Click **New → GitHub Repo** and select your repository.
+4. **Configure Variables** in Railway:
+   - **`SETSUNA_GATEWAY_URL`** — The public URL of your Setsuna bot service on Railway (e.g., `https://setsuna-xxx.up.railway.app`). **Required.**
    - **`OPENCLAW_GATEWAY_PASSWORD`** — Gateway password to authenticate against the Setsuna proxy. **Required.**
-   - **`HF_TOKEN`** — Hugging Face Token (if you want to auto-wake status check / manage state).
-   - **`OPENCLAW_GATEWAY_TRUSTED_PROXIES`** — Comma-separated proxy IPs if needed to trust HF reverse proxies.
+5. **Generate Service Domain**:
+   - In the OpenClaw service settings on Railway, go to **Settings → Networking → Generate Domain**.
+   - Input port **`7860`** (or whatever port you prefer, standard default in Dockerfile is 7860).
+   - Copy the generated domain and paste it into the **`OPENCLAW_API_URL`** variable of the Setsuna bot service on Railway.
