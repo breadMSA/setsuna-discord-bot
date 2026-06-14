@@ -9,9 +9,11 @@ else
   mkdir -p "$OPENCLAW_HOME/.openclaw"
 fi
 
+# 1.5 Optimize Node.js memory footprint for low-RAM containers
+export NODE_OPTIONS="--max-old-space-size=800"
+
 # 2. Run the config setup script to initialize openclaw.json with Google Proxy and auth
 node /app/setup-hf-config.mjs
 
-# 3. Start the OpenClaw gateway directly on the exposed port
-PORT_TO_USE=${PORT:-7860}
-exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan --port "$PORT_TO_USE"
+# 3. Start the OpenClaw gateway directly on port 7860 (exposed in Dockerfile)
+exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan --port 7860

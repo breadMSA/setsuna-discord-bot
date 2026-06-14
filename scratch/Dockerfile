@@ -5,20 +5,25 @@ FROM mcr.microsoft.com/playwright:v1.49.0-jammy
 ARG OPENCLAW_REPO=https://github.com/Josephrp/openclaw.git
 ARG OPENCLAW_REF=hf-spaces
 
-# Install Bun (needed for some build scripts)
+# Upgrade Node.js to >=22.12.0 using NodeSource and install Bun
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl git ca-certificates unzip && \
+    apt-get purge -y nodejs npm && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
-RUN corepack enable
+RUN npm install -g pnpm
 
 WORKDIR /app
 
 # Clone OpenClaw and build
 RUN git clone --depth 1 --branch "${OPENCLAW_REF}" "${OPENCLAW_REPO}" . \
-    && pnpm install --frozen-lockfile \
+    && rm -f pnpm-lock.yaml \
+    && pnpm install \
+    && pnpm add -w -D @rolldown/binding-linux-x64-gnu@1.0.0-rc.3 \
     && pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build

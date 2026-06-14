@@ -25,7 +25,7 @@ function readGatewayToken() {
 }
 
 const gatewayToken = readGatewayToken();
-const gatewayPassword = process.env.OPENCLAW_GATEWAY_PASSWORD?.trim();
+const gatewayPassword = process.env.OPENCLAW_GATEWAY_PASSWORD?.trim() || process.env.GATEWAY_PASSWORD?.trim();
 
 // Trusted proxies
 const DEFAULT_HF_TRUSTED_PROXY_IPS = [
@@ -57,8 +57,11 @@ if (fs.existsSync(configPath)) {
 }
 
 // 1. Config Gemini provider using Setsuna Gateway Proxy or directly if key is on Space
-const setsunaUrl = process.env.SETSUNA_GATEWAY_URL?.trim();
-const gatewayPassword = process.env.OPENCLAW_GATEWAY_PASSWORD?.trim() || process.env.GATEWAY_PASSWORD?.trim();
+let setsunaUrl = process.env.SETSUNA_GATEWAY_URL?.trim();
+if (setsunaUrl && !setsunaUrl.startsWith('http://') && !setsunaUrl.startsWith('https://')) {
+  setsunaUrl = 'https://' + setsunaUrl;
+}
+console.log(`[setup-hf-config] Configured Setsuna Gateway URL: ${setsunaUrl || 'Not Configured'}`);
 
 if (setsunaUrl) {
   if (!config.models) config.models = {};
@@ -140,9 +143,17 @@ if (allowedOrigins.length > 0) {
   config.gateway.controlUi.allowedOrigins = allowedOrigins;
 }
 
+// 3.5 Disable memory search vector provider to keep memory footprint low
+if (!config.agents) config.agents = {};
+if (!config.agents.defaults) config.agents.defaults = {};
+if (!config.agents.defaults.memorySearch) config.agents.defaults.memorySearch = {};
+config.agents.defaults.memorySearch.enabled = false;
+
 // 4. Browser config (Sandbox-free arguments to prevent container suspensions)
 if (!config.browser) config.browser = {};
 config.browser.noSandbox = true;
+config.browser.headless = true;
+config.browser.defaultProfile = "openclaw";
 
 fs.mkdirSync(stateDir, { recursive: true });
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
