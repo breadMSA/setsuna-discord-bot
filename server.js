@@ -2,6 +2,12 @@ const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Log all incoming requests
+app.use((req, res, next) => {
+  console.log(`[Setsuna Proxy Server] Incoming ${req.method} request to: ${req.url}`);
+  next();
+});
+
 // Import the gemini proxy handler
 const { handleGeminiRequest } = require('./gemini-proxy');
 
