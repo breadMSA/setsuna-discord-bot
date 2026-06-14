@@ -36,6 +36,6 @@ app.all(['/v1beta/models/*', '/v1/models/*', '/models/*'], async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`Keep-alive and Gemini Proxy server listening on port ${port}`);
 });
