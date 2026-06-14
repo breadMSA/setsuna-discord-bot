@@ -1155,8 +1155,16 @@ async function detectIntentWithAI(content) {
 // =================================================================
 // 🌐 Hugging Face Space 自動喚醒與狀態管理功能
 // =================================================================
+function getCleanOpenClawUrl() {
+  let url = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.trim().replace(/\/$/, '') : '';
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url;
+  }
+  return url;
+}
+
 function getSpaceDetails() {
-  const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
+  const OPENCLAW_URL = getCleanOpenClawUrl();
   if (process.env.HF_SPACE_ID) {
     const parts = process.env.HF_SPACE_ID.split('/');
     if (parts.length === 2) {
@@ -3893,7 +3901,7 @@ client.on('messageCreate', async (message) => {
   // =================================================================
   // 🌐 主人專屬：雲端 OpenClaw 視覺網頁操作攔截器
   // =================================================================
-  const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
+  const OPENCLAW_URL = getCleanOpenClawUrl();
   const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
   if (analysis.intent === 'BROWSE_WEB') {
@@ -5794,7 +5802,7 @@ if (TELEGRAM_TOKEN) {
       return;
     }
 
-    const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
+    const OPENCLAW_URL = getCleanOpenClawUrl();
     const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
     const analysis = await detectIntentWithAI(text);
@@ -6164,7 +6172,7 @@ process.on('unhandledRejection', (error) => {
 });
 
 // Hugging Face Space keep-alive ping to prevent auto-sleeping
-const OPENCLAW_URL = process.env.OPENCLAW_API_URL ? process.env.OPENCLAW_API_URL.replace(/\/$/, '') : '';
+const OPENCLAW_URL = getCleanOpenClawUrl();
 const OPENCLAW_PASS = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
 
 if (OPENCLAW_URL) {
