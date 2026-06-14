@@ -48,6 +48,7 @@ function makeGoogleRequest(apiVersion, model, action, queryParams, bodyBuffer, o
     delete headers['host'];
     delete headers['content-length'];
     delete headers['authorization'];
+    delete headers['x-goog-api-key'];
     headers['content-type'] = headers['content-type'] || 'application/json';
     headers['accept'] = 'application/json';
 
@@ -111,9 +112,21 @@ async function handleGeminiRequest(req, res) {
 
   // Authenticate using the gateway password
   const gatewayPassword = process.env.OPENCLAW_GATEWAY_PASSWORD || process.env.GATEWAY_PASSWORD;
-  const requestKey = queryParams.key;
+  let requestKey = queryParams.key;
+  if (!requestKey && req.headers['x-goog-api-key']) {
+    requestKey = req.headers['x-goog-api-key'];
+  }
+  if (!requestKey && req.headers['authorization']) {
+    const authHeader = req.headers['authorization'];
+    if (authHeader.startsWith('Bearer ')) {
+      requestKey = authHeader.substring(7);
+    }
+  }
 
-  if (gatewayPassword && requestKey !== gatewayPassword) {
+  const cleanGatewayPassword = gatewayPassword ? gatewayPassword.trim() : '';
+  const cleanRequestKey = requestKey ? requestKey.trim() : '';
+
+  if (cleanGatewayPassword && cleanRequestKey !== cleanGatewayPassword) {
     console.warn(`[Proxy] Unauthorized access attempt with key: ${requestKey}`);
     res.writeHead(403, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
