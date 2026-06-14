@@ -42,6 +42,21 @@ app.all(['/v1beta/models/*', '/v1/models/*', '/models/*'], async (req, res) => {
   }
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Keep-alive and Gemini Proxy server listening on port ${port}`);
+const port1 = process.env.PORT ? parseInt(process.env.PORT) : 8080;
+const port2 = 3000;
+
+const server1 = app.listen(port1, '0.0.0.0', () => {
+  console.log(`Keep-alive and Gemini Proxy server listening on port ${port1}`);
 });
+server1.on('error', (err) => {
+  console.error(`Error starting server on port ${port1}:`, err.message);
+});
+
+if (port1 !== port2) {
+  const server2 = app.listen(port2, '0.0.0.0', () => {
+    console.log(`Fallback listener running on port ${port2}`);
+  });
+  server2.on('error', (err) => {
+    console.warn(`Could not start fallback listener on port ${port2}:`, err.message);
+  });
+}
