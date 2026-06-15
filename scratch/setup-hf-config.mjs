@@ -89,6 +89,7 @@ if (setsunaUrl) {
     if (!config.models) config.models = {};
     if (!config.models.providers) config.models.providers = {};
     config.models.providers["google-generative-ai"] = {
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
       apiKey: process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY,
       api: "google-generative-ai",
       models: [
