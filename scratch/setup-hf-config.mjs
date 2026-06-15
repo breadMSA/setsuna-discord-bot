@@ -95,7 +95,7 @@ if (setsunaUrl) {
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
     if (!config.agents.defaults.model) config.agents.defaults.model = {};
-    config.agents.defaults.model.primary = "google-generative-ai/gemini-3.1-flash-lite";
+    config.agents.defaults.model.primary = "google-generative-ai/gemini-1.5-flash";
   } else {
     const defaultModel = process.env.OPENCLAW_HF_DEFAULT_MODEL?.trim() || "huggingface/deepseek-ai/DeepSeek-R1";
     if (!config.agents) config.agents = {};
