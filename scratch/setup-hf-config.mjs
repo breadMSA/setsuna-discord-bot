@@ -62,58 +62,43 @@ if (fs.existsSync(configPath)) {
   }
 }
 
-// 1. Config Gemini provider using Setsuna Gateway Proxy or directly if key is on Space
-let setsunaUrl = process.env.SETSUNA_GATEWAY_URL?.trim();
-if (setsunaUrl && !setsunaUrl.startsWith('http://') && !setsunaUrl.startsWith('https://')) {
-  setsunaUrl = 'https://' + setsunaUrl;
-}
-console.log(`[setup-hf-config] Configured Setsuna Gateway URL: ${setsunaUrl || 'Not Configured'}`);
+// 1. Always route Gemini calls through the local key-rotation proxy (localhost:18789)
+//    The proxy handles all comma-separated keys and model fallback internally.
+//    SETSUNA_GATEWAY_URL is ignored — local proxy is always used for HF Space.
+const LOCAL_PROXY_URL = "http://localhost:18789";
+console.log(`[setup-hf-config] Using local key-rotation proxy: ${LOCAL_PROXY_URL}`);
 
-if (setsunaUrl) {
+const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY);
+if (hasGeminiKey) {
   if (!config.models) config.models = {};
   if (!config.models.providers) config.models.providers = {};
   config.models.providers["google-proxy"] = {
-    baseUrl: setsunaUrl, // Redirect requests to Setsuna's proxy server on Railway
+    baseUrl: LOCAL_PROXY_URL,
     api: "google-generative-ai",
-    apiKey: gatewayPassword || "DUMMY_KEY", // Authenticate request with the gateway password
+    apiKey: "DUMMY_KEY", // real keys are rotated inside proxy.js
     models: [
       { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite" },
-      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
       { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite" },
-      { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" }
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+      { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" },
+      { id: "gemini-3-flash", name: "Gemini 3 Flash" }
     ]
   };
-
   if (!config.agents) config.agents = {};
   if (!config.agents.defaults) config.agents.defaults = {};
   if (!config.agents.defaults.model) config.agents.defaults.model = {};
   config.agents.defaults.model.primary = "google-proxy/gemini-3.1-flash-lite";
-} else {
-  // Fallback to direct google-generative-ai if Gemini keys are configured directly on the Space
-  const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY);
-  if (hasGeminiKey) {
-    if (!config.models) config.models = {};
-    if (!config.models.providers) config.models.providers = {};
-    // "google" 是 openclaw 的 bundled provider，只需要 apiKey，不需要 baseUrl/models
-    config.models.providers["google"] = {
-      api: "google-generative-ai",
-      apiKey: firstKey(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY)
-    };
-    if (!config.agents) config.agents = {};
-    if (!config.agents.defaults) config.agents.defaults = {};
-    if (!config.agents.defaults.model) config.agents.defaults.model = {};
-    config.agents.defaults.model.primary = "google/gemini-3.1-flash-lite";
 
-    // Grounding / web search：gemini-3.1-flash-lite 免費版不支援 grounding，改用支援 grounding 的模型輪替
-    if (!config.tools) config.tools = {};
-    if (!config.tools.web) config.tools.web = {};
-    if (!config.tools.web.search) config.tools.web.search = {};
-    config.tools.web.search.provider = "gemini";
-    config.tools.web.search.gemini = {
-      apiKey: firstKey(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY),
-      model: "google/gemini-2.5-flash"
-    };
-  } else {
+  // Grounding/web search: proxy.js falls back to grounding-capable models automatically
+  if (!config.tools) config.tools = {};
+  if (!config.tools.web) config.tools.web = {};
+  if (!config.tools.web.search) config.tools.web.search = {};
+  config.tools.web.search.provider = "gemini";
+  config.tools.web.search.gemini = {
+    apiKey: "DUMMY_KEY",
+    model: "google-proxy/gemini-2.5-flash"
+  };
+} else {
     const defaultModel = process.env.OPENCLAW_HF_DEFAULT_MODEL?.trim() || "huggingface/deepseek-ai/DeepSeek-R1";
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
