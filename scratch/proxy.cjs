@@ -78,8 +78,24 @@ const server = http.createServer((req, res) => {
   let bodyChunks = [];
   req.on('data', c => bodyChunks.push(c));
   req.on('end', async () => {
-    const bodyBuf = Buffer.concat(bodyChunks);
+    let bodyBuf = Buffer.concat(bodyChunks);
     const keys = getApiKeys();
+
+    // Inject BLOCK_NONE safetySettings so Gemini doesn't return empty content
+    // for harmless requests that triggered safety classifiers
+    try {
+      const parsed = JSON.parse(bodyBuf.toString());
+      parsed.safetySettings = [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' }
+      ];
+      bodyBuf = Buffer.from(JSON.stringify(parsed));
+    } catch (_) {
+      // body is not JSON (e.g. a model-list GET request) — leave as-is
+    }
 
     if (keys.length === 0) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -113,12 +129,35 @@ const server = http.createServer((req, res) => {
           const result = await forwardToGoogle(effectivePath, req.method, req.headers, bodyBuf);
           lastResult = result;
           if (result.statusCode === 200) {
-            globalKeyCounter = (keyIndex + 1) % keys.length;
-            success = true;
-            // Only forward content-type — Node already decompressed the body,
-            // so copying content-encoding/transfer-encoding causes parse failures
-            res.writeHead(200, { 'content-type': result.headers['content-type'] || 'application/json' });
-            res.end(result.body);
+            // Detect Gemini "200 with empty content" (safety block / SAFETY finishReason / etc)
+            let isEmptyContent = false;
+            let finishReason = '';
+            try {
+              const parsed = JSON.parse(result.body.toString());
+              const cand = parsed.candidates?.[0];
+              finishReason = cand?.finishReason || '';
+              const parts = cand?.content?.parts;
+              const hasUseful = Array.isArray(parts) && parts.some(p =>
+                (typeof p.text === 'string' && p.text.length > 0) ||
+                p.functionCall ||
+                p.inlineData
+              );
+              isEmptyContent = !hasUseful;
+            } catch (_) {
+              // Not JSON (e.g. SSE chunk) — assume success and forward as-is
+            }
+
+            if (isEmptyContent) {
+              console.warn(`[proxy] empty 200 model="${model}" key="${masked}" finishReason=${finishReason} — trying next`);
+              // do not set success — loop will try next key/model
+            } else {
+              globalKeyCounter = (keyIndex + 1) % keys.length;
+              success = true;
+              // Only forward content-type — Node already decompressed the body,
+              // so copying content-encoding/transfer-encoding causes parse failures
+              res.writeHead(200, { 'content-type': result.headers['content-type'] || 'application/json' });
+              res.end(result.body);
+            }
           } else {
             let msg = '';
             try { msg = JSON.parse(result.body).error?.message || ''; } catch (_) {}
