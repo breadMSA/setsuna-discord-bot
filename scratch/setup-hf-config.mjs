@@ -5,7 +5,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const home = process.env.OPENCLAW_HOME || process.env.HOME || "/home/user";
+const home = process.env.OPENCLAW_HOME || process.env.HOME || "/home/node";
+
+// 取逗號分隔多 key 串中的第一個有效 key
+function firstKey(raw) {
+  if (!raw) return "";
+  return raw.split(",")[0].trim();
+}
 const stateDir = path.join(home, ".openclaw");
 const configPath = path.join(stateDir, "openclaw.json");
 
@@ -90,7 +96,7 @@ if (setsunaUrl) {
     if (!config.models.providers) config.models.providers = {};
     config.models.providers["google-generative-ai"] = {
       api: "google-generative-ai",
-      apiKey: process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY,
+      apiKey: firstKey(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY),
       baseUrl: "https://generativelanguage.googleapis.com",
       models: [
         { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite" },
