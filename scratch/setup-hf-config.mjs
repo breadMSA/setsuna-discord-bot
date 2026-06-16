@@ -89,14 +89,17 @@ if (hasGeminiKey) {
   if (!config.agents.defaults.model) config.agents.defaults.model = {};
   config.agents.defaults.model.primary = "google-proxy/gemini-3.1-flash-lite";
 
-  // Grounding/web search: proxy.js falls back to grounding-capable models automatically
-  if (!config.tools) config.tools = {};
-  if (!config.tools.web) config.tools.web = {};
-  if (!config.tools.web.search) config.tools.web.search = {};
-  config.tools.web.search.provider = "gemini";
-  config.tools.web.search.gemini = {
-    apiKey: "DUMMY_KEY",
-    model: "google-proxy/gemini-2.5-flash"
+  // Grounding/web search via google plugin (new config format required by openclaw)
+  if (!config.plugins) config.plugins = {};
+  if (!config.plugins.entries) config.plugins.entries = {};
+  config.plugins.entries.google = {
+    enabled: true,
+    config: {
+      webSearch: {
+        apiKey: "DUMMY_KEY",
+        model: "google-proxy/gemini-2.5-flash"
+      }
+    }
   };
 } else {
     const defaultModel = process.env.OPENCLAW_HF_DEFAULT_MODEL?.trim() || "huggingface/deepseek-ai/DeepSeek-R1";
