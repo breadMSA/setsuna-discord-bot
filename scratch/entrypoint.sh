@@ -10,7 +10,7 @@ find "$OPENCLAW_HOME/.openclaw" -name "Singleton*" -exec rm -f {} \; 2>/dev/null
 
 # 2. Start local Gemini key-rotation proxy in background (localhost:18789)
 #    All comma-separated GEMINI_API_KEY / GEMINI_API_KEYS values are rotated here.
-node /app/proxy.js &
+node /app/proxy.cjs &
 PROXY_PID=$!
 echo "[entrypoint] Key-rotation proxy started (PID $PROXY_PID)"
 # Give the proxy a moment to bind before openclaw starts

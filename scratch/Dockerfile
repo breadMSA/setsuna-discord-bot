@@ -26,11 +26,11 @@ ENV NODE_ENV=production
 
 EXPOSE 7860
 
-COPY proxy.js /app/proxy.js
+COPY proxy.cjs /app/proxy.cjs
 COPY setup-hf-config.mjs /app/setup-hf-config.mjs
 COPY entrypoint.sh /app/entrypoint.sh
 
-RUN chown node:node /app/proxy.js /app/setup-hf-config.mjs /app/entrypoint.sh \
+RUN chown node:node /app/proxy.cjs /app/setup-hf-config.mjs /app/entrypoint.sh \
     && chmod +x /app/entrypoint.sh
 
 USER node

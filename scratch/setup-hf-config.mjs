@@ -104,7 +104,6 @@ if (hasGeminiKey) {
     if (!config.agents.defaults) config.agents.defaults = {};
     if (!config.agents.defaults.model) config.agents.defaults.model = {};
     config.agents.defaults.model.primary = defaultModel;
-  }
 }
 
 // 2. Auth config
