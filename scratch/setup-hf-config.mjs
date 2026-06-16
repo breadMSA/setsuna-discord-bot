@@ -102,7 +102,7 @@ if (setsunaUrl) {
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
     if (!config.agents.defaults.model) config.agents.defaults.model = {};
-    config.agents.defaults.model.primary = "google/gemini-2.5-flash-lite";
+    config.agents.defaults.model.primary = "google/gemini-2.0-flash-lite";
   } else {
     const defaultModel = process.env.OPENCLAW_HF_DEFAULT_MODEL?.trim() || "huggingface/deepseek-ai/DeepSeek-R1";
     if (!config.agents) config.agents = {};
