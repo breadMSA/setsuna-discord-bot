@@ -94,21 +94,15 @@ if (setsunaUrl) {
   if (hasGeminiKey) {
     if (!config.models) config.models = {};
     if (!config.models.providers) config.models.providers = {};
-    config.models.providers["google-generative-ai"] = {
+    // "google" 是 openclaw 的 bundled provider，只需要 apiKey，不需要 baseUrl/models
+    config.models.providers["google"] = {
       api: "google-generative-ai",
-      apiKey: firstKey(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY),
-      baseUrl: "https://generativelanguage.googleapis.com",
-      models: [
-        { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite" },
-        { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-        { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite" },
-        { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" }
-      ]
+      apiKey: firstKey(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY)
     };
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
     if (!config.agents.defaults.model) config.agents.defaults.model = {};
-    config.agents.defaults.model.primary = "google-generative-ai/gemini-3.1-flash-lite";
+    config.agents.defaults.model.primary = "google/gemini-2.5-flash-lite";
   } else {
     const defaultModel = process.env.OPENCLAW_HF_DEFAULT_MODEL?.trim() || "huggingface/deepseek-ai/DeepSeek-R1";
     if (!config.agents) config.agents = {};

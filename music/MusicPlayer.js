@@ -524,14 +524,6 @@ class MusicPlayer {
     // Play a song
     async play(voiceChannel, textChannel, query, member) {
         try {
-            // Ensure at least one Lavalink node is connected before creating a player
-            const connectedNodes = this.riffy.nodes
-                ? [...this.riffy.nodes.values()].filter(n => n.connected)
-                : [];
-            if (connectedNodes.length === 0) {
-                throw new Error('Lavalink 節點目前未連線，請稍後再試或重新啟動機器人。');
-            }
-
             // Create or get player
             let player = this.getPlayer(voiceChannel.guild.id);
 
