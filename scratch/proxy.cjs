@@ -115,7 +115,9 @@ const server = http.createServer((req, res) => {
           if (result.statusCode === 200) {
             globalKeyCounter = (keyIndex + 1) % keys.length;
             success = true;
-            res.writeHead(200, result.headers);
+            // Only forward content-type — Node already decompressed the body,
+            // so copying content-encoding/transfer-encoding causes parse failures
+            res.writeHead(200, { 'content-type': result.headers['content-type'] || 'application/json' });
             res.end(result.body);
           } else {
             let msg = '';
