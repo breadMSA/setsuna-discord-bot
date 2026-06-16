@@ -102,7 +102,17 @@ if (setsunaUrl) {
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
     if (!config.agents.defaults.model) config.agents.defaults.model = {};
-    config.agents.defaults.model.primary = "google/gemini-2.0-flash-lite";
+    config.agents.defaults.model.primary = "google/gemini-3.1-flash-lite";
+
+    // Grounding / web search：gemini-3.1-flash-lite 免費版不支援 grounding，改用支援 grounding 的模型輪替
+    if (!config.tools) config.tools = {};
+    if (!config.tools.web) config.tools.web = {};
+    if (!config.tools.web.search) config.tools.web.search = {};
+    config.tools.web.search.provider = "gemini";
+    config.tools.web.search.gemini = {
+      apiKey: firstKey(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEY),
+      model: "google/gemini-2.5-flash"
+    };
   } else {
     const defaultModel = process.env.OPENCLAW_HF_DEFAULT_MODEL?.trim() || "huggingface/deepseek-ai/DeepSeek-R1";
     if (!config.agents) config.agents = {};
