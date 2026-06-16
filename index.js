@@ -1228,8 +1228,14 @@ async function ensureSpaceIsRunning() {
       return { success: true, stage: 'RUNNING' };
     }
     
-    // 如果是 PAUSED、SLEEPING 或停用狀態，則發送喚醒指令 (POST)
-    if (stage === 'PAUSED' || stage === 'SLEEPING' || stage === 'STOPPED') {
+    // PAUSED 是 HF 風控/人工介入狀態，呼叫 restart 反而會累加濫用分數，直接回傳失敗讓上層處理
+    if (stage === 'PAUSED') {
+      console.warn(`[HF Space Manager] Space 處於 PAUSED 狀態（風控/人工介入），不嘗試自動重啟。`);
+      return { success: false, reason: 'Space 已被 Hugging Face 暫停，需手動到 HF 後台重啟。' };
+    }
+
+    // SLEEPING / STOPPED 可安全發送喚醒指令 (POST)
+    if (stage === 'SLEEPING' || stage === 'STOPPED') {
       console.log(`[HF Space Manager] Space 處於 ${stage}。正在發送 POST 重啟/喚醒請求...`);
       const restartRes = await fetch(`https://huggingface.co/api/spaces/${namespace}/${spaceName}/restart`, {
         method: 'POST',
@@ -4010,8 +4016,7 @@ client.on('messageCreate', async (message) => {
             // 用戶未要求截圖，清空所有可能由瀏覽器工具產生的自動附件
             uniqueAttachments = [];
           } else if (uniqueAttachments.length === 0) {
-            console.log('[OpenClaw] 用戶要求截圖但未偵測到附件，自動添加最新截圖占位符');
-            uniqueAttachments.push(`${OPENCLAW_URL}/media/latest.png`);
+            console.log('[OpenClaw] 用戶要求截圖但 OpenClaw 未回傳任何附件，不補 placeholder（避免 HF 被 ban）。');
           }
           console.log('[OpenClaw] 偵測到附件列表:', uniqueAttachments);
 
@@ -4071,29 +4076,12 @@ client.on('messageCreate', async (message) => {
               }
               
               const filename = subPath.split('/').pop();
-              const urlBases = [
-                `${OPENCLAW_URL}/media/${subPath}`,
-                `${OPENCLAW_URL}/__openclaw__/assistant-media/${subPath}`,
-                `${OPENCLAW_URL}/assistant-media/${subPath}`,
-                `${OPENCLAW_URL}/media/${filename}`,
-                `${OPENCLAW_URL}/__openclaw__/assistant-media/${filename}`,
-                `${OPENCLAW_URL}/assistant-media/${filename}`,
-                `${OPENCLAW_URL}/workspace/${subPath}`
+              // 只嘗試最可能的 3 條路徑（header auth），避免 21 路暴搜被 HF WAF 判為列舉攻擊
+              const candidates = [
+                { url: `${OPENCLAW_URL}/media/${subPath}`, useHeader: true },
+                { url: `${OPENCLAW_URL}/__openclaw__/assistant-media/${subPath}`, useHeader: true },
+                { url: `${OPENCLAW_URL}/media/${filename}`, useHeader: true },
               ];
-              
-              const candidates = [];
-              for (const base of urlBases) {
-                // 1. Header only
-                candidates.push({ url: base, useHeader: true });
-                // 2. Query param token only (no header)
-                if (OPENCLAW_PASS) {
-                  const delimiter = base.includes('?') ? '&' : '?';
-                  const tokenUrl = `${base}${delimiter}token=${encodeURIComponent(OPENCLAW_PASS)}`;
-                  candidates.push({ url: tokenUrl, useHeader: false });
-                  // 3. Both query param token and header
-                  candidates.push({ url: tokenUrl, useHeader: true });
-                }
-              }
               
               for (const candidate of candidates) {
                 console.log(`[OpenClaw] 嘗試下載附件 #${i + 1} 候選網址: ${candidate.url} (使用Header: ${candidate.useHeader})`);

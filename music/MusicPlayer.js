@@ -285,6 +285,26 @@ class MusicPlayer {
     // Initialize after client is ready
     init(clientId) {
         this.riffy.init(clientId);
+        this._startLavalinkKeepAlive();
+    }
+
+    // Ping Lavalink every 4 min to prevent Railway free-tier cold-start
+    _startLavalinkKeepAlive() {
+        const node = lavalinkNodes[0];
+        const proto = node.secure ? 'https' : 'http';
+        const pingUrl = `${proto}://${node.host}:${node.port}/version`;
+        const fetchAgent = globalThis.fetch || require('node-fetch');
+        setInterval(async () => {
+            try {
+                const res = await fetchAgent(pingUrl, {
+                    headers: { 'Authorization': node.password },
+                    signal: AbortSignal.timeout(8000)
+                });
+                console.log(`[Music] Lavalink keep-alive ping: ${res.status}`);
+            } catch (e) {
+                console.warn(`[Music] Lavalink keep-alive ping failed: ${e.message}`);
+            }
+        }, 4 * 60 * 1000);
     }
 
     setupVoiceStateUpdate() {
@@ -306,9 +326,17 @@ class MusicPlayer {
             console.error(`[Music] Lavalink node "${node.name}" error:`, error);
         });
 
-        // Node disconnect
+        // Node disconnect — schedule reconnect attempt so cold-started Lavalink can recover
         this.riffy.on('nodeDisconnect', (node) => {
-            console.log(`[Music] Lavalink node "${node.name}" disconnected.`);
+            console.warn(`[Music] Lavalink node "${node.name}" disconnected. Scheduling reconnect in 15s...`);
+            setTimeout(() => {
+                try {
+                    node.connect();
+                    console.log(`[Music] Reconnect attempt sent for node "${node.name}".`);
+                } catch (e) {
+                    console.error(`[Music] Reconnect attempt failed for node "${node.name}":`, e.message);
+                }
+            }, 15000);
         });
 
         // Track start
@@ -504,6 +532,14 @@ class MusicPlayer {
     // Play a song
     async play(voiceChannel, textChannel, query, member) {
         try {
+            // Ensure at least one Lavalink node is connected before creating a player
+            const connectedNodes = this.riffy.nodes
+                ? [...this.riffy.nodes.values()].filter(n => n.connected)
+                : [];
+            if (connectedNodes.length === 0) {
+                throw new Error('Lavalink 節點目前未連線，請稍後再試或重新啟動機器人。');
+            }
+
             // Create or get player
             let player = this.getPlayer(voiceChannel.guild.id);
 
