@@ -326,17 +326,9 @@ class MusicPlayer {
             console.error(`[Music] Lavalink node "${node.name}" error:`, error);
         });
 
-        // Node disconnect — schedule reconnect attempt so cold-started Lavalink can recover
+        // Node disconnect — Riffy handles auto-reconnect internally; just log
         this.riffy.on('nodeDisconnect', (node) => {
-            console.warn(`[Music] Lavalink node "${node.name}" disconnected. Scheduling reconnect in 15s...`);
-            setTimeout(() => {
-                try {
-                    node.connect();
-                    console.log(`[Music] Reconnect attempt sent for node "${node.name}".`);
-                } catch (e) {
-                    console.error(`[Music] Reconnect attempt failed for node "${node.name}":`, e.message);
-                }
-            }, 15000);
+            console.warn(`[Music] Lavalink node "${node.name}" disconnected. Riffy will auto-reconnect.`);
         });
 
         // Track start
